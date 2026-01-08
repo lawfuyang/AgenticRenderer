@@ -45,6 +45,7 @@ build/
 out/
 bin/
 lib/
+external/
 Debug/
 Release/
 RelWithDebInfo/
