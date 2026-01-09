@@ -19,11 +19,12 @@ struct GraphicRHI
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 
     // Swapchain members
+    static constexpr uint32_t SwapchainImageCount = 2;
     VkSwapchainKHR m_Swapchain = VK_NULL_HANDLE;
     VkFormat m_SwapchainFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D m_SwapchainExtent = {0, 0};
-    std::vector<VkImage> m_SwapchainImages;
-    std::vector<VkImageView> m_SwapchainImageViews;
+    VkImage m_SwapchainImages[SwapchainImageCount] = {};
+    VkImageView m_SwapchainImageViews[SwapchainImageCount] = {};
 
     // Debug messenger
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;

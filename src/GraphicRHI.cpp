@@ -524,12 +524,10 @@ bool GraphicRHI::CreateSwapchain(uint32_t width, uint32_t height)
         selectedPresentMode = vk::PresentModeKHR::eFifo; // always available
     }
 
-    // Determine image count
-    uint32_t desiredImageCount = std::max(2u, surfaceCapabilities.minImageCount);
-    if (surfaceCapabilities.maxImageCount > 0)
-    {
-        desiredImageCount = std::min(desiredImageCount, surfaceCapabilities.maxImageCount);
-    }
+    // Determine image count - we always want exactly 2 images
+    constexpr uint32_t desiredImageCount = GraphicRHI::SwapchainImageCount;
+    SDL_assert(surfaceCapabilities.minImageCount <= desiredImageCount && "Swapchain requires more than 2 images");
+    SDL_assert(surfaceCapabilities.maxImageCount == 0 || surfaceCapabilities.maxImageCount >= desiredImageCount && "Swapchain cannot support 2 images");
 
     // Create swapchain
     vk::SwapchainCreateInfoKHR swapchainCreateInfo{};
@@ -563,20 +561,16 @@ bool GraphicRHI::CreateSwapchain(uint32_t width, uint32_t height)
 
     // Get swapchain images
     const std::vector<vk::Image> vkImages = vkDevice.getSwapchainImagesKHR(vkSwapchain);
-    m_SwapchainImages.clear();
-    m_SwapchainImages.reserve(vkImages.size());
-    for (const vk::Image& img : vkImages)
+    SDL_assert(vkImages.size() == SwapchainImageCount && "Swapchain must have exactly 2 images");
+    for (size_t i = 0; i < SwapchainImageCount; ++i)
     {
-        m_SwapchainImages.push_back(static_cast<VkImage>(img));
+        m_SwapchainImages[i] = static_cast<VkImage>(vkImages[i]);
     }
 
-    SDL_Log("[Init] Swapchain created with %zu images", m_SwapchainImages.size());
+    SDL_Log("[Init] Swapchain created with %u images", SwapchainImageCount);
 
     // Create image views
-    m_SwapchainImageViews.clear();
-    m_SwapchainImageViews.reserve(m_SwapchainImages.size());
-
-    for (size_t i = 0; i < m_SwapchainImages.size(); ++i)
+    for (size_t i = 0; i < SwapchainImageCount; ++i)
     {
         vk::ImageViewCreateInfo imageViewCreateInfo{};
         imageViewCreateInfo.image = static_cast<vk::Image>(m_SwapchainImages[i]);
@@ -602,7 +596,7 @@ bool GraphicRHI::CreateSwapchain(uint32_t width, uint32_t height)
             return false;
         }
 
-        m_SwapchainImageViews.push_back(static_cast<VkImageView>(vkImageView));
+        m_SwapchainImageViews[i] = static_cast<VkImageView>(vkImageView);
     }
 
     SDL_Log("[Init] Swapchain image views created successfully");
@@ -618,17 +612,14 @@ void GraphicRHI::DestroySwapchain()
 
     vk::Device vkDevice = static_cast<vk::Device>(m_Device);
 
-    if (!m_SwapchainImageViews.empty())
+    SDL_Log("[Shutdown] Destroying swapchain image views");
+    for (size_t i = 0; i < SwapchainImageCount; ++i)
     {
-        SDL_Log("[Shutdown] Destroying swapchain image views");
-        for (VkImageView imageView : m_SwapchainImageViews)
+        if (m_SwapchainImageViews[i] != VK_NULL_HANDLE)
         {
-            if (imageView != VK_NULL_HANDLE)
-            {
-                vkDevice.destroyImageView(static_cast<vk::ImageView>(imageView));
-            }
+            vkDevice.destroyImageView(static_cast<vk::ImageView>(m_SwapchainImageViews[i]));
+            m_SwapchainImageViews[i] = VK_NULL_HANDLE;
         }
-        m_SwapchainImageViews.clear();
     }
 
     if (m_Swapchain != VK_NULL_HANDLE)
@@ -638,7 +629,10 @@ void GraphicRHI::DestroySwapchain()
         m_Swapchain = VK_NULL_HANDLE;
     }
 
-    m_SwapchainImages.clear();
+    for (size_t i = 0; i < SwapchainImageCount; ++i)
+    {
+        m_SwapchainImages[i] = VK_NULL_HANDLE;
+    }
     m_SwapchainFormat = VK_FORMAT_UNDEFINED;
     m_SwapchainExtent = {0, 0};
 }
