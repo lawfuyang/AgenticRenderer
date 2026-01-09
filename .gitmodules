@@ -1,0 +1,3 @@
+[submodule "external/nvrhi"]
+	path = external/nvrhi
+	url = https://github.com/lawfuyang/nvrhi
