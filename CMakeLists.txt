@@ -1,8 +1,13 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.16)
 project(AgenticRenderer)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Speed up MSVC builds by enabling multi-processor compilation.
+if(MSVC)
+    add_compile_options(/MP)
+endif()
 
 # ============================================================================
 # Function to download and extract a library from GitHub
@@ -101,6 +106,9 @@ file(GLOB_RECURSE SOURCES
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Precompiled header to speed up builds.
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE src)

@@ -1,22 +1,7 @@
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-
-#include <nvrhi/vulkan.h>
-#include <nvrhi/validation.h>
-
-#ifndef VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#endif
-#include <vulkan/vulkan.hpp>
+#include "pch.h"
 
 // Define the Vulkan dynamic dispatcher - this needs to occur in exactly one cpp file in the program.
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <utility>
-#include <vector>
 
 namespace
 {
