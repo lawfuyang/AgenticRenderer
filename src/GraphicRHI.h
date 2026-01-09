@@ -4,7 +4,7 @@
 
 struct GraphicRHI
 {
-    bool Initialize();
+    bool Initialize(SDL_Window* window);
     void Shutdown();
     bool CreateSurface(SDL_Window* window);
     void DestroySurface();

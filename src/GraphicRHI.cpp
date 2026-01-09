@@ -33,9 +33,14 @@ namespace
     }
 }
 
-bool GraphicRHI::Initialize()
+bool GraphicRHI::Initialize(SDL_Window* window)
 {
     if (!CreateInstance())
+    {
+        return false;
+    }
+
+    if (!CreateSurface(window))
     {
         return false;
     }

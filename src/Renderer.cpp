@@ -120,12 +120,7 @@ bool Renderer::Initialize()
         return false;
     }
 
-    if (!m_RHI.Initialize())
-    {
-        Shutdown();
-        return false;
-    }
-    if (!m_RHI.CreateSurface(m_Window))
+    if (!m_RHI.Initialize(m_Window))
     {
         Shutdown();
         return false;
