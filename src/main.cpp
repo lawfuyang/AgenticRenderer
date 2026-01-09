@@ -144,6 +144,12 @@ int main(int /*argc*/, char* /*argv*/[])
         Shutdown(window, graphicRHI);
         return 1;
     }
+    
+    if (!graphicRHI.CreateSurface(window))
+    {
+        Shutdown(window, graphicRHI);
+        return 1;
+    }
 
     SDL_Log("[Run ] Entering main loop");
 

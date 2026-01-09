@@ -52,6 +52,7 @@ bool GraphicRHI::Initialize()
 void GraphicRHI::Shutdown()
 {
     DestroyLogicalDevice();
+    DestroySurface();
     DestroyInstance();
 }
 
@@ -156,6 +157,43 @@ bool GraphicRHI::CreateLogicalDevice()
 
     SDL_Log("[Init] Vulkan logical device created (graphics family %u)", m_GraphicsQueueFamily);
     return true;
+}
+
+bool GraphicRHI::CreateSurface(SDL_Window* window)
+{
+    if (m_Surface != VK_NULL_HANDLE)
+    {
+        return true; // already created
+    }
+
+    if (!window || m_Instance == VK_NULL_HANDLE)
+    {
+        SDL_Log("SDL window or Vulkan instance not ready for surface creation");
+        SDL_assert(false && "Invalid state for surface creation");
+        return false;
+    }
+
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    if (!SDL_Vulkan_CreateSurface(window, m_Instance, nullptr, &surface))
+    {
+        SDL_Log("SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
+        SDL_assert(false && "SDL_Vulkan_CreateSurface failed");
+        return false;
+    }
+
+    m_Surface = surface;
+    SDL_Log("[Init] Vulkan surface created successfully");
+    return true;
+}
+
+void GraphicRHI::DestroySurface()
+{
+    if (m_Surface != VK_NULL_HANDLE)
+    {
+        SDL_Log("[Shutdown] Destroying Vulkan surface");
+        SDL_Vulkan_DestroySurface(m_Instance, m_Surface, nullptr);
+        m_Surface = VK_NULL_HANDLE;
+    }
 }
 
 void GraphicRHI::DestroyInstance()
