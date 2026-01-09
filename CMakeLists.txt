@@ -83,6 +83,13 @@ set(SDL3_VERSION "3.4.0")
 set(SDL3_URL "https://github.com/libsdl-org/SDL/releases/download/release-${SDL3_VERSION}/SDL3-devel-${SDL3_VERSION}-VC.zip")
 download_library("SDL3" "${SDL3_VERSION}" "${SDL3_URL}" "SDL3-*")
 set(SDL3_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/SDL3")
+if(WIN32)
+    set(SDL3_DLL_PATH "${SDL3_INSTALL_DIR}/SDL3-${SDL3_VERSION}/lib/x64/SDL3.dll")
+    set(SDL3_DLL_LINK "${CMAKE_SOURCE_DIR}/bin/SDL3.dll")
+    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E remove -f "${SDL3_DLL_LINK}")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${SDL3_DLL_PATH}" "${SDL3_DLL_LINK}")
+endif()
 
 # NVRHI Configuration
 set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
@@ -121,13 +128,3 @@ target_link_libraries(${PROJECT_NAME} PRIVATE SDL3)
 # Link NVRHI
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)
-
-# On Windows, place a symlink to the SDL3 runtime DLL next to the executable.
-# Requires Developer Mode or elevation for symlink creation.
-if(WIN32)
-    set(SDL3_DLL_PATH "${SDL3_INSTALL_DIR}/SDL3-${SDL3_VERSION}/lib/x64/SDL3.dll")
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL3.dll"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${SDL3_DLL_PATH}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL3.dll"
-        COMMENT "Symlinking SDL3.dll to output directory")
-endif()
