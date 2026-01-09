@@ -246,29 +246,21 @@ bool GraphicRHI::CreateLogicalDevice()
     vk::PhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
 
-    // Enable Vulkan 1.3 features via pNext chain
-    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{};
-    dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
+    // Enable Vulkan 1.3 features
+    vk::PhysicalDeviceVulkan13Features vulkan13Features{};
+    vulkan13Features.dynamicRendering = VK_TRUE;
+    vulkan13Features.synchronization2 = VK_TRUE;
 
-    vk::PhysicalDeviceSynchronization2Features synchronization2Features{};
-    synchronization2Features.pNext = &dynamicRenderingFeatures;
-    synchronization2Features.synchronization2 = VK_TRUE;
-
-    vk::PhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
-    bufferDeviceAddressFeatures.pNext = &synchronization2Features;
-    bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
-
-    vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
-    descriptorIndexingFeatures.pNext = &bufferDeviceAddressFeatures;
-    descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
-    descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
-
-    vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
-    timelineSemaphoreFeatures.pNext = &descriptorIndexingFeatures;
-    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
+    // Enable Vulkan 1.2 features
+    vk::PhysicalDeviceVulkan12Features vulkan12Features{};
+    vulkan12Features.pNext = &vulkan13Features;
+    vulkan12Features.bufferDeviceAddress = VK_TRUE;
+    vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+    vulkan12Features.timelineSemaphore = VK_TRUE;
 
     vk::DeviceCreateInfo createInfo{};
-    createInfo.pNext = &timelineSemaphoreFeatures;
+    createInfo.pNext = &vulkan12Features;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
