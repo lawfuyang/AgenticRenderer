@@ -2,13 +2,19 @@
 
 #include "pch.h"
 #include "GraphicRHI.h"
+#include <nvrhi/vulkan.h>
 
 struct Renderer
 {
     SDL_Window* m_Window = nullptr;
     GraphicRHI m_RHI{};
+    nvrhi::DeviceHandle m_NvrhiDevice;
 
     bool Initialize();
     void Run();
     void Shutdown();
+
+private:
+    bool CreateNvrhiDevice();
+    void DestroyNvrhiDevice();
 };

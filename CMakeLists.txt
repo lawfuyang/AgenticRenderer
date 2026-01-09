@@ -95,7 +95,22 @@ endif()
 set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX12 OFF CACHE BOOL "" FORCE)
+
+# Silence compiler warnings for external dependencies
+if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W0")
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+endif()
+
 add_subdirectory(external/nvrhi)
+
+# Re-enable compiler warnings for our code
+if(MSVC)
+    string(REPLACE "/W0" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+    string(REPLACE " -w" " -Wall -Wextra", CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+endif()
 
 # Output all executables to /bin/ directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -114,6 +129,11 @@ file(GLOB_RECURSE SOURCES
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+# Define Windows-specific macros to prevent min/max macro conflicts
+if(MSVC)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 # Precompiled header to speed up builds.
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
@@ -127,4 +147,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE SDL3)
 
 # Link NVRHI
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
+target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)

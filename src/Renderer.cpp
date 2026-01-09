@@ -137,6 +137,12 @@ bool Renderer::Initialize()
         return false;
     }
 
+    if (!CreateNvrhiDevice())
+    {
+        Shutdown();
+        return false;
+    }
+
     return true;
 }
 
@@ -191,6 +197,7 @@ void Renderer::Shutdown()
 {
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
 
+    DestroyNvrhiDevice();
     m_RHI.Shutdown();
 
     if (m_Window)
@@ -201,6 +208,47 @@ void Renderer::Shutdown()
 
     SDL_Quit();
     SDL_Log("[Shutdown] Clean exit");
+}
+
+bool Renderer::CreateNvrhiDevice()
+{
+    SDL_Log("[Init] Creating NVRHI Vulkan device");
+
+    nvrhi::vulkan::DeviceDesc deviceDesc;
+    deviceDesc.instance = static_cast<VkInstance>(m_RHI.m_Instance);
+    deviceDesc.physicalDevice = m_RHI.m_PhysicalDevice;
+    deviceDesc.device = m_RHI.m_Device;
+    deviceDesc.graphicsQueue = m_RHI.m_GraphicsQueue;
+    deviceDesc.graphicsQueueIndex = m_RHI.m_GraphicsQueueFamily;
+
+    m_NvrhiDevice = nvrhi::vulkan::createDevice(deviceDesc);
+    if (!m_NvrhiDevice)
+    {
+        SDL_Log("[Init] Failed to create NVRHI device");
+        SDL_assert(false && "Failed to create NVRHI device");
+        return false;
+    }
+
+    SDL_Log("[Init] NVRHI Vulkan device created successfully");
+
+    // Wrap with validation layer if enabled
+    if (Config::Get().m_EnableGPUValidation)
+    {
+        SDL_Log("[Init] Wrapping device with NVRHI validation layer");
+        m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
+        SDL_Log("[Init] NVRHI validation layer enabled");
+    }
+
+    return true;
+}
+
+void Renderer::DestroyNvrhiDevice()
+{
+    if (m_NvrhiDevice)
+    {
+        SDL_Log("[Shutdown] Destroying NVRHI device");
+        m_NvrhiDevice = nullptr;
+    }
 }
 
 int main(int argc, char* argv[])

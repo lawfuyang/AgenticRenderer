@@ -32,7 +32,50 @@ namespace
         }
         return false;
     }
+
+    VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData)
+    {
+        (void)pUserData;
+
+        const char* severityStr = "";
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+            severityStr = "ERROR";
+        else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+            severityStr = "WARNING";
+        else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+            severityStr = "INFO";
+        else
+            severityStr = "VERBOSE";
+
+        const char* typeStr = "";
+        if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+            typeStr = "GENERAL";
+        else if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+            typeStr = "VALIDATION";
+        else if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+            typeStr = "PERFORMANCE";
+
+        SDL_Log("[Vulkan %s][%s] %s (ID: %u)", severityStr, typeStr, pCallbackData->pMessage, pCallbackData->messageIdNumber);
+
+        // Break in debugger on validation errors and warnings
+        if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ||
+            (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT))
+        {
+#ifdef _MSC_VER
+            __debugbreak();
+#else
+            __builtin_trap();
+#endif
+        }
+
+        return VK_FALSE;
+    }
 }
+
 
 bool GraphicRHI::Initialize(SDL_Window* window)
 {
@@ -97,12 +140,17 @@ bool GraphicRHI::CreateInstance()
         extensions.push_back(sdlExtensions[i]);
     }
 
+    // Add debug utils extension if validation is enabled
+    const bool enableValidation = Config::Get().m_EnableGPUValidation;
+    if (enableValidation)
+    {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
     // Enable validation layers (modern unified layer)
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
     };
-
-    const bool enableValidation = Config::Get().m_EnableGPUValidation;
 
     if (enableValidation)
     {
@@ -128,10 +176,6 @@ bool GraphicRHI::CreateInstance()
         }
 
         SDL_Log("[Init] Enabling Vulkan validation layers");
-    }
-    else
-    {
-        SDL_Log("[Init] Validation layers disabled");
     }
 
     vk::ApplicationInfo appInfo{};
@@ -167,6 +211,12 @@ bool GraphicRHI::CreateInstance()
 
     m_Instance = static_cast<VkInstance>(instanceHandle);
     SDL_Log("[Init] Vulkan instance created successfully");
+
+    if (!SetupDebugMessenger())
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -213,8 +263,12 @@ bool GraphicRHI::CreateLogicalDevice()
     descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
     descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
 
+    vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
+    timelineSemaphoreFeatures.pNext = &descriptorIndexingFeatures;
+    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
+
     vk::DeviceCreateInfo createInfo{};
-    createInfo.pNext = &descriptorIndexingFeatures;
+    createInfo.pNext = &timelineSemaphoreFeatures;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
@@ -277,6 +331,8 @@ void GraphicRHI::DestroySurface()
 
 void GraphicRHI::DestroyInstance()
 {
+    DestroyDebugMessenger();
+
     if (m_Instance != VK_NULL_HANDLE)
     {
         SDL_Log("[Shutdown] Destroying Vulkan instance");
@@ -286,6 +342,48 @@ void GraphicRHI::DestroyInstance()
         m_PhysicalDevice = VK_NULL_HANDLE;
         m_GraphicsQueueFamily = VK_QUEUE_FAMILY_IGNORED;
         SDL_Vulkan_UnloadLibrary();
+    }
+}
+
+bool GraphicRHI::SetupDebugMessenger()
+{
+    if (!Config::Get().m_EnableGPUValidation)
+    {
+        return true;
+    }
+
+    vk::Instance vkInstance = static_cast<vk::Instance>(m_Instance);
+
+    vk::DebugUtilsMessengerCreateInfoEXT createInfo{};
+    createInfo.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                                  vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning;
+    createInfo.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+    createInfo.pfnUserCallback = reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(&DebugCallback);
+
+    try
+    {
+        m_DebugMessenger = static_cast<VkDebugUtilsMessengerEXT>(vkInstance.createDebugUtilsMessengerEXT(createInfo));
+        SDL_Log("[Init] Debug messenger created successfully");
+    }
+    catch (const vk::SystemError& e)
+    {
+        SDL_Log("[Init] Failed to create debug messenger: %s", e.what());
+        return false;
+    }
+
+    return true;
+}
+
+void GraphicRHI::DestroyDebugMessenger()
+{
+    if (m_DebugMessenger != VK_NULL_HANDLE && m_Instance != VK_NULL_HANDLE)
+    {
+        SDL_Log("[Shutdown] Destroying debug messenger");
+        vk::Instance vkInstance = static_cast<vk::Instance>(m_Instance);
+        vkInstance.destroyDebugUtilsMessengerEXT(static_cast<vk::DebugUtilsMessengerEXT>(m_DebugMessenger));
+        m_DebugMessenger = VK_NULL_HANDLE;
     }
 }
 
@@ -392,7 +490,7 @@ bool GraphicRHI::CreateSwapchain(uint32_t width, uint32_t height)
 
     // Choose swap extent
     VkExtent2D swapExtent;
-    if (surfaceCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+    if (surfaceCapabilities.currentExtent.width != UINT32_MAX)
     {
         swapExtent = static_cast<VkExtent2D>(surfaceCapabilities.currentExtent);
     }

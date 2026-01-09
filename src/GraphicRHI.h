@@ -25,9 +25,14 @@ struct GraphicRHI
     std::vector<VkImage> m_SwapchainImages;
     std::vector<VkImageView> m_SwapchainImageViews;
 
+    // Debug messenger
+    VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+
 private:
     bool CreateInstance();
     void DestroyInstance();
+    bool SetupDebugMessenger();
+    void DestroyDebugMessenger();
     VkPhysicalDevice ChoosePhysicalDevice();
     bool CreateLogicalDevice();
     void DestroyLogicalDevice();
