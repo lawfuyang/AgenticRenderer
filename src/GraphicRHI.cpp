@@ -150,7 +150,25 @@ bool GraphicRHI::CreateLogicalDevice()
     vk::PhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
 
+    // Enable Vulkan 1.3 features via pNext chain
+    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{};
+    dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
+
+    vk::PhysicalDeviceSynchronization2Features synchronization2Features{};
+    synchronization2Features.pNext = &dynamicRenderingFeatures;
+    synchronization2Features.synchronization2 = VK_TRUE;
+
+    vk::PhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
+    bufferDeviceAddressFeatures.pNext = &synchronization2Features;
+    bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+
+    vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+    descriptorIndexingFeatures.pNext = &bufferDeviceAddressFeatures;
+    descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
+
     vk::DeviceCreateInfo createInfo{};
+    createInfo.pNext = &descriptorIndexingFeatures;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
