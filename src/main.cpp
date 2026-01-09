@@ -1,166 +1,11 @@
 #include "pch.h"
-
-// Define the Vulkan dynamic dispatcher - this needs to occur in exactly one cpp file in the program.
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+#include "GraphicRHI.h"
 
 namespace
 {
     constexpr uint32_t kTargetFPS = 200;
     constexpr uint32_t kFrameDurationMs = SDL_MS_PER_SECOND / kTargetFPS;
 
-    VkInstance CreateVulkanInstance()
-    {
-        SDL_Log("[Init] Creating Vulkan instance");
-
-        // Load Vulkan library through SDL3
-        if (!SDL_Vulkan_LoadLibrary(nullptr))
-        {
-            SDL_Log("SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
-            SDL_assert(false && "SDL_Vulkan_LoadLibrary failed");
-            return VK_NULL_HANDLE;
-        }
-
-        // Initialize the dynamic loader
-        vk::detail::DynamicLoader dl;
-        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = 
-            dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
-
-        // Get required instance extensions from SDL3
-        uint32_t sdlExtensionCount = 0;
-        const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
-        if (!sdlExtensions)
-        {
-            SDL_Log("SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
-            SDL_assert(false && "SDL_Vulkan_GetInstanceExtensions failed");
-            return VK_NULL_HANDLE;
-        }
-
-        SDL_Log("[Init] SDL3 requires %u Vulkan instance extensions:", sdlExtensionCount);
-        std::vector<const char*> extensions;
-        for (uint32_t i = 0; i < sdlExtensionCount; ++i)
-        {
-            SDL_Log("[Init]   - %s", sdlExtensions[i]);
-            extensions.push_back(sdlExtensions[i]);
-        }
-
-        // Application info
-        vk::ApplicationInfo appInfo{};
-        appInfo.pApplicationName = "Agentic Renderer";
-        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName = "No Engine";
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_3;
-
-        // Instance create info
-        vk::InstanceCreateInfo createInfo{};
-        createInfo.pApplicationInfo = &appInfo;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        createInfo.ppEnabledExtensionNames = extensions.data();
-        createInfo.enabledLayerCount = 0; // No validation layers for now
-
-        // Create instance
-        vk::Instance instance = vk::createInstance(createInfo);
-        if (!instance)
-        {
-            SDL_Log("vkCreateInstance failed");
-            SDL_assert(false && "vkCreateInstance failed");
-            return VK_NULL_HANDLE;
-        }
-
-        // Initialize the dispatcher with the instance
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
-
-        SDL_Log("[Init] Vulkan instance created successfully");
-        return static_cast<VkInstance>(instance);
-    }
-
-    void DestroyVulkanInstance(VkInstance instance)
-    {
-        if (instance != VK_NULL_HANDLE)
-        {
-            SDL_Log("[Shutdown] Destroying Vulkan instance");
-            vk::Instance vkInstance = static_cast<vk::Instance>(instance);
-            vkInstance.destroy();
-            SDL_Vulkan_UnloadLibrary();
-        }
-    }
-
-    const char* PhysicalDeviceTypeString(vk::PhysicalDeviceType type)
-    {
-        switch (type)
-        {
-        case vk::PhysicalDeviceType::eDiscreteGpu: return "Discrete GPU";
-        case vk::PhysicalDeviceType::eIntegratedGpu: return "Integrated GPU";
-        case vk::PhysicalDeviceType::eVirtualGpu: return "Virtual GPU";
-        case vk::PhysicalDeviceType::eCpu: return "CPU";
-        default: return "Other";
-        }
-    }
-
-    bool SupportsGraphicsQueue(vk::PhysicalDevice device)
-    {
-        const std::vector<vk::QueueFamilyProperties> queueFamilies = device.getQueueFamilyProperties();
-        for (const vk::QueueFamilyProperties& qf : queueFamilies)
-        {
-            if ((qf.queueFlags & vk::QueueFlagBits::eGraphics) != vk::QueueFlagBits{} && qf.queueCount > 0)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    VkPhysicalDevice ChoosePhysicalDevice(VkInstance instance)
-    {
-        SDL_Log("[Init] Selecting Vulkan physical device");
-
-        vk::Instance vkInstance = static_cast<vk::Instance>(instance);
-        const std::vector<vk::PhysicalDevice> devices = vkInstance.enumeratePhysicalDevices();
-
-        if (devices.empty())
-        {
-            SDL_Log("No Vulkan physical devices found");
-            SDL_assert(false && "No Vulkan physical devices found");
-            return VK_NULL_HANDLE;
-        }
-
-        vk::PhysicalDevice selected{};
-
-        for (vk::PhysicalDevice device : devices)
-        {
-            if (!SupportsGraphicsQueue(device))
-            {
-                const vk::PhysicalDeviceProperties props = device.getProperties();
-                SDL_Log("[Init] Skipping device without graphics queue: %s (%s)", props.deviceName, PhysicalDeviceTypeString(props.deviceType));
-                continue;
-            }
-
-            const vk::PhysicalDeviceProperties props = device.getProperties();
-            if (!selected)
-            {
-                selected = device;
-            }
-
-            if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
-            {
-                selected = device;
-                break; // prefer the first discrete GPU we find
-            }
-        }
-
-        if (!selected)
-        {
-            SDL_Log("No suitable Vulkan physical device with a graphics queue was found");
-            SDL_assert(false && "No suitable Vulkan physical device found");
-            return VK_NULL_HANDLE;
-        }
-
-        const vk::PhysicalDeviceProperties chosenProps = selected.getProperties();
-        SDL_Log("[Init] Selected device: %s (%s)", chosenProps.deviceName, PhysicalDeviceTypeString(chosenProps.deviceType));
-
-        return static_cast<VkPhysicalDevice>(selected);
-    }
 
     void HandleInput(const SDL_Event& event)
     {
@@ -266,12 +111,12 @@ namespace
         return window;
     }
 
-    void Shutdown(SDL_Window* window, VkInstance instance)
+    void Shutdown(SDL_Window* window, GraphicRHI& rhi)
     {
         SDL_Log("[Shutdown] Destroying window and quitting SDL");
-        
-        DestroyVulkanInstance(instance);
-        
+
+        rhi.Shutdown();
+
         if (window)
         {
             SDL_DestroyWindow(window);
@@ -286,9 +131,18 @@ int main(int /*argc*/, char* /*argv*/[])
     InitSDL();
 
     SDL_Window* window = CreateWindowScaled();
-    VkInstance vkInstance = CreateVulkanInstance();
-    VkPhysicalDevice vkPhysicalDevice = ChoosePhysicalDevice(vkInstance);
-    (void)vkPhysicalDevice; // reserved for future device creation
+    if (!window)
+    {
+        SDL_Quit();
+        return 1;
+    }
+
+    GraphicRHI graphicRHI{};
+    if (!graphicRHI.Initialize())
+    {
+        Shutdown(window, graphicRHI);
+        return 1;
+    }
 
     SDL_Log("[Run ] Entering main loop");
 
@@ -329,6 +183,6 @@ int main(int /*argc*/, char* /*argv*/[])
         }
     }
 
-    Shutdown(window, vkInstance);
+    Shutdown(window, graphicRHI);
     return 0;
 }
