@@ -96,6 +96,34 @@ bool GraphicRHI::CreateInstance()
         extensions.push_back(sdlExtensions[i]);
     }
 
+    // Enable validation layers (modern unified layer)
+    const std::vector<const char*> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"
+    };
+
+    // Check if validation layers are available
+    const std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
+    for (const char* layerName : validationLayers)
+    {
+        bool found = false;
+        for (const vk::LayerProperties& layerProps : availableLayers)
+        {
+            if (std::strcmp(layerName, layerProps.layerName) == 0)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            SDL_Log("[Init] Validation layer not available: %s", layerName);
+            SDL_assert(false && "Required validation layer not available");
+            return false;
+        }
+    }
+
+    SDL_Log("[Init] Enabling Vulkan validation layers");
+
     vk::ApplicationInfo appInfo{};
     appInfo.pApplicationName = "Agentic Renderer";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -107,7 +135,8 @@ bool GraphicRHI::CreateInstance()
     createInfo.pApplicationInfo = &appInfo;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
-    createInfo.enabledLayerCount = 0;
+    createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+    createInfo.ppEnabledLayerNames = validationLayers.data();
 
     vk::Instance instanceHandle = vk::createInstance(createInfo);
     if (!instanceHandle)
