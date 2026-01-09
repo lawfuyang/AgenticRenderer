@@ -104,15 +104,20 @@ namespace
         SDL_Log("[Init] SDL initialized");
     }
 
-    std::pair<int, int> ChooseWindowSize()
+    void ChooseWindowSize(int* outWidth, int* outHeight)
     {
+        int windowW = 1280;
+        int windowH = 720;
+
         const SDL_DisplayID primaryDisplay = SDL_GetPrimaryDisplay();
         SDL_Rect usableBounds{};
         if (!SDL_GetDisplayUsableBounds(primaryDisplay, &usableBounds))
         {
             SDL_Log("SDL_GetDisplayUsableBounds failed: %s", SDL_GetError());
             SDL_assert(false && "SDL_GetDisplayUsableBounds failed");
-            return {1280, 720};
+            *outWidth = windowW;
+            *outHeight = windowH;
+            return;
         }
 
         int maxFitW = usableBounds.w;
@@ -126,20 +131,21 @@ namespace
             maxFitH = (maxFitW * 9) / 16;
         }
 
-        const std::array<std::pair<int, int>, 5> kStandard16x9 = {
-            std::pair<int, int>{3840, 2160},
-            std::pair<int, int>{2560, 1440},
-            std::pair<int, int>{1920, 1080},
-            std::pair<int, int>{1600, 900},
-            std::pair<int, int>{1280, 720},
+        constexpr int kStandard16x9[][2] = {
+            {3840, 2160},
+            {2560, 1440},
+            {1920, 1080},
+            {1600, 900},
+            {1280, 720},
         };
+        constexpr int kStandard16x9Count = static_cast<int>(sizeof(kStandard16x9) / sizeof(kStandard16x9[0]));
 
-        int windowW = maxFitW;
-        int windowH = maxFitH;
+        windowW = maxFitW;
+        windowH = maxFitH;
         int firstFitIndex = -1;
-        for (int i = 0; i < static_cast<int>(kStandard16x9.size()); ++i)
+        for (int i = 0; i < kStandard16x9Count; ++i)
         {
-            if (kStandard16x9[i].first <= maxFitW && kStandard16x9[i].second <= maxFitH)
+            if (kStandard16x9[i][0] <= maxFitW && kStandard16x9[i][1] <= maxFitH)
             {
                 firstFitIndex = i;
                 break;
@@ -149,24 +155,27 @@ namespace
         if (firstFitIndex >= 0)
         {
             int chosenIndex = firstFitIndex;
-            const bool fillsUsableWidth  = kStandard16x9[firstFitIndex].first  == maxFitW;
-            const bool fillsUsableHeight = kStandard16x9[firstFitIndex].second == maxFitH;
-            if (fillsUsableWidth && fillsUsableHeight && firstFitIndex + 1 < static_cast<int>(kStandard16x9.size()))
+            const bool fillsUsableWidth  = kStandard16x9[firstFitIndex][0] == maxFitW;
+            const bool fillsUsableHeight = kStandard16x9[firstFitIndex][1] == maxFitH;
+            if (fillsUsableWidth && fillsUsableHeight && firstFitIndex + 1 < kStandard16x9Count)
             {
                 chosenIndex = firstFitIndex + 1; // step down only when we exactly fill usable space
             }
 
-            windowW = kStandard16x9[chosenIndex].first;
-            windowH = kStandard16x9[chosenIndex].second;
+            windowW = kStandard16x9[chosenIndex][0];
+            windowH = kStandard16x9[chosenIndex][1];
         }
 
         SDL_Log("[Init] Usable bounds: %dx%d, max 16:9 fit: %dx%d, chosen: %dx%d", usableBounds.w, usableBounds.h, maxFitW, maxFitH, windowW, windowH);
-        return {windowW, windowH};
+        *outWidth = windowW;
+        *outHeight = windowH;
     }
 
     SDL_Window* CreateWindowScaled()
     {
-        const auto [windowW, windowH] = ChooseWindowSize();
+        int windowW = 0;
+        int windowH = 0;
+        ChooseWindowSize(&windowW, &windowH);
 
         SDL_Log("[Init] Creating window");
         SDL_Window* window = SDL_CreateWindow("Agentic Renderer", windowW, windowH, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
