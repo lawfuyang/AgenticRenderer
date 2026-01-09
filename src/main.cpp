@@ -86,6 +86,82 @@ namespace
         }
     }
 
+    const char* PhysicalDeviceTypeString(vk::PhysicalDeviceType type)
+    {
+        switch (type)
+        {
+        case vk::PhysicalDeviceType::eDiscreteGpu: return "Discrete GPU";
+        case vk::PhysicalDeviceType::eIntegratedGpu: return "Integrated GPU";
+        case vk::PhysicalDeviceType::eVirtualGpu: return "Virtual GPU";
+        case vk::PhysicalDeviceType::eCpu: return "CPU";
+        default: return "Other";
+        }
+    }
+
+    bool SupportsGraphicsQueue(vk::PhysicalDevice device)
+    {
+        const std::vector<vk::QueueFamilyProperties> queueFamilies = device.getQueueFamilyProperties();
+        for (const vk::QueueFamilyProperties& qf : queueFamilies)
+        {
+            if ((qf.queueFlags & vk::QueueFlagBits::eGraphics) != vk::QueueFlagBits{} && qf.queueCount > 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    VkPhysicalDevice ChoosePhysicalDevice(VkInstance instance)
+    {
+        SDL_Log("[Init] Selecting Vulkan physical device");
+
+        vk::Instance vkInstance = static_cast<vk::Instance>(instance);
+        const std::vector<vk::PhysicalDevice> devices = vkInstance.enumeratePhysicalDevices();
+
+        if (devices.empty())
+        {
+            SDL_Log("No Vulkan physical devices found");
+            SDL_assert(false && "No Vulkan physical devices found");
+            return VK_NULL_HANDLE;
+        }
+
+        vk::PhysicalDevice selected{};
+
+        for (vk::PhysicalDevice device : devices)
+        {
+            if (!SupportsGraphicsQueue(device))
+            {
+                const vk::PhysicalDeviceProperties props = device.getProperties();
+                SDL_Log("[Init] Skipping device without graphics queue: %s (%s)", props.deviceName, PhysicalDeviceTypeString(props.deviceType));
+                continue;
+            }
+
+            const vk::PhysicalDeviceProperties props = device.getProperties();
+            if (!selected)
+            {
+                selected = device;
+            }
+
+            if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+            {
+                selected = device;
+                break; // prefer the first discrete GPU we find
+            }
+        }
+
+        if (!selected)
+        {
+            SDL_Log("No suitable Vulkan physical device with a graphics queue was found");
+            SDL_assert(false && "No suitable Vulkan physical device found");
+            return VK_NULL_HANDLE;
+        }
+
+        const vk::PhysicalDeviceProperties chosenProps = selected.getProperties();
+        SDL_Log("[Init] Selected device: %s (%s)", chosenProps.deviceName, PhysicalDeviceTypeString(chosenProps.deviceType));
+
+        return static_cast<VkPhysicalDevice>(selected);
+    }
+
     void HandleInput(const SDL_Event& event)
     {
         (void)event;
@@ -211,6 +287,8 @@ int main(int /*argc*/, char* /*argv*/[])
 
     SDL_Window* window = CreateWindowScaled();
     VkInstance vkInstance = CreateVulkanInstance();
+    VkPhysicalDevice vkPhysicalDevice = ChoosePhysicalDevice(vkInstance);
+    (void)vkPhysicalDevice; // reserved for future device creation
 
     SDL_Log("[Run ] Entering main loop");
 
