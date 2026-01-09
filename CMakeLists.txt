@@ -4,6 +4,11 @@ project(AgenticRenderer)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Speed up MSVC builds by enabling multi-processor compilation.
+if(MSVC)
+    add_compile_options(/MP)
+endif()
+
 # ============================================================================
 # Function to download and extract a library from GitHub
 # ============================================================================
