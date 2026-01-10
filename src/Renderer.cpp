@@ -2,88 +2,13 @@
 #include "Utilities.h"
 #include "Config.h"
 
+#include <SDL3/SDL_main.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
 namespace
 {
-    nvrhi::Format VkFormatToNvrhiFormat(VkFormat vkFormat)
-    {
-        switch (vkFormat)
-        {
-        case VK_FORMAT_UNDEFINED:                      return nvrhi::Format::UNKNOWN;
-        case VK_FORMAT_R8_UINT:                        return nvrhi::Format::R8_UINT;
-        case VK_FORMAT_R8_SINT:                        return nvrhi::Format::R8_SINT;
-        case VK_FORMAT_R8_UNORM:                       return nvrhi::Format::R8_UNORM;
-        case VK_FORMAT_R8_SNORM:                       return nvrhi::Format::R8_SNORM;
-        case VK_FORMAT_R8G8_UINT:                      return nvrhi::Format::RG8_UINT;
-        case VK_FORMAT_R8G8_SINT:                      return nvrhi::Format::RG8_SINT;
-        case VK_FORMAT_R8G8_UNORM:                     return nvrhi::Format::RG8_UNORM;
-        case VK_FORMAT_R8G8_SNORM:                     return nvrhi::Format::RG8_SNORM;
-        case VK_FORMAT_R16_UINT:                       return nvrhi::Format::R16_UINT;
-        case VK_FORMAT_R16_SINT:                       return nvrhi::Format::R16_SINT;
-        case VK_FORMAT_R16_UNORM:                      return nvrhi::Format::R16_UNORM;
-        case VK_FORMAT_R16_SNORM:                      return nvrhi::Format::R16_SNORM;
-        case VK_FORMAT_R16_SFLOAT:                     return nvrhi::Format::R16_FLOAT;
-        case VK_FORMAT_A4R4G4B4_UNORM_PACK16:          return nvrhi::Format::BGRA4_UNORM;
-        case VK_FORMAT_B5G6R5_UNORM_PACK16:            return nvrhi::Format::B5G6R5_UNORM;
-        case VK_FORMAT_B5G5R5A1_UNORM_PACK16:          return nvrhi::Format::B5G5R5A1_UNORM;
-        case VK_FORMAT_R8G8B8A8_UINT:                  return nvrhi::Format::RGBA8_UINT;
-        case VK_FORMAT_R8G8B8A8_SINT:                  return nvrhi::Format::RGBA8_SINT;
-        case VK_FORMAT_R8G8B8A8_UNORM:                 return nvrhi::Format::RGBA8_UNORM;
-        case VK_FORMAT_R8G8B8A8_SNORM:                 return nvrhi::Format::RGBA8_SNORM;
-        case VK_FORMAT_B8G8R8A8_UNORM:                 return nvrhi::Format::BGRA8_UNORM;
-        case VK_FORMAT_R8G8B8A8_SRGB:                  return nvrhi::Format::SRGBA8_UNORM;
-        case VK_FORMAT_B8G8R8A8_SRGB:                  return nvrhi::Format::SBGRA8_UNORM;
-        case VK_FORMAT_A2B10G10R10_UNORM_PACK32:       return nvrhi::Format::R10G10B10A2_UNORM;
-        case VK_FORMAT_B10G11R11_UFLOAT_PACK32:        return nvrhi::Format::R11G11B10_FLOAT;
-        case VK_FORMAT_R16G16_UINT:                    return nvrhi::Format::RG16_UINT;
-        case VK_FORMAT_R16G16_SINT:                    return nvrhi::Format::RG16_SINT;
-        case VK_FORMAT_R16G16_UNORM:                   return nvrhi::Format::RG16_UNORM;
-        case VK_FORMAT_R16G16_SNORM:                   return nvrhi::Format::RG16_SNORM;
-        case VK_FORMAT_R16G16_SFLOAT:                  return nvrhi::Format::RG16_FLOAT;
-        case VK_FORMAT_R32_UINT:                       return nvrhi::Format::R32_UINT;
-        case VK_FORMAT_R32_SINT:                       return nvrhi::Format::R32_SINT;
-        case VK_FORMAT_R32_SFLOAT:                     return nvrhi::Format::R32_FLOAT;
-        case VK_FORMAT_R16G16B16A16_UINT:              return nvrhi::Format::RGBA16_UINT;
-        case VK_FORMAT_R16G16B16A16_SINT:              return nvrhi::Format::RGBA16_SINT;
-        case VK_FORMAT_R16G16B16A16_SFLOAT:            return nvrhi::Format::RGBA16_FLOAT;
-        case VK_FORMAT_R16G16B16A16_UNORM:             return nvrhi::Format::RGBA16_UNORM;
-        case VK_FORMAT_R16G16B16A16_SNORM:             return nvrhi::Format::RGBA16_SNORM;
-        case VK_FORMAT_R32G32_UINT:                    return nvrhi::Format::RG32_UINT;
-        case VK_FORMAT_R32G32_SINT:                    return nvrhi::Format::RG32_SINT;
-        case VK_FORMAT_R32G32_SFLOAT:                  return nvrhi::Format::RG32_FLOAT;
-        case VK_FORMAT_R32G32B32_UINT:                 return nvrhi::Format::RGB32_UINT;
-        case VK_FORMAT_R32G32B32_SINT:                 return nvrhi::Format::RGB32_SINT;
-        case VK_FORMAT_R32G32B32_SFLOAT:               return nvrhi::Format::RGB32_FLOAT;
-        case VK_FORMAT_R32G32B32A32_UINT:              return nvrhi::Format::RGBA32_UINT;
-        case VK_FORMAT_R32G32B32A32_SINT:              return nvrhi::Format::RGBA32_SINT;
-        case VK_FORMAT_R32G32B32A32_SFLOAT:            return nvrhi::Format::RGBA32_FLOAT;
-        case VK_FORMAT_D16_UNORM:                      return nvrhi::Format::D16;
-        case VK_FORMAT_D24_UNORM_S8_UINT:             return nvrhi::Format::D24S8;
-        case VK_FORMAT_D32_SFLOAT:                     return nvrhi::Format::D32;
-        case VK_FORMAT_D32_SFLOAT_S8_UINT:            return nvrhi::Format::D32S8;
-        case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:          return nvrhi::Format::BC1_UNORM;
-        case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:           return nvrhi::Format::BC1_UNORM_SRGB;
-        case VK_FORMAT_BC2_UNORM_BLOCK:               return nvrhi::Format::BC2_UNORM;
-        case VK_FORMAT_BC2_SRGB_BLOCK:                return nvrhi::Format::BC2_UNORM_SRGB;
-        case VK_FORMAT_BC3_UNORM_BLOCK:               return nvrhi::Format::BC3_UNORM;
-        case VK_FORMAT_BC3_SRGB_BLOCK:                return nvrhi::Format::BC3_UNORM_SRGB;
-        case VK_FORMAT_BC4_UNORM_BLOCK:               return nvrhi::Format::BC4_UNORM;
-        case VK_FORMAT_BC4_SNORM_BLOCK:               return nvrhi::Format::BC4_SNORM;
-        case VK_FORMAT_BC5_UNORM_BLOCK:               return nvrhi::Format::BC5_UNORM;
-        case VK_FORMAT_BC5_SNORM_BLOCK:               return nvrhi::Format::BC5_SNORM;
-        case VK_FORMAT_BC6H_UFLOAT_BLOCK:             return nvrhi::Format::BC6H_UFLOAT;
-        case VK_FORMAT_BC6H_SFLOAT_BLOCK:             return nvrhi::Format::BC6H_SFLOAT;
-        case VK_FORMAT_BC7_UNORM_BLOCK:               return nvrhi::Format::BC7_UNORM;
-        case VK_FORMAT_BC7_SRGB_BLOCK:                return nvrhi::Format::BC7_UNORM_SRGB;
-        default:
-            SDL_Log("[Warning] Unsupported VkFormat: %d", vkFormat);
-            return nvrhi::Format::UNKNOWN;
-        }
-    }
-
     void HandleInput(const SDL_Event& event)
     {
         (void)event;
@@ -447,7 +372,7 @@ bool Renderer::CreateSwapchainTextures()
     SDL_Log("[Init] Creating NVRHI swap chain texture handles");
 
     // Convert VkFormat to nvrhi::Format
-    const nvrhi::Format nvrhiFormat = VkFormatToNvrhiFormat(m_RHI.m_SwapchainFormat);
+    const nvrhi::Format nvrhiFormat = GraphicRHI::VkFormatToNvrhiFormat(m_RHI.m_SwapchainFormat);
     if (nvrhiFormat == nvrhi::Format::UNKNOWN)
     {
         SDL_Log("[Init] Unsupported swapchain format: %d", m_RHI.m_SwapchainFormat);

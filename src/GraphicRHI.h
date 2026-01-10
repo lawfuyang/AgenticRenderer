@@ -29,6 +29,9 @@ struct GraphicRHI
     // Debug messenger
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
 
+    // Format conversion utilities
+    static nvrhi::Format VkFormatToNvrhiFormat(VkFormat vkFormat);
+
 private:
     bool CreateInstance();
     void DestroyInstance();
