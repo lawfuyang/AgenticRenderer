@@ -31,6 +31,10 @@ struct GraphicRHI
 
     // Format conversion utilities
     static nvrhi::Format VkFormatToNvrhiFormat(VkFormat vkFormat);
+    
+    // Extension accessors for code reuse
+    const std::vector<const char*>& GetInstanceExtensions() const { return m_InstanceExtensions; }
+    const std::vector<const char*>& GetDeviceExtensions() const { return m_DeviceExtensions; }
 
 private:
     bool CreateInstance();
@@ -40,4 +44,7 @@ private:
     VkPhysicalDevice ChoosePhysicalDevice();
     bool CreateLogicalDevice();
     void DestroyLogicalDevice();
+    
+    std::vector<const char*> m_InstanceExtensions;
+    std::vector<const char*> m_DeviceExtensions;
 };

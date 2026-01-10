@@ -346,6 +346,12 @@ bool Renderer::CreateNvrhiDevice()
     deviceDesc.device = m_RHI.m_Device;
     deviceDesc.graphicsQueue = m_RHI.m_GraphicsQueue;
     deviceDesc.graphicsQueueIndex = m_RHI.m_GraphicsQueueFamily;
+    
+    // Provide instance and device extensions for NVRHI to query support
+    deviceDesc.instanceExtensions = const_cast<const char**>(m_RHI.GetInstanceExtensions().data());
+    deviceDesc.numInstanceExtensions = m_RHI.GetInstanceExtensions().size();
+    deviceDesc.deviceExtensions = const_cast<const char**>(m_RHI.GetDeviceExtensions().data());
+    deviceDesc.numDeviceExtensions = m_RHI.GetDeviceExtensions().size();
 
     m_NvrhiDevice = nvrhi::vulkan::createDevice(deviceDesc);
     if (!m_NvrhiDevice)

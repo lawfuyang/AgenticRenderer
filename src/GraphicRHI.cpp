@@ -132,19 +132,19 @@ bool GraphicRHI::CreateInstance()
     }
 
     SDL_Log("[Init] SDL3 requires %u Vulkan instance extensions:", sdlExtensionCount);
-    std::vector<const char*> extensions;
-    extensions.reserve(sdlExtensionCount);
+    m_InstanceExtensions.clear();
+    m_InstanceExtensions.reserve(sdlExtensionCount);
     for (uint32_t i = 0; i < sdlExtensionCount; ++i)
     {
         SDL_Log("[Init]   - %s", sdlExtensions[i]);
-        extensions.push_back(sdlExtensions[i]);
+        m_InstanceExtensions.push_back(sdlExtensions[i]);
     }
 
     // Add debug utils extension if validation is enabled
     const bool enableValidation = Config::Get().m_EnableGPUValidation;
     if (enableValidation)
     {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        m_InstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
     // Enable validation layers (modern unified layer)
@@ -187,8 +187,8 @@ bool GraphicRHI::CreateInstance()
 
     vk::InstanceCreateInfo createInfo{};
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(m_InstanceExtensions.size());
+    createInfo.ppEnabledExtensionNames = m_InstanceExtensions.data();
     if (enableValidation)
     {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -238,9 +238,8 @@ bool GraphicRHI::CreateLogicalDevice()
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
     // Enable device extensions
-    const std::vector<const char*> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
+    m_DeviceExtensions.clear();
+    m_DeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
     // Enable device features
     vk::PhysicalDeviceFeatures deviceFeatures{};
@@ -263,8 +262,8 @@ bool GraphicRHI::CreateLogicalDevice()
     createInfo.pNext = &vulkan12Features;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(m_DeviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = m_DeviceExtensions.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     vk::Device vkDevice = vkPhysical.createDevice(createInfo);
