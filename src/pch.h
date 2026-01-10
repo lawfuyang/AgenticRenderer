@@ -4,7 +4,13 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 

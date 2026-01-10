@@ -40,6 +40,123 @@ namespace
         }
     };
 
+    // Read a binary file into memory
+    std::vector<uint8_t> ReadBinaryFile(const std::filesystem::path& path)
+    {
+        std::ifstream file{path, std::ios::binary | std::ios::ate};
+        if (!file.is_open())
+        {
+            SDL_Log("[Shader] Failed to open file: %s", path.string().c_str());
+            return {};
+        }
+
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::vector<uint8_t> buffer(static_cast<size_t>(size));
+        if (!file.read(reinterpret_cast<char*>(buffer.data()), size))
+        {
+            SDL_Log("[Shader] Failed to read file: %s", path.string().c_str());
+            return {};
+        }
+
+        SDL_Log("[Shader] Loaded %zu bytes from %s", buffer.size(), path.string().c_str());
+        return buffer;
+    }
+
+    // Parse a single line from shaders.cfg and extract shader metadata
+    struct ShaderMetadata
+    {
+        std::filesystem::path sourcePath;
+        std::string entryPoint;
+        nvrhi::ShaderType shaderType = nvrhi::ShaderType::None;
+    };
+
+    // ShaderMake naming: <sourcefile_without_ext>_<EntryPoint>.spirv
+    std::filesystem::path GetShaderOutputPath(const std::filesystem::path& sourcePath, std::string_view entryPoint)
+    {
+        std::filesystem::path filename = sourcePath.stem();
+        std::string outName = filename.string() + "_" + std::string(entryPoint) + ".spirv";
+        return std::filesystem::path{"bin"} / "shaders" / outName;
+    }
+
+    // Parse shaders.cfg to extract shader entries
+    std::vector<ShaderMetadata> ParseShaderConfig(std::string_view configPath)
+    {
+        std::vector<ShaderMetadata> shaders;
+        std::ifstream configFile{std::filesystem::path{configPath}};
+
+        if (!configFile.is_open())
+        {
+            SDL_Log("[Shader] Failed to open config: %.*s", static_cast<int>(configPath.size()), configPath.data());
+            return shaders;
+        }
+
+        std::string line;
+        while (std::getline(configFile, line))
+        {
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '/' || line[0] == '#')
+                continue;
+
+            // Trim leading/trailing whitespace
+            size_t start = line.find_first_not_of(" \t\r\n");
+            size_t end = line.find_last_not_of(" \t\r\n");
+            if (start == std::string::npos)
+                continue;
+
+            line = line.substr(start, end - start + 1);
+
+            // Parse: <shader_path> -T <profile> -E <entry> [other options]
+            std::istringstream iss{line};
+            std::string token;
+            ShaderMetadata metadata;
+            bool hasType = false;
+            bool hasEntry = false;
+
+            iss >> token;
+            metadata.sourcePath = std::filesystem::path{token};
+
+            while (iss >> token)
+            {
+                if (token == "-T" || token == "--profile")
+                {
+                    iss >> token;
+                    if (token == "vs")
+                        metadata.shaderType = nvrhi::ShaderType::Vertex;
+                    else if (token == "ps")
+                        metadata.shaderType = nvrhi::ShaderType::Pixel;
+                    else if (token == "gs")
+                        metadata.shaderType = nvrhi::ShaderType::Geometry;
+                    else if (token == "cs")
+                        metadata.shaderType = nvrhi::ShaderType::Compute;
+                    else if (token == "hs")
+                        metadata.shaderType = nvrhi::ShaderType::Hull;
+                    else if (token == "ds")
+                        metadata.shaderType = nvrhi::ShaderType::Domain;
+                    hasType = true;
+                }
+                else if (token == "-E" || token == "--entryPoint")
+                {
+                    iss >> metadata.entryPoint;
+                    hasEntry = true;
+                }
+            }
+
+            if (hasType && hasEntry)
+            {
+                shaders.push_back(metadata);
+                SDL_Log("[Shader] Parsed: %s (%s) -> entry: %s", metadata.sourcePath.generic_string().c_str(), 
+                        metadata.shaderType == nvrhi::ShaderType::Vertex ? "VS" : 
+                        metadata.shaderType == nvrhi::ShaderType::Pixel ? "PS" : "?",
+                        metadata.entryPoint.c_str());
+            }
+        }
+
+        SDL_Log("[Shader] Parsed %zu shader entries from config", shaders.size());
+        return shaders;
+    }
+
     void HandleInput(const SDL_Event& event)
     {
         (void)event;
@@ -206,6 +323,71 @@ void Renderer::RenderImGuiFrame()
     ImGui::Render();
 }
 
+bool Renderer::LoadShaders()
+{
+    SDL_Log("[Init] Loading compiled shaders from config");
+
+    // Parse shaders.cfg to get list of shaders to load
+    const std::filesystem::path configPath = std::filesystem::path{"src"} / "shaders" / "shaders.cfg";
+    std::vector<ShaderMetadata> shaderMetadata = ParseShaderConfig(configPath.generic_string());
+    if (shaderMetadata.empty())
+    {
+        SDL_Log("[Init] No shaders to load from config");
+        return true; // Not an error, just no shaders defined yet
+    }
+
+    // Load each shader
+    for (const ShaderMetadata& metadata : shaderMetadata)
+    {
+        // Determine output filename based on ShaderMake naming convention
+        std::filesystem::path outputPath = GetShaderOutputPath(metadata.sourcePath, std::string_view{metadata.entryPoint});
+
+        // Read the compiled binary
+        std::vector<uint8_t> binary = ReadBinaryFile(outputPath);
+        if (binary.empty())
+        {
+            SDL_Log("[Init] Failed to load compiled shader: %s", outputPath.generic_string().c_str());
+            return false;
+        }
+
+        // Create shader descriptor
+        nvrhi::ShaderDesc desc;
+        desc.shaderType = metadata.shaderType;
+        desc.debugName = outputPath.generic_string();
+
+        // Create shader handle
+        nvrhi::ShaderHandle handle = m_NvrhiDevice->createShader(desc, binary.data(), binary.size());
+        if (!handle)
+        {
+            SDL_Log("[Init] Failed to create shader handle: %s", outputPath.generic_string().c_str());
+            return false;
+        }
+
+        // Keyed by output stem (e.g., "imgui_VSMain") for easy retrieval
+        std::string key = outputPath.stem().string();
+        m_ShaderCache[key] = handle;
+        SDL_Log("[Init] Loaded shader: %s (key=%s)", outputPath.generic_string().c_str(), key.c_str());
+    }
+
+    SDL_Log("[Init] All %zu shader(s) loaded successfully", shaderMetadata.size());
+    return true;
+}
+
+void Renderer::UnloadShaders()
+{
+    SDL_Log("[Shutdown] Unloading shaders");
+    m_ShaderCache.clear();
+    SDL_Log("[Shutdown] Shaders unloaded");
+}
+
+nvrhi::ShaderHandle Renderer::GetShaderHandle(std::string_view name) const
+{
+    std::unordered_map<std::string, nvrhi::ShaderHandle>::const_iterator it = m_ShaderCache.find(std::string{name});
+    if (it != m_ShaderCache.end())
+        return it->second;
+    return {};
+}
+
 bool Renderer::Initialize()
 {
     ScopedTimerLog initScope{"[Timing] Init phase:"};
@@ -242,6 +424,12 @@ bool Renderer::Initialize()
     }
 
     if (!CreateSwapchainTextures())
+    {
+        Shutdown();
+        return false;
+    }
+
+    if (!LoadShaders())
     {
         Shutdown();
         return false;
@@ -319,6 +507,7 @@ void Renderer::Shutdown()
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
 
     ShutdownImGui();
+    UnloadShaders();
     DestroySwapchainTextures();
     DestroyNvrhiDevice();
     m_RHI.Shutdown();
