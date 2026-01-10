@@ -150,3 +150,63 @@ target_link_libraries(${PROJECT_NAME} PRIVATE SDL3)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)
+
+# ============================================================================
+# ShaderMake Integration (offline HLSL -> SPIRV compilation)
+# ============================================================================
+
+# Add NVIDIA ShaderMake tool as a subdirectory.
+# Use in-project target so we can depend on it and resolve the executable per-config.
+set(SHADERMAKE_TOOL OFF CACHE BOOL "Use ShaderMake as external tool" FORCE)
+set(SHADERMAKE_FIND_COMPILERS ON CACHE BOOL "Enable compiler discovery" FORCE)
+set(SHADERMAKE_FIND_DXC ON CACHE BOOL "Find/download DXC for DXIL" FORCE)
+
+add_subdirectory(external/ShaderMake)
+
+# Shader build configuration
+set(SHADER_CONFIG       ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
+set(SHADER_OUTPUT_DIR   ${CMAKE_SOURCE_DIR}/bin/shaders)
+file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
+
+# Optional: pass an explicit compiler path if ShaderMake discovered DXC
+set(_SHADERMAKE_COMPILER_ARG)
+if(DEFINED SHADERMAKE_DXC_PATH AND EXISTS "${SHADERMAKE_DXC_PATH}")
+    set(_SHADERMAKE_COMPILER_ARG --compiler "${SHADERMAKE_DXC_PATH}")
+endif()
+
+# Resolve ShaderMake executable path per configuration when possible
+if(TARGET ShaderMake)
+    set(SHADERMAKE_PATH_GENEX $<TARGET_FILE:ShaderMake>)
+else()
+    set(SHADERMAKE_PATH_GENEX ${SHADERMAKE_PATH})
+endif()
+
+# Custom target to compile shaders offline with ShaderMake (SPIR-V output for Vulkan)
+add_custom_target(build_shaders
+    COMMAND ${SHADERMAKE_PATH_GENEX}
+            -p SPIRV
+            --binary
+            -c "${SHADER_CONFIG}"
+            -o "${SHADER_OUTPUT_DIR}"
+            ${_SHADERMAKE_COMPILER_ARG}
+            --shaderModel 6_6
+            --hlsl2021
+            --vulkanVersion 1.4
+            --compilerOptions "-fspv-target-env=vulkan1.3"
+            --vulkanMemoryLayout dx
+            --include "${CMAKE_SOURCE_DIR}/src/shaders"
+            --verbose
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Compiling HLSL shaders to SPIR-V for Vulkan via ShaderMake"
+)
+
+# Ensure ShaderMake is built before running the shader compilation target
+if(TARGET ShaderMake)
+    add_dependencies(build_shaders ShaderMake)
+endif()
+
+# Shader compilation always runs before building the main executable
+add_dependencies(${PROJECT_NAME} build_shaders)
+
+# Convenience: show where ShaderMake.exe is located in the build logs
+message(STATUS "ShaderMake executable: ${SHADERMAKE_PATH}")
