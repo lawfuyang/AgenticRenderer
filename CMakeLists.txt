@@ -98,6 +98,19 @@ set(NVRHI_WITH_DX12 OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(external/nvrhi)
 
+# ============================================================================
+# ImGui Configuration
+# ============================================================================
+set(IMGUI_SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/imgui")
+set(IMGUI_SOURCES
+    ${IMGUI_SOURCE_DIR}/imgui.cpp
+    ${IMGUI_SOURCE_DIR}/imgui_demo.cpp
+    ${IMGUI_SOURCE_DIR}/imgui_draw.cpp
+    ${IMGUI_SOURCE_DIR}/imgui_tables.cpp
+    ${IMGUI_SOURCE_DIR}/imgui_widgets.cpp
+    ${IMGUI_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+)
+
 # Output all executables to /bin/ directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
@@ -113,7 +126,7 @@ file(GLOB_RECURSE SOURCES
 )
 
 # Create executable
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SOURCES})
 
 # Define Windows-specific macros to prevent min/max macro conflicts
 if(MSVC)
@@ -125,6 +138,8 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCE_DIR}/backends)
 
 # SDL3 Include and Link
 target_include_directories(${PROJECT_NAME} PRIVATE "${SDL3_INSTALL_DIR}/SDL3-${SDL3_VERSION}/include")
