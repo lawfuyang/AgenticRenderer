@@ -28,6 +28,28 @@ public:
     nvrhi::SamplerHandle PointWrap;     // Point/nearest filtering, wrap/repeat
     nvrhi::SamplerHandle Anisotropic;   // Anisotropic filtering, wrap
 
+    // Common raster states
+    nvrhi::RasterState RasterCullNone;        // Solid fill, no cull
+    nvrhi::RasterState RasterCullBack;        // Solid fill, back-face cull
+    nvrhi::RasterState RasterCullFront;       // Solid fill, front-face cull
+    nvrhi::RasterState RasterWireframeNoCull; // Wireframe, no cull
+
+    // Common blend states
+    // Individual render-target descriptors for composing blend states
+    nvrhi::BlendState::RenderTarget BlendTargetOpaque;              // No blending
+    nvrhi::BlendState::RenderTarget BlendTargetAlpha;               // Standard alpha blending (SrcAlpha, InvSrcAlpha)
+    nvrhi::BlendState::RenderTarget BlendTargetPremultipliedAlpha;  // Premultiplied alpha (One, InvSrcAlpha)
+    nvrhi::BlendState::RenderTarget BlendTargetAdditive;            // Additive (One, One)
+    nvrhi::BlendState::RenderTarget BlendTargetMultiply;            // Multiply (DstColor, Zero)
+    nvrhi::BlendState::RenderTarget BlendTargetImGui;               // ImGui-specific (matches imgui_impl_vulkan)
+
+    // Common depth-stencil states
+    nvrhi::DepthStencilState DepthDisabled;          // No depth test/write
+    nvrhi::DepthStencilState DepthRead;              // Depth test, no write (LessEqual)
+    nvrhi::DepthStencilState DepthReadWrite;         // Depth test + write (LessEqual)
+    nvrhi::DepthStencilState DepthGreaterRead;       // Depth test GreaterEqual, no write
+    nvrhi::DepthStencilState DepthGreaterReadWrite;  // Depth test GreaterEqual + write
+
 private:
     CommonResources() = default;
 };

@@ -32,6 +32,117 @@ bool CommonResources::Initialize()
     PointWrap = createSampler("PointWrap", false, nvrhi::SamplerAddressMode::Wrap);
     Anisotropic = createSampler("Anisotropic", true, nvrhi::SamplerAddressMode::Wrap, 16.0f);
 
+    // Initialize common raster states
+    // Solid, no cull
+    RasterCullNone.fillMode = nvrhi::RasterFillMode::Solid;
+    RasterCullNone.cullMode = nvrhi::RasterCullMode::None;
+    RasterCullNone.frontCounterClockwise = false;
+
+    // Solid, back-face cull
+    RasterCullBack.fillMode = nvrhi::RasterFillMode::Solid;
+    RasterCullBack.cullMode = nvrhi::RasterCullMode::Back;
+    RasterCullBack.frontCounterClockwise = false;
+
+    // Solid, front-face cull
+    RasterCullFront.fillMode = nvrhi::RasterFillMode::Solid;
+    RasterCullFront.cullMode = nvrhi::RasterCullMode::Front;
+    RasterCullFront.frontCounterClockwise = false;
+
+    // Wireframe, no cull
+    RasterWireframeNoCull.fillMode = nvrhi::RasterFillMode::Wireframe;
+    RasterWireframeNoCull.cullMode = nvrhi::RasterCullMode::None;
+    RasterWireframeNoCull.frontCounterClockwise = false;
+
+    // Initialize common blend states
+    {
+        using BF = nvrhi::BlendFactor;
+        using BO = nvrhi::BlendOp;
+
+        // Opaque: blending disabled
+        BlendTargetOpaque = nvrhi::BlendState::RenderTarget{};
+        BlendTargetOpaque.blendEnable = false;
+
+        // Standard alpha blending (straight alpha)
+        BlendTargetAlpha = nvrhi::BlendState::RenderTarget{};
+        BlendTargetAlpha.blendEnable = true;
+        BlendTargetAlpha.srcBlend = BF::SrcAlpha;
+        BlendTargetAlpha.destBlend = BF::InvSrcAlpha;
+        BlendTargetAlpha.blendOp = BO::Add;
+        BlendTargetAlpha.srcBlendAlpha = BF::One;
+        BlendTargetAlpha.destBlendAlpha = BF::InvSrcAlpha;
+        BlendTargetAlpha.blendOpAlpha = BO::Add;
+
+        // Premultiplied alpha
+        BlendTargetPremultipliedAlpha = nvrhi::BlendState::RenderTarget{};
+        BlendTargetPremultipliedAlpha.blendEnable = true;
+        BlendTargetPremultipliedAlpha.srcBlend = BF::One;
+        BlendTargetPremultipliedAlpha.destBlend = BF::InvSrcAlpha;
+        BlendTargetPremultipliedAlpha.blendOp = BO::Add;
+        BlendTargetPremultipliedAlpha.srcBlendAlpha = BF::One;
+        BlendTargetPremultipliedAlpha.destBlendAlpha = BF::InvSrcAlpha;
+        BlendTargetPremultipliedAlpha.blendOpAlpha = BO::Add;
+
+        // Additive
+        BlendTargetAdditive = nvrhi::BlendState::RenderTarget{};
+        BlendTargetAdditive.blendEnable = true;
+        BlendTargetAdditive.srcBlend = BF::One;
+        BlendTargetAdditive.destBlend = BF::One;
+        BlendTargetAdditive.blendOp = BO::Add;
+        BlendTargetAdditive.srcBlendAlpha = BF::One;
+        BlendTargetAdditive.destBlendAlpha = BF::One;
+        BlendTargetAdditive.blendOpAlpha = BO::Add;
+
+        // Multiply
+        BlendTargetMultiply = nvrhi::BlendState::RenderTarget{};
+        BlendTargetMultiply.blendEnable = true;
+        BlendTargetMultiply.srcBlend = BF::DstColor;
+        BlendTargetMultiply.destBlend = BF::Zero;
+        BlendTargetMultiply.blendOp = BO::Add;
+        BlendTargetMultiply.srcBlendAlpha = BF::DstAlpha;
+        BlendTargetMultiply.destBlendAlpha = BF::Zero;
+        BlendTargetMultiply.blendOpAlpha = BO::Add;
+
+        // ImGui blend (straight alpha, matches imgui implementation)
+        BlendTargetImGui = BlendTargetAlpha;
+    }
+
+    // Initialize common depth-stencil states
+    {
+        // Disabled: no test, no write
+        DepthDisabled = nvrhi::DepthStencilState{};
+        DepthDisabled.depthTestEnable = false;
+        DepthDisabled.depthWriteEnable = false;
+        DepthDisabled.stencilEnable = false;
+
+        // Read-only (LessEqual)
+        DepthRead = nvrhi::DepthStencilState{};
+        DepthRead.depthTestEnable = true;
+        DepthRead.depthWriteEnable = false;
+        DepthRead.depthFunc = nvrhi::ComparisonFunc::LessOrEqual;
+        DepthRead.stencilEnable = false;
+
+        // Read-write (LessEqual)
+        DepthReadWrite = nvrhi::DepthStencilState{};
+        DepthReadWrite.depthTestEnable = true;
+        DepthReadWrite.depthWriteEnable = true;
+        DepthReadWrite.depthFunc = nvrhi::ComparisonFunc::LessOrEqual;
+        DepthReadWrite.stencilEnable = false;
+
+        // GreaterEqual read-only
+        DepthGreaterRead = nvrhi::DepthStencilState{};
+        DepthGreaterRead.depthTestEnable = true;
+        DepthGreaterRead.depthWriteEnable = false;
+        DepthGreaterRead.depthFunc = nvrhi::ComparisonFunc::GreaterOrEqual;
+        DepthGreaterRead.stencilEnable = false;
+
+        // GreaterEqual read-write
+        DepthGreaterReadWrite = nvrhi::DepthStencilState{};
+        DepthGreaterReadWrite.depthTestEnable = true;
+        DepthGreaterReadWrite.depthWriteEnable = true;
+        DepthGreaterReadWrite.depthFunc = nvrhi::ComparisonFunc::GreaterOrEqual;
+        DepthGreaterReadWrite.stencilEnable = false;
+    }
+
     SDL_Log("[CommonResources] Initialized successfully");
     return true;
 }

@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
+#include "CommonResources.h"
 
 bool ImGuiLayer::Initialize(SDL_Window* window)
 {
@@ -148,25 +149,13 @@ bool ImGuiLayer::CreateDeviceObjects()
         pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
 
         // Render state
-        nvrhi::RasterState& rasterState = pipelineDesc.renderState.rasterState;
-        rasterState.cullMode = nvrhi::RasterCullMode::None;
-        rasterState.frontCounterClockwise = false;
+        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullNone;
 
-        // Blend state - alpha blending for ImGui
-        nvrhi::BlendState::RenderTarget& blendState = pipelineDesc.renderState.blendState.targets[0];
-        blendState.blendEnable = true;
-        blendState.srcBlend = nvrhi::BlendFactor::SrcAlpha;
-        blendState.destBlend = nvrhi::BlendFactor::InvSrcAlpha;
-        blendState.blendOp = nvrhi::BlendOp::Add;
-        blendState.srcBlendAlpha = nvrhi::BlendFactor::One;
-        blendState.destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
-        blendState.blendOpAlpha = nvrhi::BlendOp::Add;
+        // Blend state - build from common ImGui alpha blend target
+        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetImGui;
 
-        // Depth stencil state - no depth testing for ImGui
-        nvrhi::DepthStencilState& depthState = pipelineDesc.renderState.depthStencilState;
-        depthState.depthTestEnable = false;
-        depthState.depthWriteEnable = false;
-        depthState.stencilEnable = false;
+        // Depth stencil state - use common disabled depth state
+        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthDisabled;
 
         // Framebuffer info - rendering to swapchain
         nvrhi::FramebufferInfoEx fbInfo;
