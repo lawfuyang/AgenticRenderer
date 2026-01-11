@@ -17,7 +17,6 @@ private:
     SDL_Window* m_Window = nullptr;
 
     // GPU Resources (similar to imgui_impl_vulkan)
-    nvrhi::SamplerHandle m_FontSampler;
     nvrhi::TextureHandle m_FontTexture;
     nvrhi::BufferHandle m_VertexBuffer;
     nvrhi::BufferHandle m_IndexBuffer;

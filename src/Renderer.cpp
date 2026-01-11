@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Utilities.h"
 #include "Config.h"
+#include "CommonResources.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -375,6 +376,13 @@ bool Renderer::Initialize()
         return false;
     }
 
+    if (!CommonResources::GetInstance().Initialize())
+    {
+        SDL_Log("[Init] Failed to initialize common resources");
+        Shutdown();
+        return false;
+    }
+
     if (!CreateSwapchainTextures())
     {
         Shutdown();
@@ -493,6 +501,7 @@ void Renderer::Shutdown()
     }
 
     m_ImGuiLayer.Shutdown();
+    CommonResources::GetInstance().Shutdown();
     UnloadShaders();
     DestroySwapchainTextures();
     DestroyNvrhiDevice();

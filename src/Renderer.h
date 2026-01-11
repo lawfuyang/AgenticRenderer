@@ -53,5 +53,4 @@ private:
     void UnloadShaders();
 
     static Renderer* s_Instance;
-    
 };

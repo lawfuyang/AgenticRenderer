@@ -27,6 +27,7 @@ bool ImGuiLayer::Initialize(SDL_Window* window)
     if (!CreateDeviceObjects())
     {
         SDL_Log("[Init] Failed to create ImGui device objects");
+        SDL_assert(false && "CreateDeviceObjects failed");
         return false;
     }
 
@@ -46,20 +47,6 @@ bool ImGuiLayer::CreateDeviceObjects()
 {
     SDL_Log("[Init] Creating ImGui device objects");
     Renderer* renderer = Renderer::GetInstance();
-
-    // Create sampler for font texture (bilinear sampling)
-    {
-        nvrhi::SamplerDesc samplerDesc;
-        samplerDesc.setAllFilters(true); // Linear filtering
-        samplerDesc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
-        m_FontSampler = renderer->m_NvrhiDevice->createSampler(samplerDesc);
-        
-        if (!m_FontSampler)
-        {
-            SDL_Log("[Error] Failed to create ImGui font sampler");
-            return false;
-        }
-    }
 
     // Create input layout (vertex attributes)
     {
@@ -87,6 +74,7 @@ bool ImGuiLayer::CreateDeviceObjects()
         if (!m_InputLayout)
         {
             SDL_Log("[Error] Failed to create ImGui input layout");
+            SDL_assert(false && "ImGui input layout creation failed");
             return false;
         }
     }
@@ -108,6 +96,7 @@ bool ImGuiLayer::CreateDeviceObjects()
         if (!m_BindingLayout)
         {
             SDL_Log("[Error] Failed to create ImGui binding layout");
+            SDL_assert(false && "ImGui binding layout creation failed");
             return false;
         }
     }
@@ -135,6 +124,7 @@ bool ImGuiLayer::CreateDeviceObjects()
         if (!m_FontTexture)
         {
             SDL_Log("[Error] Failed to create ImGui font texture");
+            SDL_assert(false && "ImGui font texture creation failed");
             return false;
         }
 
@@ -187,6 +177,7 @@ bool ImGuiLayer::CreateDeviceObjects()
         if (!m_Pipeline)
         {
             SDL_Log("[Error] Failed to create ImGui graphics pipeline");
+            SDL_assert(false && "ImGui pipeline creation failed");
             return false;
         }
     }
@@ -204,7 +195,6 @@ void ImGuiLayer::DestroyDeviceObjects()
     m_IndexBuffer = nullptr;
     m_VertexBuffer = nullptr;
     m_FontTexture = nullptr;
-    m_FontSampler = nullptr;
 
     m_VertexBufferSize = 0;
     m_IndexBufferSize = 0;
