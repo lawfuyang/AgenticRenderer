@@ -5,12 +5,11 @@
 // VERTEX SHADER
 //-----------------------------------------------------------------------------
 
-struct PushConstants
-{
-    float2 uScale;
-    float2 uTranslate;
-};
+// Request the shared types and declare PushConstants for ImGui
+#define IMGUI_DEFINE_PUSH_CONSTANTS
+#include "ShaderShared.hlsl"
 
+// Instantiate the push-constant variable used by the ImGui shaders
 [[vk::push_constant]]
 PushConstants pushConstants;
 

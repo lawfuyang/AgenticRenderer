@@ -2,6 +2,10 @@
 #include "ImGuiLayer.h"
 #include "Renderer.h"
 
+// Request the shared PushConstants definition for C++ and include it.
+#define IMGUI_DEFINE_PUSH_CONSTANTS
+#include "shaders/ShaderShared.hlsl"
+
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include "CommonResources.h"
@@ -208,7 +212,7 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
         // the pipeline layout can include push-constant ranges and descriptor sets.
         nvrhi::BindingSetDesc bindingSetDesc;
         bindingSetDesc.bindings = {
-            nvrhi::BindingSetItem::PushConstants(0, sizeof(float) * 4),
+            nvrhi::BindingSetItem::PushConstants(0, sizeof(PushConstants)),
             nvrhi::BindingSetItem::Texture_SRV(0, m_FontTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
         };
@@ -247,17 +251,13 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
 
         commandList->setGraphicsState(state);
 
-        struct PushConstants
-        {
-            float uScale[2];
-            float uTranslate[2];
-        } pushConstants;
+        PushConstants pushConstants{};
 
         // Push constants (scale and translate)
-        pushConstants.uScale[0] = 2.0f / draw_data->DisplaySize.x;
-        pushConstants.uScale[1] = 2.0f / draw_data->DisplaySize.y;
-        pushConstants.uTranslate[0] = -1.0f - draw_data->DisplayPos.x * pushConstants.uScale[0];
-        pushConstants.uTranslate[1] = -1.0f - draw_data->DisplayPos.y * pushConstants.uScale[1];
+        pushConstants.uScale.x = 2.0f / draw_data->DisplaySize.x;
+        pushConstants.uScale.y = 2.0f / draw_data->DisplaySize.y;
+        pushConstants.uTranslate.x = -1.0f - draw_data->DisplayPos.x * pushConstants.uScale.x;
+        pushConstants.uTranslate.y = -1.0f - draw_data->DisplayPos.y * pushConstants.uScale.y;
         commandList->setPushConstants(&pushConstants, sizeof(pushConstants));
 
         // Render command lists
