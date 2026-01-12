@@ -52,9 +52,9 @@ bool ImGuiLayer::CreateDeviceObjects()
     // Create input layout (vertex attributes)
     {
         nvrhi::VertexAttributeDesc attributes[] = {
-	        { "POSITION", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
-	        { "TEXCOORD", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
-	        { "COLOR",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
+        	{ "POSITION", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
+        	{ "TEXCOORD0", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
+        	{ "COLOR0",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
         };
 
         // Note: vertexShader parameter is only used by DX11 backend, unused in Vulkan
@@ -188,6 +188,8 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
     const double fps = renderer->m_FPS;
     const double frameTime = renderer->m_FrameTime;
 
+    const ImGuiIO& io = ImGui::GetIO();
+
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
@@ -198,16 +200,17 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
         ImGui::EndMainMenuBar();
     }
 
-    if (ImGui::Begin("Property Grid"))
+    static bool s_ShowDemoWindow = false;
+    if (s_ShowDemoWindow)
     {
-        static bool s_ShowDemoWindow = false;
-        if (ImGui::Checkbox("Show Demo Window", &s_ShowDemoWindow))
-        {
-            ImGui::ShowDemoWindow();
-        }
-
-        ImGui::End();
+        ImGui::ShowDemoWindow(&s_ShowDemoWindow);
     }
+
+    if (ImGui::Begin("Property Grid", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Checkbox("Show Demo Window", &s_ShowDemoWindow);
+    }
+    ImGui::End();
 
     ImGui::Render();
 
@@ -286,15 +289,24 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
             nvrhi::BindingSetItem::Texture_SRV(0, m_FontTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
         };
-        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bindingSetDesc, m_BindingLayout);
-
-        const ImGuiIO& io = ImGui::GetIO();
+        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bindingSetDesc, m_BindingLayout);        
         
         state.bindings = { bindingSet };
         state.vertexBuffers = { nvrhi::VertexBufferBinding{m_VertexBuffer, 0, 0} };
         state.indexBuffer = nvrhi::IndexBufferBinding{ m_IndexBuffer, sizeof(ImDrawIdx) == 2 ? nvrhi::Format::R16_UINT : nvrhi::Format::R32_UINT, 0 };
-        state.viewport.viewports.push_back(nvrhi::Viewport{ io.DisplaySize.x * io.DisplayFramebufferScale.x, -io.DisplaySize.y * io.DisplayFramebufferScale.y });
-        state.viewport.scissorRects.resize(1);  // updated below
+        // Set viewport to framebuffer size. Vulkan uses an inverted Y, so flip min/max Y for Vulkan.
+        nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+        if (api == nvrhi::GraphicsAPI::VULKAN)
+        {
+            // minX = 0, maxX = fb_width, minY = fb_height, maxY = 0 => inverted Y viewport for Vulkan
+            state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)fb_width, (float)fb_height, 0.0f, 0.0f, 1.0f));
+        }
+        else
+        {
+            // Normal (DirectX-like) viewport: minX=0, maxX=fb_width, minY=0, maxY=fb_height
+            state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)fb_width, 0.0f, (float)fb_height, 0.0f, 1.0f));
+        }
+        state.viewport.scissorRects.resize(1);
         commandList->setGraphicsState(state);
 
         struct PushConstants
@@ -319,11 +331,26 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
             {
                 const ImDrawCmd* pcmd = &draw_list->CmdBuffer[cmd_i];
 
+                // Project scissor/clipping rectangles into framebuffer space (match ImGui_ImplVulkan)
+                ImVec2 clip_off = draw_data->DisplayPos;
+                ImVec2 clip_scale = draw_data->FramebufferScale;
+
+                ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x, (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
+                ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x, (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
+
+                // Clamp to viewport
+                if (clip_min.x < 0.0f) clip_min.x = 0.0f;
+                if (clip_min.y < 0.0f) clip_min.y = 0.0f;
+                if (clip_max.x > (float)fb_width) clip_max.x = (float)fb_width;
+                if (clip_max.y > (float)fb_height) clip_max.y = (float)fb_height;
+                if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+                    continue;
+
                 nvrhi::Rect& r = state.viewport.scissorRects[0];
-                r.minX = (int)pcmd->ClipRect.x;
-                r.maxY = (int)pcmd->ClipRect.y;
-                r.maxX = (int)pcmd->ClipRect.z;
-                r.minY = (int)pcmd->ClipRect.w;
+                r.minX = (int)clip_min.x;
+                r.minY = (int)clip_min.y;
+                r.maxX = (int)clip_max.x;
+                r.maxY = (int)clip_max.y;
 
                 commandList->setGraphicsState(state);
                 commandList->setPushConstants(&pushConstants, sizeof(pushConstants));
