@@ -466,8 +466,15 @@ void Renderer::Run()
             }
         }
 
+        {
+            nvrhi::CommandListHandle commandList = AcquireCommandList("Clear Backbuffer");
+            commandList->clearTextureFloat(GetCurrentBackBufferTexture(), nvrhi::AllSubresources, nvrhi::Color(0.14f, 0.23f, 0.33f, 1.0f));
+            SubmitCommandList(commandList);
+        }
+
         // Render ImGui frame
         nvrhi::CommandListHandle commandList = AcquireCommandList("ImGui");
+        
         m_ImGuiLayer.RenderFrame(commandList);
         SubmitCommandList(commandList);
 
