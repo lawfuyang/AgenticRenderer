@@ -91,6 +91,16 @@ if(WIN32)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${SDL3_DLL_PATH}" "${SDL3_DLL_LINK}")
 endif()
 
+# ---------------------------------------------------------------------------
+# cgltf (glTF loader) - downloaded into external/cgltf and compiled
+# ---------------------------------------------------------------------------
+set(CGLTF_VERSION "1.15")
+set(CGLTF_URL "https://github.com/jkuhlmann/cgltf/archive/refs/tags/v${CGLTF_VERSION}.zip")
+download_library("cgltf" "v${CGLTF_VERSION}" "${CGLTF_URL}" "cgltf-*")
+set(CGLTF_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/cgltf")
+set(CGLTF_SUBDIR "cgltf-${CGLTF_VERSION}")
+set(CGLTF_SRC_DIR "${CGLTF_INSTALL_DIR}/${CGLTF_SUBDIR}")
+
 # NVRHI Configuration
 set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
@@ -138,6 +148,8 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+
+# ImGui Include
 target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCE_DIR})
 target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCE_DIR}/backends)
 
@@ -151,6 +163,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)
 
+# cgltf Include
+target_include_directories(${PROJECT_NAME} PRIVATE "${CGLTF_SRC_DIR}")
+
 # ============================================================================
 # ShaderMake Integration (offline HLSL -> SPIRV compilation)
 # ============================================================================
@@ -159,7 +174,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)
 # Use in-project target so we can depend on it and resolve the executable per-config.
 set(SHADERMAKE_TOOL OFF CACHE BOOL "Use ShaderMake as external tool" FORCE)
 set(SHADERMAKE_FIND_COMPILERS ON CACHE BOOL "Enable compiler discovery" FORCE)
-set(SHADERMAKE_FIND_DXC ON CACHE BOOL "Find/download DXC for DXIL" FORCE)
+set(SHADERMAKE_FIND_FXC OFF)
+set(SHADERMAKE_FIND_DXC OFF)
 
 add_subdirectory(external/ShaderMake)
 
