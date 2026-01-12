@@ -10,7 +10,7 @@
 
 // Include Math aliases on C++ side so we can map shared types to them.
 #ifdef __cplusplus
-#include "Math.h"
+#include "MathTypes.h"
 #endif
 
 // Map shared scalar/vector/matrix declarations to language-specific forms.

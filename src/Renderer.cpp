@@ -6,9 +6,6 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
-#include <SDL3/SDL_main.h>
-#include <SDL3/SDL_filesystem.h>
-
 namespace
 {
     class NvrhiErrorCallback : public nvrhi::IMessageCallback
