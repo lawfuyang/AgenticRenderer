@@ -11,48 +11,69 @@ struct Renderer
     static constexpr uint32_t SPIRV_TEXTURE_SHIFT = 200;  // tRegShift (t#)
     static constexpr uint32_t SPIRV_CBUFFER_SHIFT = 300;  // bRegShift (b#)
     static constexpr uint32_t SPIRV_UAV_SHIFT = 400;      // uRegShift (u#)
-
+    // Instance management
     static void SetInstance(Renderer* instance);
     static Renderer* GetInstance();
+
+    // Lifecycle
+    bool Initialize();
+    void Run();
+    void Shutdown();
+
+    // Command list helpers
     nvrhi::CommandListHandle AcquireCommandList(std::string_view markerName);
     void SubmitCommandList(const nvrhi::CommandListHandle& commandList);
     void ExecutePendingCommandLists();
+
+    // Swapchain / backbuffer
     nvrhi::TextureHandle GetCurrentBackBufferTexture() const;
 
+    // ImGui helpers
+    // Prepares ImGui frame (calls NewFrame(), builds UI, and calls ImGui::Render()).
+    void UpdateImGuiFrame();
+
+    // Create or retrieve a cached binding layout derived from a BindingSetDesc.
+    nvrhi::BindingLayoutHandle GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, nvrhi::ShaderType visibility = nvrhi::ShaderType::All);
+
+    // Get or create a graphics pipeline given a full pipeline description and framebuffer info. The pipeline will be cached internally by the renderer.
+    nvrhi::GraphicsPipelineHandle GetOrCreateGraphicsPipeline(const nvrhi::GraphicsPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo);
+
+    // Retrieve a shader handle by name (output stem), e.g., "imgui_VSMain" or "imgui_PSMain"
+    nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
+
+    // Public state & resources
     SDL_Window* m_Window = nullptr;
     GraphicRHI m_RHI{};
     nvrhi::DeviceHandle m_NvrhiDevice;
+
+    // Swapchain textures
     nvrhi::TextureHandle m_SwapchainTextures[GraphicRHI::SwapchainImageCount] = {};
     uint32_t m_CurrentSwapchainImage = 0;
-    std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;
-    std::vector<nvrhi::CommandListHandle> m_PendingCommandLists;
 
     // Cached shader handles loaded from compiled SPIR-V binaries (keyed by output stem, e.g., "imgui_VSMain")
     std::unordered_map<std::string, nvrhi::ShaderHandle> m_ShaderCache;
 
     // ImGui state
+    ImGuiLayer m_ImGuiLayer;
     double m_FrameTime = 0.0;
     double m_FPS = 0.0;
 
-    // ImGui layer
-    ImGuiLayer m_ImGuiLayer;
+    // Command list pools
+    std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;
+    std::vector<nvrhi::CommandListHandle> m_PendingCommandLists;
 
-    bool Initialize();
-    void Run();
-    void Shutdown();
-
-    // Prepares ImGui frame (calls NewFrame(), builds UI, and calls ImGui::Render()).
-    void UpdateImGuiFrame();
-
-    // Retrieve a shader handle by name (output stem), e.g., "imgui_VSMain" or "imgui_PSMain"
-    nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
+    // Caches
+    std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
+    std::unordered_map<size_t, nvrhi::GraphicsPipelineHandle> m_GraphicsPipelineCache;
 
 private:
+    // Device / swapchain helpers
     bool CreateNvrhiDevice();
     void DestroyNvrhiDevice();
     bool CreateSwapchainTextures();
     void DestroySwapchainTextures();
-    
+
+    // Shader loading
     bool LoadShaders();
     void UnloadShaders();
 

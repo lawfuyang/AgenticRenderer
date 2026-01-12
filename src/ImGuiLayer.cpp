@@ -68,28 +68,6 @@ bool ImGuiLayer::CreateDeviceObjects()
         }
     }
 
-    // Create a single binding layout that includes push constants (VS) and texture/sampler (PS)
-    {
-        nvrhi::BindingLayoutDesc descriptorLayoutDesc;
-        descriptorLayoutDesc.visibility = nvrhi::ShaderType::All; // covers VS (push constants) and PS (texture/sampler)
-        descriptorLayoutDesc.bindingOffsets.shaderResource = Renderer::SPIRV_TEXTURE_SHIFT; // matches ShaderMake tRegShift default
-        descriptorLayoutDesc.bindingOffsets.sampler = Renderer::SPIRV_SAMPLER_SHIFT;        // matches ShaderMake sRegShift default
-        descriptorLayoutDesc.bindings = {
-            nvrhi::BindingLayoutItem::PushConstants(0, sizeof(float) * 4), // push constants for VS
-            nvrhi::BindingLayoutItem::Texture_SRV(0),   // logical slot -> SPIR-V binding shift
-            nvrhi::BindingLayoutItem::Sampler(0)        // logical slot -> SPIR-V binding shift
-        };
-
-        m_BindingLayout = renderer->m_NvrhiDevice->createBindingLayout(descriptorLayoutDesc);
-        
-        if (!m_BindingLayout)
-        {
-            SDL_Log("[Error] Failed to create ImGui binding layout");
-            SDL_assert(false && "ImGui binding layout creation failed");
-            return false;
-        }
-    }
-
     // Create font texture
     {
         ImGuiIO& io = ImGui::GetIO();
@@ -124,40 +102,6 @@ bool ImGuiLayer::CreateDeviceObjects()
         renderer->ExecutePendingCommandLists();
     }
 
-    // Create graphics pipeline
-    {
-        Renderer* renderer = Renderer::GetInstance();
-        
-        nvrhi::GraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VS = renderer->GetShaderHandle("imgui_VSMain");
-        pipelineDesc.PS = renderer->GetShaderHandle("imgui_PSMain");
-        pipelineDesc.inputLayout = m_InputLayout;
-        pipelineDesc.bindingLayouts = { m_BindingLayout };
-        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
-
-        // Render state
-        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullNone;
-
-        // Blend state - build from common ImGui alpha blend target
-        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetImGui;
-
-        // Depth stencil state - use common disabled depth state
-        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthDisabled;
-
-        // Framebuffer info - rendering to swapchain
-        nvrhi::FramebufferInfoEx fbInfo;
-        fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
-
-        m_Pipeline = renderer->m_NvrhiDevice->createGraphicsPipeline(pipelineDesc, fbInfo);
-        
-        if (!m_Pipeline)
-        {
-            SDL_Log("[Error] Failed to create ImGui graphics pipeline");
-            SDL_assert(false && "ImGui pipeline creation failed");
-            return false;
-        }
-    }
-
     SDL_Log("[Init] ImGui device objects created successfully");
     return true;
 }
@@ -165,8 +109,6 @@ bool ImGuiLayer::CreateDeviceObjects()
 void ImGuiLayer::DestroyDeviceObjects()
 {
     // Release all GPU resources
-    m_Pipeline = nullptr;
-    m_BindingLayout = nullptr;
     m_InputLayout = nullptr;
     m_IndexBuffer = nullptr;
     m_VertexBuffer = nullptr;
@@ -249,21 +191,37 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
 
         // Setup render state
         nvrhi::GraphicsState state;
-        state.pipeline = m_Pipeline;
+        nvrhi::GraphicsPipelineDesc pipelineDesc;
+        pipelineDesc.VS = renderer->GetShaderHandle("imgui_VSMain");
+        pipelineDesc.PS = renderer->GetShaderHandle("imgui_PSMain");
+        pipelineDesc.inputLayout = m_InputLayout;
+        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullNone;
+        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetImGui;
+        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthDisabled;
+
+        nvrhi::FramebufferInfoEx fbInfo;
+        fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
         state.framebuffer = framebuffer;
         
-        // Create binding set on demand
+        // Create binding set description and query the renderer for its layout so
+        // the pipeline layout can include push-constant ranges and descriptor sets.
         nvrhi::BindingSetDesc bindingSetDesc;
         bindingSetDesc.bindings = {
             nvrhi::BindingSetItem::PushConstants(0, sizeof(float) * 4),
             nvrhi::BindingSetItem::Texture_SRV(0, m_FontTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
         };
-        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bindingSetDesc, m_BindingLayout);        
-        
+
+        // Query the renderer for the binding layout cached for this binding-set description.
+        nvrhi::BindingLayoutHandle layoutForSet = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bindingSetDesc, nvrhi::ShaderType::All);
+        pipelineDesc.bindingLayouts = { layoutForSet };
+
+        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bindingSetDesc, layoutForSet);
         state.bindings = { bindingSet };
         state.vertexBuffers = { nvrhi::VertexBufferBinding{m_VertexBuffer, 0, 0} };
         state.indexBuffer = nvrhi::IndexBufferBinding{ m_IndexBuffer, sizeof(ImDrawIdx) == 2 ? nvrhi::Format::R16_UINT : nvrhi::Format::R32_UINT, 0 };
+
         // Set viewport to framebuffer size. Vulkan uses an inverted Y, so flip min/max Y for Vulkan.
         nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
         if (api == nvrhi::GraphicsAPI::VULKAN)
@@ -277,6 +235,16 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
             state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)fb_width, 0.0f, (float)fb_height, 0.0f, 1.0f));
         }
         state.viewport.scissorRects.resize(1);
+
+        nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
+        if (!pipeline)
+        {
+            SDL_Log("[Error] Failed to obtain graphics pipeline from Renderer");
+            SDL_assert(false && "Failed to obtain ImGui graphics pipeline");
+            return;
+        }
+        state.pipeline = pipeline;
+
         commandList->setGraphicsState(state);
 
         struct PushConstants

@@ -523,6 +523,10 @@ void Renderer::Shutdown()
 
     m_ImGuiLayer.Shutdown();
     CommonResources::GetInstance().Shutdown();
+
+    m_BindingLayoutCache.clear();
+    m_GraphicsPipelineCache.clear();
+
     UnloadShaders();
     DestroySwapchainTextures();
     DestroyNvrhiDevice();
@@ -577,6 +581,130 @@ bool Renderer::CreateNvrhiDevice()
     }
 
     return true;
+}
+
+// Hash helper for BindingLayoutDesc
+static size_t HashBindingLayoutDesc(const nvrhi::BindingLayoutDesc& d)
+{
+    size_t h = std::hash<uint32_t>()(static_cast<uint32_t>(d.visibility));
+    h = h * 1315423911u + std::hash<uint32_t>()(d.registerSpace);
+    h = h * 1315423911u + std::hash<uint32_t>()(d.registerSpaceIsDescriptorSet ? 1u : 0u);
+    h = h * 1315423911u + std::hash<uint32_t>()(d.bindingOffsets.shaderResource);
+    h = h * 1315423911u + std::hash<uint32_t>()(d.bindingOffsets.sampler);
+    h = h * 1315423911u + std::hash<uint32_t>()(d.bindingOffsets.constantBuffer);
+    h = h * 1315423911u + std::hash<uint32_t>()(d.bindingOffsets.unorderedAccess);
+    for (const nvrhi::BindingLayoutItem& it : d.bindings)
+    {
+        // combine slot, type and size
+        uint64_t v = (uint64_t(it.slot) << 32) | (uint64_t(it.type) << 16) | uint64_t(it.size);
+        h = h * 1315423911u + std::hash<uint64_t>()(v);
+    }
+    return h;
+}
+
+static bool BindingLayoutDescEqual(const nvrhi::BindingLayoutDesc& a, const nvrhi::BindingLayoutDesc& b)
+{
+    if (a.visibility != b.visibility) return false;
+    if (a.registerSpace != b.registerSpace) return false;
+    if (a.registerSpaceIsDescriptorSet != b.registerSpaceIsDescriptorSet) return false;
+    if (a.bindingOffsets.shaderResource != b.bindingOffsets.shaderResource) return false;
+    if (a.bindingOffsets.sampler != b.bindingOffsets.sampler) return false;
+    if (a.bindingOffsets.constantBuffer != b.bindingOffsets.constantBuffer) return false;
+    if (a.bindingOffsets.unorderedAccess != b.bindingOffsets.unorderedAccess) return false;
+    if (a.bindings.size() != b.bindings.size()) return false;
+    for (size_t i = 0; i < a.bindings.size(); ++i)
+    {
+        if (a.bindings[i] != b.bindings[i])
+            return false;
+    }
+    return true;
+}
+
+nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, nvrhi::ShaderType visibility)
+{
+    nvrhi::BindingLayoutDesc layoutDesc;
+    layoutDesc.visibility = visibility;
+    layoutDesc.registerSpace = 0;
+    layoutDesc.registerSpaceIsDescriptorSet = false;
+    layoutDesc.bindingOffsets.shaderResource = SPIRV_TEXTURE_SHIFT;
+    layoutDesc.bindingOffsets.sampler = SPIRV_SAMPLER_SHIFT;
+    layoutDesc.bindingOffsets.constantBuffer = SPIRV_CBUFFER_SHIFT;
+    layoutDesc.bindingOffsets.unorderedAccess = SPIRV_UAV_SHIFT;
+
+    for (const nvrhi::BindingSetItem& item : setDesc.bindings)
+    {
+        nvrhi::BindingLayoutItem b{};
+        b.slot = item.slot;
+        b.type = item.type;
+        if (item.type == nvrhi::ResourceType::PushConstants)
+            b.size = uint16_t(item.range.byteSize);
+        else
+            b.size = 1;
+        layoutDesc.bindings.push_back(b);
+    }
+
+    // Sort deterministically: slot then type
+    std::sort(layoutDesc.bindings.begin(), layoutDesc.bindings.end(), [](const nvrhi::BindingLayoutItem& a, const nvrhi::BindingLayoutItem& b){
+        if (a.slot != b.slot) return a.slot < b.slot;
+        return a.type < b.type;
+    });
+
+    // Hash and lookup in cache
+    size_t h = HashBindingLayoutDesc(layoutDesc);
+    auto cacheIt = m_BindingLayoutCache.find(h);
+    if (cacheIt != m_BindingLayoutCache.end())
+    {
+        return cacheIt->second;
+    }
+
+    // Not found - create it and cache it
+    nvrhi::BindingLayoutHandle handle = m_NvrhiDevice->createBindingLayout(layoutDesc);
+    if (handle)
+    {
+        m_BindingLayoutCache.emplace(h, handle);
+    }
+
+    return handle;
+}
+
+nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi::GraphicsPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo)
+{
+    // Hash relevant pipeline properties: VS/PS shader handles, input layout pointer,
+    // primitive type and framebuffer color formats (first format).
+    nvrhi::ShaderHandle vs = pipelineDesc.VS;
+    nvrhi::ShaderHandle ps = pipelineDesc.PS;
+
+    size_t h = 1469598103934665603ull;
+    h = h * 1099511628211u + std::hash<const void*>()(vs.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(ps.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(pipelineDesc.inputLayout.Get());
+    h = h * 1099511628211u + std::hash<int>()(static_cast<int>(pipelineDesc.primType));
+
+    // Include first color format from fbInfo if present
+    nvrhi::Format colorFormat = nvrhi::Format::UNKNOWN;
+    if (!fbInfo.colorFormats.empty())
+        colorFormat = fbInfo.colorFormats[0];
+    h = h * 1099511628211u + std::hash<int>()(static_cast<int>(colorFormat));
+
+    // Include binding layouts handles in hash (pipeline layout depends on these)
+    for (const nvrhi::BindingLayoutHandle& bl : pipelineDesc.bindingLayouts)
+    {
+        h = h * 1099511628211u + std::hash<const void*>()(bl.Get());
+    }
+
+    auto it = m_GraphicsPipelineCache.find(h);
+    if (it != m_GraphicsPipelineCache.end())
+        return it->second;
+
+    // Create pipeline and cache it
+    nvrhi::GraphicsPipelineHandle pipeline = m_NvrhiDevice->createGraphicsPipeline(pipelineDesc, fbInfo);
+    SDL_assert(pipeline && "Failed to create graphics pipeline");
+    if (pipeline)
+    {
+        m_GraphicsPipelineCache.emplace(h, pipeline);
+    }
+
+    return pipeline;
 }
 
 void Renderer::UpdateImGuiFrame()

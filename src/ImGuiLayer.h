@@ -22,8 +22,6 @@ private:
     nvrhi::BufferHandle m_IndexBuffer;
     
     nvrhi::InputLayoutHandle m_InputLayout;
-    nvrhi::BindingLayoutHandle m_BindingLayout;
-    nvrhi::GraphicsPipelineHandle m_Pipeline;
 
     uint32_t m_VertexBufferSize = 0;
     uint32_t m_IndexBufferSize = 0;
