@@ -41,6 +41,9 @@ struct Renderer
     void Run();
     void Shutdown();
 
+    // Prepares ImGui frame (calls NewFrame(), builds UI, and calls ImGui::Render()).
+    void UpdateImGuiFrame();
+
     // Retrieve a shader handle by name (output stem), e.g., "imgui_VSMain" or "imgui_PSMain"
     nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
 

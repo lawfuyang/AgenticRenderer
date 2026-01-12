@@ -114,3 +114,6 @@ desktop.ini
 # Package manager directories
 vcpkg_installed/
 packages/
+
+# ImGui runtime config (generated)
+imgui.ini

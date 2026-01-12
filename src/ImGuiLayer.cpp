@@ -184,36 +184,6 @@ void ImGuiLayer::ProcessEvent(const SDL_Event& event)
 void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
 {
     Renderer* renderer = Renderer::GetInstance();
-
-    const double fps = renderer->m_FPS;
-    const double frameTime = renderer->m_FrameTime;
-
-    const ImGuiIO& io = ImGui::GetIO();
-
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-
-    if (ImGui::BeginMainMenuBar())
-    {
-        ImGui::Text("FPS: %.1f", fps);
-        ImGui::Text("Frame Time: %.3f ms", frameTime);
-        ImGui::EndMainMenuBar();
-    }
-
-    static bool s_ShowDemoWindow = false;
-    if (s_ShowDemoWindow)
-    {
-        ImGui::ShowDemoWindow(&s_ShowDemoWindow);
-    }
-
-    if (ImGui::Begin("Property Grid", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        ImGui::Checkbox("Show Demo Window", &s_ShowDemoWindow);
-    }
-    ImGui::End();
-
-    ImGui::Render();
-
     ImDrawData* draw_data = ImGui::GetDrawData();
     if (draw_data)
     {

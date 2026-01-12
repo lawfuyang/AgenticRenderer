@@ -3,6 +3,9 @@
 #include "Config.h"
 #include "CommonResources.h"
 
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_filesystem.h>
 
@@ -466,6 +469,9 @@ void Renderer::Run()
             }
         }
 
+        // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
+        UpdateImGuiFrame();
+
         {
             nvrhi::CommandListHandle commandList = AcquireCommandList("Clear Backbuffer");
             commandList->clearTextureFloat(GetCurrentBackBufferTexture(), nvrhi::AllSubresources, nvrhi::Color(0.14f, 0.23f, 0.33f, 1.0f));
@@ -474,7 +480,6 @@ void Renderer::Run()
 
         // Render ImGui frame
         nvrhi::CommandListHandle commandList = AcquireCommandList("ImGui");
-        
         m_ImGuiLayer.RenderFrame(commandList);
         SubmitCommandList(commandList);
 
@@ -568,6 +573,34 @@ bool Renderer::CreateNvrhiDevice()
     }
 
     return true;
+}
+
+void Renderer::UpdateImGuiFrame()
+{
+    // Build ImGui UI and end with ImGui::Render(); rendering happens in ImGuiLayer::RenderFrame
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    if (ImGui::BeginMainMenuBar())
+    {
+        ImGui::Text("FPS: %.1f", m_FPS);
+        ImGui::Text("Frame Time: %.3f ms", m_FrameTime);
+        ImGui::EndMainMenuBar();
+    }
+
+    static bool s_ShowDemoWindow = false;
+    if (s_ShowDemoWindow)
+    {
+        ImGui::ShowDemoWindow(&s_ShowDemoWindow);
+    }
+
+    if (ImGui::Begin("Property Grid", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Checkbox("Show Demo Window", &s_ShowDemoWindow);
+    }
+    ImGui::End();
+
+    ImGui::Render();
 }
 
 void Renderer::DestroyNvrhiDevice()
