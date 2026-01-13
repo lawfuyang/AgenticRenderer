@@ -36,22 +36,22 @@ bool CommonResources::Initialize()
     // Solid, no cull
     RasterCullNone.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullNone.cullMode = nvrhi::RasterCullMode::None;
-    RasterCullNone.frontCounterClockwise = false;
+    RasterCullNone.frontCounterClockwise = true;
 
     // Solid, back-face cull
     RasterCullBack.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullBack.cullMode = nvrhi::RasterCullMode::Back;
-    RasterCullBack.frontCounterClockwise = false;
+    RasterCullBack.frontCounterClockwise = true;
 
     // Solid, front-face cull
     RasterCullFront.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullFront.cullMode = nvrhi::RasterCullMode::Front;
-    RasterCullFront.frontCounterClockwise = false;
+    RasterCullFront.frontCounterClockwise = true;
 
     // Wireframe, no cull
     RasterWireframeNoCull.fillMode = nvrhi::RasterFillMode::Wireframe;
     RasterWireframeNoCull.cullMode = nvrhi::RasterCullMode::None;
-    RasterWireframeNoCull.frontCounterClockwise = false;
+    RasterWireframeNoCull.frontCounterClockwise = true;
 
     // Initialize common blend states
     {
@@ -114,18 +114,18 @@ bool CommonResources::Initialize()
         DepthDisabled.depthWriteEnable = false;
         DepthDisabled.stencilEnable = false;
 
-        // Read-only (LessEqual)
+        // Read-only (GreaterEqual for reversed-Z)
         DepthRead = nvrhi::DepthStencilState{};
         DepthRead.depthTestEnable = true;
         DepthRead.depthWriteEnable = false;
-        DepthRead.depthFunc = nvrhi::ComparisonFunc::LessOrEqual;
+        DepthRead.depthFunc = nvrhi::ComparisonFunc::GreaterOrEqual;
         DepthRead.stencilEnable = false;
 
-        // Read-write (LessEqual)
+        // Read-write (GreaterEqual for reversed-Z)
         DepthReadWrite = nvrhi::DepthStencilState{};
         DepthReadWrite.depthTestEnable = true;
         DepthReadWrite.depthWriteEnable = true;
-        DepthReadWrite.depthFunc = nvrhi::ComparisonFunc::LessOrEqual;
+        DepthReadWrite.depthFunc = nvrhi::ComparisonFunc::GreaterOrEqual;
         DepthReadWrite.stencilEnable = false;
 
         // GreaterEqual read-only

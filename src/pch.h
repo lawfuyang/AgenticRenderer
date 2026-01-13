@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <cfloat>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -21,8 +23,34 @@
 
 #include <nvrhi/validation.h>
 #include <nvrhi/vulkan.h>
+#include <nvrhi/utils.h>
 
 #ifndef VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
     #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #endif
 #include <vulkan/vulkan.hpp>
+
+// DirectXMath aliases moved from MathTypes.h
+#include <DirectXMath.h>
+#include <DirectXCollision.h>
+
+using Vector = DirectX::XMVECTOR;
+using Matrix = DirectX::XMFLOAT4X4;
+
+using Vector2 = DirectX::XMFLOAT2;
+using Vector3 = DirectX::XMFLOAT3;
+using Vector4 = DirectX::XMFLOAT4;
+using Vector3A = DirectX::XMFLOAT3A;
+using Vector4A = DirectX::XMFLOAT4A;
+
+using Vector2U = DirectX::XMUINT2;
+using Vector2I = DirectX::XMINT2;
+using Vector3U = DirectX::XMUINT3;
+using Vector3I = DirectX::XMINT3;
+
+using Color = DirectX::XMFLOAT4;
+
+using Sphere = DirectX::BoundingSphere;
+using AABB = DirectX::BoundingBox;
+using OBB = DirectX::BoundingOrientedBox;
+using Frustum = DirectX::BoundingFrustum;

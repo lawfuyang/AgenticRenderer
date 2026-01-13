@@ -211,7 +211,7 @@ add_custom_target(build_shaders
             --compilerOptions "-fspv-target-env=vulkan1.3"
             --vulkanMemoryLayout dx
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
-            --relaxedInclude "MathTypes.h"
+            --relaxedInclude "pch.h"
             --verbose
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Compiling HLSL shaders to SPIR-V for Vulkan via ShaderMake"

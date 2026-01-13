@@ -45,8 +45,8 @@ public:
 
     // Common depth-stencil states
     nvrhi::DepthStencilState DepthDisabled;          // No depth test/write
-    nvrhi::DepthStencilState DepthRead;              // Depth test, no write (LessEqual)
-    nvrhi::DepthStencilState DepthReadWrite;         // Depth test + write (LessEqual)
+    nvrhi::DepthStencilState DepthRead;              // Depth test, no write (GreaterEqual for reversed-Z)
+    nvrhi::DepthStencilState DepthReadWrite;         // Depth test + write (GreaterEqual for reversed-Z)
     nvrhi::DepthStencilState DepthGreaterRead;       // Depth test GreaterEqual, no write
     nvrhi::DepthStencilState DepthGreaterReadWrite;  // Depth test GreaterEqual + write
 

@@ -4,6 +4,10 @@
 #include "GraphicRHI.h"
 #include "ImGuiLayer.h"
 #include "Scene.h"
+#include "Camera.h"
+
+// Forward declaration to avoid cyclic include
+class BasePassRenderer;
 
 struct Renderer
 {
@@ -50,6 +54,8 @@ struct Renderer
     // Swapchain textures
     nvrhi::TextureHandle m_SwapchainTextures[GraphicRHI::SwapchainImageCount] = {};
     uint32_t m_CurrentSwapchainImage = 0;
+    // Depth buffer for main framebuffer
+    nvrhi::TextureHandle m_DepthTexture;
 
     // Cached shader handles loaded from compiled SPIR-V binaries (keyed by output stem, e.g., "imgui_VSMain")
     std::unordered_map<std::string, nvrhi::ShaderHandle> m_ShaderCache;
@@ -58,8 +64,15 @@ struct Renderer
     ImGuiLayer m_ImGuiLayer;
     // Scene
     Scene m_Scene;
+    // Camera
+    Camera m_Camera;
+    // Base pass renderer
+    std::shared_ptr<BasePassRenderer> m_BasePassRenderer;
     double m_FrameTime = 0.0;
     double m_FPS = 0.0;
+
+    // Return last frame time in milliseconds
+    double GetFrameTimeMs() const { return m_FrameTime; }
 
     // Command list pools
     std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;

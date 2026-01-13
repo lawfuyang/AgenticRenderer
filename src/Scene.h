@@ -1,7 +1,6 @@
 #pragma once
 
 #include "pch.h"
-#include "MathTypes.h"
 
 // Minimal scene representation for glTF meshes/nodes/materials/textures
 class Scene
@@ -31,9 +30,9 @@ public:
         int m_Parent = -1;
         std::vector<int> m_Children;
         // local transform
-        Vector4x4 m_LocalTransform{};
+        Matrix m_LocalTransform{};
         // world transform (computed)
-        Vector4x4 m_WorldTransform{};
+        Matrix m_WorldTransform{};
         // world AABB
         Vector3 m_AabbMin{};
         Vector3 m_AabbMax{};

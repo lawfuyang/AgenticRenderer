@@ -5,7 +5,6 @@
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
-#include <cfloat>
 
 // CPU vertex layout used for uploading
 struct Vertex
@@ -26,23 +25,19 @@ static void ExtendAABB(Vector3& minOut, Vector3& maxOut, const Vector3& v)
 	if (v.z > maxOut.z) maxOut.z = v.z;
 }
 
-static Vector4x4 XMMATRIXToFloat4x4(const DirectX::XMMATRIX& m)
-{
-	Vector4x4 out;
-	DirectX::XMStoreFloat4x4(reinterpret_cast<DirectX::XMFLOAT4X4*>(&out), m);
-	return out;
-}
-
 // Recursively compute world transforms for a Scene instance
-static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const DirectX::XMMATRIX& parent)
+static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent)
 {
 	Scene::Node& node = scene.m_Nodes[nodeIndex];
-	DirectX::XMMATRIX local = DirectX::XMLoadFloat4x4(reinterpret_cast<const DirectX::XMFLOAT4X4*>(&node.m_LocalTransform));
-	DirectX::XMMATRIX world = DirectX::XMMatrixMultiply(local, parent);
-	node.m_WorldTransform = XMMATRIXToFloat4x4(world);
+	DirectX::XMMATRIX localM = DirectX::XMLoadFloat4x4(&node.m_LocalTransform);
+	DirectX::XMMATRIX parentM = DirectX::XMLoadFloat4x4(&parent);
+	DirectX::XMMATRIX worldM = DirectX::XMMatrixMultiply(localM, parentM);
+	Matrix worldOut{};
+	DirectX::XMStoreFloat4x4(&worldOut, worldM);
+	node.m_WorldTransform = worldOut;
 
 	for (int child : node.m_Children)
-		ComputeWorldTransforms(scene, child, world);
+		ComputeWorldTransforms(scene, child, node.m_WorldTransform);
 }
 
 bool Scene::LoadScene()
@@ -56,16 +51,23 @@ bool Scene::LoadScene()
 
 	SDL_Log("[Scene] Loading glTF scene: %s", scenePath.c_str());
 
+	uint64_t t_start = SDL_GetTicks();
+
 	cgltf_options options{};
 	cgltf_data* data = nullptr;
 	cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
+	uint64_t t_parse = SDL_GetTicks();
+	SDL_Log("[Scene] Parsed glTF in %llu ms", (unsigned long long)(t_parse - t_start));
 	if (res != cgltf_result_success || !data)
 	{
 		SDL_Log("[Scene] Failed to parse glTF file: %s", scenePath.c_str());
+		SDL_assert(false && "glTF parse failed");
 		return false;
 	}
 
 	res = cgltf_load_buffers(&options, data, scenePath.c_str());
+	uint64_t t_loadBuf = SDL_GetTicks();
+	SDL_Log("[Scene] Loaded buffers in %llu ms", (unsigned long long)(t_loadBuf - t_parse));
 	if (res != cgltf_result_success)
 	{
 		SDL_Log("[Scene] Failed to load glTF buffers");
@@ -74,13 +76,9 @@ bool Scene::LoadScene()
 		return false;
 	}
 
-	// Clear instance containers
-	m_Meshes.clear();
-	m_Nodes.clear();
-	m_Materials.clear();
-	m_Textures.clear();
-
 	// Textures & materials (minimal)
+	uint64_t t_texmat_start = SDL_GetTicks();
+	uint64_t t_texmat_end = t_texmat_start;
 	for (cgltf_size i = 0; i < data->materials_count; ++i)
 	{
 		m_Materials.emplace_back();
@@ -92,8 +90,11 @@ bool Scene::LoadScene()
 		m_Textures.emplace_back();
 		m_Textures.back().m_Uri = data->images[i].uri ? data->images[i].uri : std::string();
 	}
+	t_texmat_end = SDL_GetTicks();
+	SDL_Log("[Scene] Materials+Textures in %llu ms", (unsigned long long)(t_texmat_end - t_texmat_start));
 
 	// Collect vertex/index data
+	uint64_t t_mesh_start = SDL_GetTicks();
 	std::vector<Vertex> allVertices;
 	std::vector<uint32_t> allIndices;
 
@@ -182,8 +183,11 @@ bool Scene::LoadScene()
 
 		m_Meshes.push_back(std::move(mesh));
 	}
+	uint64_t t_mesh_end = SDL_GetTicks();
+	SDL_Log("[Scene] Mesh processing (vtx+idx) in %llu ms", (unsigned long long)(t_mesh_end - t_mesh_start));
 
 	// Nodes: build simple list and hierarchy
+	uint64_t t_nodes_start = SDL_GetTicks();
 	std::unordered_map<const cgltf_node*, int> nodeMap;
 	for (cgltf_size ni = 0; ni < data->nodes_count; ++ni)
 	{
@@ -193,19 +197,17 @@ bool Scene::LoadScene()
 		node.m_MeshIndex = cn.mesh ? static_cast<int>(cn.mesh - data->meshes) : -1;
 
 		// local transform
-		DirectX::XMMATRIX local = DirectX::XMMatrixIdentity();
+		Matrix localOut{};
 		if (cn.has_matrix)
 		{
-			DirectX::XMFLOAT4X4 m;
 			for (int i = 0; i < 16; ++i)
-				reinterpret_cast<float*>(&m)[i] = cn.matrix[i];
-			local = DirectX::XMLoadFloat4x4(&m);
+				reinterpret_cast<float*>(&localOut)[i] = cn.matrix[i];
 		}
 		else
 		{
-			DirectX::XMVECTOR trans = DirectX::XMVectorSet(0, 0, 0, 0);
-			DirectX::XMVECTOR scale = DirectX::XMVectorSet(1, 1, 1, 0);
-			DirectX::XMVECTOR rot = DirectX::XMQuaternionIdentity();
+			Vector trans = DirectX::XMVectorSet(0, 0, 0, 0);
+			Vector scale = DirectX::XMVectorSet(1, 1, 1, 0);
+			Vector rot = DirectX::XMQuaternionIdentity();
 			if (cn.has_translation)
 				trans = DirectX::XMVectorSet(cn.translation[0], cn.translation[1], cn.translation[2], 0);
 			if (cn.has_scale)
@@ -213,15 +215,18 @@ bool Scene::LoadScene()
 			if (cn.has_rotation)
 				rot = DirectX::XMVectorSet(cn.rotation[0], cn.rotation[1], cn.rotation[2], cn.rotation[3]);
 
-			local = DirectX::XMMatrixScalingFromVector(scale) * DirectX::XMMatrixRotationQuaternion(rot) * DirectX::XMMatrixTranslationFromVector(trans);
+			DirectX::XMMATRIX localM = DirectX::XMMatrixScalingFromVector(scale) * DirectX::XMMatrixRotationQuaternion(rot) * DirectX::XMMatrixTranslationFromVector(trans);
+			DirectX::XMStoreFloat4x4(&localOut, localM);
 		}
 
-		node.m_LocalTransform = XMMATRIXToFloat4x4(local);
+		node.m_LocalTransform = localOut;
 		node.m_WorldTransform = node.m_LocalTransform;
 
 		m_Nodes.push_back(std::move(node));
 		nodeMap[&cn] = static_cast<int>(m_Nodes.size()) - 1;
 	}
+	uint64_t t_nodes_end = SDL_GetTicks();
+	SDL_Log("[Scene] Node parsing in %llu ms", (unsigned long long)(t_nodes_end - t_nodes_start));
 
 	// Build parent/children links
 	for (cgltf_size ni = 0; ni < data->nodes_count; ++ni)
@@ -241,13 +246,21 @@ bool Scene::LoadScene()
 	}
 
 	// Compute world transforms (roots are nodes with parent == -1)
+	uint64_t t_xform_start = SDL_GetTicks();
 	for (size_t i = 0; i < m_Nodes.size(); ++i)
 	{
 		if (m_Nodes[i].m_Parent == -1)
-			ComputeWorldTransforms(*this, static_cast<int>(i), DirectX::XMMatrixIdentity());
+		{
+			Matrix identity{};
+			DirectX::XMStoreFloat4x4(&identity, DirectX::XMMatrixIdentity());
+			ComputeWorldTransforms(*this, static_cast<int>(i), identity);
+		}
 	}
 
+	uint64_t t_xform_end = SDL_GetTicks();
+	SDL_Log("[Scene] World transform computation in %llu ms", (unsigned long long)(t_xform_end - t_xform_start));
 	// Compute per-node AABB by transforming mesh AABB into world space (simple approx: transform 8 corners)
+	uint64_t t_aabb_start = SDL_GetTicks();
 	for (size_t ni = 0; ni < m_Nodes.size(); ++ni)
 	{
 		Node& node = m_Nodes[ni];
@@ -258,7 +271,7 @@ bool Scene::LoadScene()
 			node.m_AabbMin = Vector3{ FLT_MAX, FLT_MAX, FLT_MAX };
 			node.m_AabbMax = Vector3{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
 
-			DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(reinterpret_cast<const DirectX::XMFLOAT4X4*>(&node.m_WorldTransform));
+			DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(&node.m_WorldTransform);
 			// 8 corners
 			Vector3 corners[8];
 			corners[0] = Vector3{ mesh.m_AabbMin.x, mesh.m_AabbMin.y, mesh.m_AabbMin.z };
@@ -272,17 +285,21 @@ bool Scene::LoadScene()
 
 			for (int c = 0; c < 8; ++c)
 			{
-				DirectX::XMVECTOR v = DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3*>(&corners[c]));
-				DirectX::XMVECTOR vt = DirectX::XMVector3Transform(v, world);
-				DirectX::XMFLOAT3 vt3;
+				Vector v = DirectX::XMLoadFloat3(reinterpret_cast<const Vector3*>(&corners[c]));
+				Vector vt = DirectX::XMVector3Transform(v, world);
+				Vector3 vt3;
 				DirectX::XMStoreFloat3(&vt3, vt);
 				Vector3 tv{ vt3.x, vt3.y, vt3.z };
 				ExtendAABB(node.m_AabbMin, node.m_AabbMax, tv);
 			}
 		}
 	}
+	uint64_t t_aabb_end = SDL_GetTicks();
+	SDL_Log("[Scene] AABB computation in %llu ms", (unsigned long long)(t_aabb_end - t_aabb_start));
 
 	// Create GPU buffers for all vertex/index data
+	uint64_t t_gpu_start = SDL_GetTicks();
+	uint64_t t_gpu_end = t_gpu_start;
 	Renderer* renderer = Renderer::GetInstance();
 
 	const size_t vbytes = allVertices.size() * sizeof(Vertex);
@@ -321,10 +338,23 @@ bool Scene::LoadScene()
 
 		renderer->SubmitCommandList(cmd);
 		renderer->ExecutePendingCommandLists();
+		t_gpu_end = SDL_GetTicks();
+		SDL_Log("[Scene] GPU upload (create+write+submit) in %llu ms", (unsigned long long)(t_gpu_end - t_gpu_start));
 	}
 
 	cgltf_free(data);
-	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
+	uint64_t t_end = SDL_GetTicks();
+	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu (total %llu ms)", m_Meshes.size(), m_Nodes.size(), (unsigned long long)(t_end - t_start));
+	SDL_Log("[Scene] Breakdown ms: parse=%llu loadbuf=%llu texmat=%llu mesh=%llu nodes=%llu xform=%llu aabb=%llu gpu=%llu", 
+		(unsigned long long)(t_parse - t_start),
+		(unsigned long long)(t_loadBuf - t_parse),
+		(unsigned long long)(t_texmat_end - t_texmat_start),
+		(unsigned long long)(t_mesh_end - t_mesh_start),
+		(unsigned long long)(t_nodes_end - t_nodes_start),
+		(unsigned long long)(t_xform_end - t_xform_start),
+		(unsigned long long)(t_aabb_end - t_aabb_start),
+		(unsigned long long)(t_gpu_end - t_gpu_start));
+	
 	return true;
 }
 

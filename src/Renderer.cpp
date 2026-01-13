@@ -2,6 +2,7 @@
 #include "Utilities.h"
 #include "Config.h"
 #include "CommonResources.h"
+#include "BasePassRenderer.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -154,11 +155,6 @@ namespace
 
         SDL_Log("[Shader] Parsed %zu shader entries from config", shaders.size());
         return shaders;
-    }
-
-    void HandleInput(const SDL_Event& event)
-    {
-        (void)event;
     }
 
     void InitSDL()
@@ -416,6 +412,15 @@ bool Renderer::Initialize()
         return false;
     }
 
+    // Initialize base pass renderer now that shaders and device are ready
+    m_BasePassRenderer = std::make_shared<BasePassRenderer>();
+    if (!m_BasePassRenderer || !m_BasePassRenderer->Initialize())
+    {
+        SDL_Log("[Init] Failed to initialize BasePassRenderer");
+        Shutdown();
+        return false;
+    }
+
     // Load scene (if configured) after all renderer resources are ready
     if (!m_Scene.LoadScene())
     {
@@ -451,36 +456,37 @@ void Renderer::Run()
         while (SDL_PollEvent(&event))
         {
             m_ImGuiLayer.ProcessEvent(event);
+            m_Camera.ProcessEvent(event);
 
             if (event.type == SDL_EVENT_QUIT)
             {
                 SDL_Log("[Run ] Received quit event");
                 running = false;
                 break;
-            }
-
-            switch (event.type)
-            {
-            case SDL_EVENT_KEY_DOWN:
-            case SDL_EVENT_KEY_UP:
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            case SDL_EVENT_MOUSE_BUTTON_UP:
-            case SDL_EVENT_MOUSE_MOTION:
-            case SDL_EVENT_MOUSE_WHEEL:
-                HandleInput(event);
-                break;
-            default:
-                break;
-            }
+            }            
         }
 
         // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
         UpdateImGuiFrame();
 
+        // Update camera (camera retrieves frame time internally)
+        m_Camera.Update();
+
         {
-            nvrhi::CommandListHandle commandList = AcquireCommandList("Clear Backbuffer");
+            nvrhi::CommandListHandle commandList = AcquireCommandList("Clear");
+            // Clear color
             commandList->clearTextureFloat(GetCurrentBackBufferTexture(), nvrhi::AllSubresources, nvrhi::Color(0.14f, 0.23f, 0.33f, 1.0f));
+            // Clear depth for reversed-Z (clear to 0.0f, no stencil)
+            commandList->clearDepthStencilTexture(m_DepthTexture, nvrhi::AllSubresources, true, 0.0f, false, 0);
             SubmitCommandList(commandList);
+        }
+
+        // Base pass (forward lighting)
+        if (m_BasePassRenderer)
+        {
+            nvrhi::CommandListHandle baseCmd = AcquireCommandList("BasePass");
+            m_BasePassRenderer->Render(baseCmd);
+            SubmitCommandList(baseCmd);
         }
 
         // Render ImGui frame
@@ -737,6 +743,19 @@ void Renderer::UpdateImGuiFrame()
     if (ImGui::Begin("Property Grid", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::Checkbox("Show Demo Window", &s_ShowDemoWindow);
+        // Camera controls
+        if (ImGui::TreeNode("Camera"))
+        {
+            if (ImGui::DragFloat("Move Speed", &m_Camera.m_MoveSpeed, 0.1f, 0.0f, 100.0f))
+            {
+            }
+
+            if (ImGui::DragFloat("Mouse Sensitivity", &m_Camera.m_MouseSensitivity, 0.0005f, 0.0f, 1.0f, "%.4f"))
+            {
+            }
+
+            ImGui::TreePop();
+        }
     }
     ImGui::End();
 
@@ -854,6 +873,25 @@ bool Renderer::CreateSwapchainTextures()
         m_RHI.SetDebugName(texture, textureDesc.debugName);
     }
 
+    // Create a depth texture for the main framebuffer
+    nvrhi::TextureDesc depthDesc;
+    depthDesc.width = m_RHI.m_SwapchainExtent.width;
+    depthDesc.height = m_RHI.m_SwapchainExtent.height;
+    depthDesc.format = nvrhi::Format::D32;
+    depthDesc.debugName = "DepthBuffer";
+    depthDesc.isRenderTarget = true;
+    depthDesc.isUAV = false;
+    depthDesc.initialState = nvrhi::ResourceStates::DepthWrite;
+
+    m_DepthTexture = m_NvrhiDevice->createTexture(depthDesc);
+    if (!m_DepthTexture)
+    {
+        SDL_Log("[Init] Failed to create depth texture");
+        SDL_assert(false && "Failed to create depth texture");
+        return false;
+    }
+    m_RHI.SetDebugName(m_DepthTexture, depthDesc.debugName);
+
     SDL_Log("[Init] Created %u NVRHI swap chain texture handles", GraphicRHI::SwapchainImageCount);
     return true;
 }
@@ -865,6 +903,7 @@ void Renderer::DestroySwapchainTextures()
     {
         m_SwapchainTextures[i] = nullptr;
     }
+    m_DepthTexture = nullptr;
 }
 
 int main(int argc, char* argv[])
