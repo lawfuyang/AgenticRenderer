@@ -55,6 +55,8 @@ struct PerFrameData
 {
   Matrix ViewProj;
   Vector4 CameraPos; // xyz: camera world-space position, w: unused
+  Vector3 LightDirection;
+  float LightIntensity;
 };
 
 // Per-instance data for instanced rendering

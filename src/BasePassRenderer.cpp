@@ -173,6 +173,8 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     PerFrameData cb{};
     cb.ViewProj = viewProj;
     cb.CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
+    cb.LightDirection = renderer->GetDirectionalLightDirection();
+    cb.LightIntensity = renderer->m_DirectionalLight.intensity / 10000.0f;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     // Set indirect params

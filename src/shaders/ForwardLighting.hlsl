@@ -14,8 +14,15 @@ cbuffer PerFrameCB : register(b0)
 // Structured buffer for per-instance data
 StructuredBuffer<PerInstanceData> instances : register(t0);
 
-// Hardcoded directional light (in world space)
-static const float3 kLightDirConst = float3(0.6f, -0.7f, -0.4f);
+float3x3 MakeAdjugateMatrix(float4x4 m)
+{
+    return float3x3
+    (
+		cross(m[1].xyz, m[2].xyz),
+		cross(m[2].xyz, m[0].xyz),
+		cross(m[0].xyz, m[1].xyz)
+	);
+}
 
 struct VSOut
 {
@@ -32,66 +39,89 @@ VSOut VSMain(VertexInput input, uint instanceID : SV_StartInstanceLocation)
     VSOut o;
     float4 worldPos = mul(float4(input.pos, 1.0f), inst.World);
     o.Position = mul(worldPos, perFrame.ViewProj);
-    o.normal = normalize(mul((float3x3)inst.World, input.normal));
+
+    // Alien math to calculate the normal and tangent in world space, without inverse-transposing the world matrix
+    // https://github.com/graphitemaster/normals_revisited
+    // https://x.com/iquilezles/status/1866219178409316362
+    // https://www.shadertoy.com/view/3s33zj
+    float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(inst.World);
+
+    o.normal = normalize(mul(input.normal, adjugateWorldMatrix));
     o.uv = input.uv;
     o.worldPos = worldPos.xyz;
     o.instanceID = instanceID;
     return o;
 }
 
-// Helper BRDF functions
-float3 Fresnel_Schlick(float cosTheta, float3 F0)
+// 0.08 is a max F0 we define for dielectrics which matches with Crystalware and gems (0.05 - 0.08)
+// This means we cannot represent Diamond-like surfaces as they have an F0 of 0.1 - 0.2
+float DielectricSpecularToF0(float specular)
 {
-    return F0 + (1.0f - F0) * pow(1.0f - cosTheta, 5.0f);
+    return 0.08f * specular;
 }
 
-float D_GGX(float NdotH, float a)
+//Note from Filament: vec3 f0 = 0.16 * reflectance * reflectance * (1.0 - metallic) + baseColor * metallic;
+// F0 is the base specular reflectance of a surface
+// For dielectrics, this is monochromatic commonly between 0.02 (water) and 0.08 (gems) and derived from a separate specular value
+// For conductors, this is based on the base color we provided
+float3 ComputeF0(float specular, float3 baseColor, float metalness)
 {
-    float a2 = a * a;
-    float denom = NdotH * NdotH * (a2 - 1.0f) + 1.0f;
-    return a2 / (PI * denom * denom + 1e-6);
+    return lerp(DielectricSpecularToF0(specular).xxx, baseColor, metalness);
 }
 
-float G_SchlickGGX(float NdotV, float k)
+float3 ComputeF0(float3 baseColor, float metalness)
 {
-    return NdotV / (NdotV * (1.0f - k) + k + 1e-6);
+    const float kMaterialSpecular = 0.5f;
+    return lerp(DielectricSpecularToF0(kMaterialSpecular).xxx, baseColor, metalness);
 }
 
-float G_Smith(float NdotV, float NdotL, float a)
+// [Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"]
+float3 F_Schlick(float3 f0, float VdotH)
 {
-    float k = (a + 1.0f);
-    k = (k * k) / 8.0f;
-    return G_SchlickGGX(NdotV, k) * G_SchlickGGX(NdotL, k);
+    float Fc = pow(1.0f - VdotH, 5.0f);
+    return Fc + (1.0f - Fc) * f0;
+}
+
+// GGX / Trowbridge-Reitz
+// Note the division by PI here
+// [Walter et al. 2007, "Microfacet models for refraction through rough surfaces"]
+float D_GGX(float NdotH, float a2)
+{
+    float d = (NdotH * a2 - NdotH) * NdotH + 1;
+    return a2 / (PI * d * d);
+}
+
+// Appoximation of joint Smith term for GGX
+// Returned value is G2 / (4 * NdotL * NdotV). So predivided by specular BRDF denominator
+// [Heitz 2014, "Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs"]
+float Vis_SmithJointApprox(float a2, float NdotV, float NdotL)
+{
+    float Vis_SmithV = NdotL * (NdotV * (1 - a2) + a2);
+    float Vis_SmithL = NdotV * (NdotL * (1 - a2) + a2);
+    return 0.5 * rcp(Vis_SmithV + Vis_SmithL);
+}
+
+// https://www.unrealengine.com/en-US/blog/physically-based-shading-on-mobile
+float3 EnvBRDFApprox(float3 specularColor, float roughness, float ndotv)
+{
+    const float4 c0 = float4(-1, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1, 0.0425, 1.04, -0.04);
+    float4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * ndotv)) * r.x + r.y;
+    float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
+    return specularColor * AB.x + AB.y;
 }
 
 // Oren-Nayar diffuse model returning the scalar BRDF multiplier
-float OrenNayar(float3 N, float3 V, float3 L, float roughness, float NdotV, float NdotL)
+float OrenNayar(float NdotL, float NdotV, float LdotV, float a2, float albedo)
 {
-    // Map roughness [0,1] (PBR) to sigma angle in radians [0, PI/2]
-    float sigma = roughness * (PI * 0.5f);
-    float sigma2 = sigma * sigma;
-    float A = 1.0f - 0.5f * sigma2 / (sigma2 + 0.33f);
-    float B = 0.45f * sigma2 / (sigma2 + 0.09f);
+  float s = LdotV - NdotL * NdotV;
+  float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
 
-    float3 Vt = V - N * NdotV;
-    float3 Lt = L - N * NdotL;
-    float VtLen = length(Vt);
-    float LtLen = length(Lt);
-    float cosPhi = 0.0f;
-    if (VtLen > 1e-6 && LtLen > 1e-6)
-    {
-        cosPhi = dot(Vt / VtLen, Lt / LtLen);
-        cosPhi = max(0.0f, cosPhi);
-    }
+  float A = 1.0 + a2 * (albedo / (a2 + 0.13) + 0.5 / (a2 + 0.33));
+  float B = 0.45 * a2 / (a2 + 0.09);
 
-    float theta_i = acos(NdotL);
-    float theta_r = acos(NdotV);
-    float alpha = max(theta_i, theta_r);
-    float beta = min(theta_i, theta_r);
-    // Clamp beta to prevent tan(beta) from becoming infinite at grazing angles
-    beta = min(beta, PI * 0.5f - 1e-6f);
-    float oren = A + B * cosPhi * sin(alpha) * tan(beta);
-    return oren;
+  return albedo * max(0.0, NdotL) * (A + B * s / t) / PI;
 }
 
 float4 PSMain(VSOut input) : SV_TARGET
@@ -101,34 +131,39 @@ float4 PSMain(VSOut input) : SV_TARGET
     // Reusable locals
     float3 N = normalize(input.normal);
     float3 V = normalize(perFrame.CameraPos.xyz - input.worldPos);
-    float3 L = normalize(kLightDirConst);
+    float3 L = perFrame.LightDirection;
     float3 H = normalize(V + L);
 
     float NdotL = saturate(dot(N, L));
-    float NdotV = saturate(dot(N, V));
+    float NdotV = saturate(abs(dot(N, V)) + 1e-5); // Bias to avoid artifacting
     float NdotH = saturate(dot(N, H));
     float VdotH = saturate(dot(V, H));
+    float LdotV = saturate(dot(L, V));
 
     float3 baseColor = inst.BaseColor.xyz;
     float alpha = inst.BaseColor.w;
     float roughness = inst.RoughnessMetallic.x;
     float metallic = inst.RoughnessMetallic.y;
 
-    // Fresnel (Schlick)
-    float3 F0 = lerp(float3(0.04f, 0.04f, 0.04f), baseColor, metallic);
-    float3 F = Fresnel_Schlick(VdotH, F0);
-
-    // Specular terms (GGX)
     float a = roughness * roughness;
-    float D = D_GGX(NdotH, a);
-    float G = G_Smith(NdotV, NdotL, a);
-    float3 spec = (D * G) * F / max(4.0f * NdotV * NdotL, 1e-6);
+	float a2 = clamp(a * a, 0.0001f, 1.0f);
 
-    // Diffuse via Oren-Nayar
-    float oren = OrenNayar(N, V, L, roughness, NdotV, NdotL);
-    float3 diffuse = (1.0f - metallic) * baseColor * (1.0f - F) * oren / PI;
+    // Diffuse BRDF via Oren-Nayar
+    float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
+    float3 diffuse = oren * (1.0f - metallic) * inst.BaseColor.xyz / PI;
+    
+    const float materialSpecular = 0.5f; // TODO
+    float3 specularColor = ComputeF0(materialSpecular, baseColor, metallic);
 
-    float3 radiance = float3(1.0f, 1.0f, 1.0f);
+	// Generalized microfacet Specular BRDF
+	float D = D_GGX(a2, NdotH);
+	float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
+    float3 F = F_Schlick(specularColor, VdotH);
+    float3 spec = (D * Vis) * F;
+
+    spec += EnvBRDFApprox(specularColor, roughness, NdotV);
+
+    float3 radiance = float3(perFrame.LightIntensity, perFrame.LightIntensity, perFrame.LightIntensity);
     // Fake ambient (IBL fallback): small ambient multiplied by baseColor and reduced by metallic
     float3 ambient = baseColor * 0.03f * (1.0f - metallic);
     float3 color = ambient + (diffuse + spec) * radiance * NdotL;

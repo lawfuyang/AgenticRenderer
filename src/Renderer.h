@@ -91,6 +91,13 @@ struct Renderer
     Scene m_Scene;
     // Camera
     Camera m_Camera;
+    // Directional Light
+    struct DirectionalLight
+    {
+        float yaw = 0.0f;
+        float pitch = -0.5f;
+        float intensity = 10000.0f; // Default to 10,000 lux (bright daylight)
+    } m_DirectionalLight;
     // Renderers
     std::vector<std::shared_ptr<IRenderer>> m_Renderers;
     double m_FrameTime = 0.0;
@@ -98,6 +105,9 @@ struct Renderer
 
     // Return last frame time in milliseconds
     double GetFrameTimeMs() const { return m_FrameTime; }
+
+    // Get directional light direction in world space
+    Vector3 GetDirectionalLightDirection() const;
 
     // Command list pools
     std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;

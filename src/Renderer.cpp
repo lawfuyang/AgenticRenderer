@@ -3,6 +3,8 @@
 #include "Config.h"
 #include "CommonResources.h"
 
+#include "shaders/ShaderShared.hlsl"
+
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
@@ -563,6 +565,19 @@ void Renderer::Shutdown()
     SDL_Log("[Shutdown] Clean exit");
 }
 
+Vector3 Renderer::GetDirectionalLightDirection() const
+{
+    // Convert yaw and pitch to direction vector
+    // Yaw: rotation around Y axis, Pitch: elevation from XZ plane
+    float cosYaw = cos(m_DirectionalLight.yaw);
+    float sinYaw = sin(m_DirectionalLight.yaw);
+    float cosPitch = cos(m_DirectionalLight.pitch);
+    float sinPitch = sin(m_DirectionalLight.pitch);
+    
+    // Direction from light to surface (opposite of light direction)
+    return Vector3{ sinYaw * cosPitch, sinPitch, cosYaw * cosPitch };
+}
+
 bool Renderer::CreateNvrhiDevice()
 {
     SDL_Log("[Init] Creating NVRHI Vulkan device");
@@ -760,6 +775,16 @@ void Renderer::UpdateImGuiFrame()
             if (ImGui::DragFloat("Mouse Sensitivity", &m_Camera.m_MouseSensitivity, 0.0005f, 0.0f, 1.0f, "%.4f"))
             {
             }
+
+            ImGui::TreePop();
+        }
+
+        // Directional Light controls
+        if (ImGui::TreeNode("Directional Light"))
+        {
+            ImGui::DragFloat("Yaw", &m_DirectionalLight.yaw, 0.01f, -PI, PI);
+            ImGui::DragFloat("Pitch", &m_DirectionalLight.pitch, 0.01f, -PI * 0.5f, PI * 0.5f);
+            ImGui::DragFloat("Lux", &m_DirectionalLight.intensity, 100.0f, 0.0f, 200000.0f);
 
             ImGui::TreePop();
         }
