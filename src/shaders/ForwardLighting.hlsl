@@ -126,7 +126,7 @@ float4 PSMain(VSOut input) : SV_TARGET
 
     // Diffuse via Oren-Nayar
     float oren = OrenNayar(N, V, L, roughness, NdotV, NdotL);
-    float3 diffuse = (1.0f - metallic) * baseColor * (1.0f - F0) * oren / PI;
+    float3 diffuse = (1.0f - metallic) * baseColor * (1.0f - F) * oren / PI;
 
     float3 radiance = float3(1.0f, 1.0f, 1.0f);
     // Fake ambient (IBL fallback): small ambient multiplied by baseColor and reduced by metallic
