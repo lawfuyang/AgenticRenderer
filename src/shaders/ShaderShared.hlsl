@@ -55,5 +55,6 @@ struct PerObjectData
 {
   Matrix World;
   Matrix ViewProj;
+  Vector4 BaseColor;
 };
 #endif // FORWARD_LIGHTING_DEFINE

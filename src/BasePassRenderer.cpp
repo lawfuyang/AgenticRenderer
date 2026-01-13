@@ -106,6 +106,18 @@ void BasePassRenderer::Render(const nvrhi::CommandListHandle& commandList)
         PerObjectData cb{};
         cb.ViewProj = viewProj;
         cb.World = node.m_WorldTransform;
+        // Set base color from material (if available)
+        cb.BaseColor = Vector4{1.0f, 1.0f, 1.0f, 1.0f};
+        if (!mesh.m_Primitives.empty())
+        {
+            const Scene::Primitive& firstPrim = mesh.m_Primitives[0];
+            int matIdx = firstPrim.m_MaterialIndex;
+            if (matIdx >= 0 && matIdx < (int)renderer->m_Scene.m_Materials.size())
+            {
+                const Scene::Material& mat = renderer->m_Scene.m_Materials[matIdx];
+                cb.BaseColor = mat.m_BaseColorFactor;
+            }
+        }
 
         // Write PerObjectData directly into the per-frame volatile constant buffer
         commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);

@@ -83,6 +83,22 @@ bool Scene::LoadScene()
 	{
 		m_Materials.emplace_back();
 		m_Materials.back().m_Name = data->materials[i].name ? data->materials[i].name : std::string();
+		// Read PBR baseColorFactor if present
+		const cgltf_pbr_metallic_roughness& pbr = data->materials[i].pbr_metallic_roughness;
+		// copy base color factor (defaults to 1,1,1,1 if not specified)
+		m_Materials.back().m_BaseColorFactor.x = pbr.base_color_factor[0];
+		m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
+		m_Materials.back().m_BaseColorFactor.z = pbr.base_color_factor[2];
+		m_Materials.back().m_BaseColorFactor.w = pbr.base_color_factor[3];
+		if (pbr.base_color_texture.texture)
+		{
+			const cgltf_texture* tex = pbr.base_color_texture.texture;
+			if (tex && tex->image)
+			{
+				cgltf_size imgIndex = tex->image - data->images;
+				m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
+			}
+		}
 	}
 
 	for (cgltf_size i = 0; i < data->images_count; ++i)

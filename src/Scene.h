@@ -41,6 +41,8 @@ public:
     struct Material
     {
         std::string m_Name;
+        Vector4 m_BaseColorFactor = Vector4{1.0f, 1.0f, 1.0f, 1.0f};
+        int m_BaseColorTexture = -1; // index into m_Textures
     };
 
     struct Texture

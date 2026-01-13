@@ -35,7 +35,8 @@ float4 PSMain(VSOut input) : SV_TARGET
 {
     float3 lightDir = normalize(kLightDirConst);
     float NdotL = saturate(dot(input.normal, lightDir));
-    float3 baseColor = float3(1.0f, 0.0f, 0.0f); // hardcoded red
+    float3 baseColor = perObject.BaseColor.xyz;
+    float alpha = perObject.BaseColor.w;
     float3 color = baseColor * (0.1f + 0.9f * NdotL);
-    return float4(color, 1.0f);
+    return float4(color, alpha);
 }
