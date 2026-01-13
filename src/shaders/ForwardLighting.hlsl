@@ -113,6 +113,7 @@ float3 EnvBRDFApprox(float3 specularColor, float roughness, float ndotv)
 }
 
 // Oren-Nayar diffuse model returning the scalar BRDF multiplier
+// https://mimosa-pudica.net/improved-oren-nayar.html
 float OrenNayar(float NdotL, float NdotV, float LdotV, float a2, float albedo)
 {
   float s = LdotV - NdotL * NdotV;
