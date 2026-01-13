@@ -167,18 +167,25 @@ bool Scene::LoadScene()
 			for (cgltf_size v = 0; v < vertCount; ++v)
 			{
 				Vertex vx{};
-				float pos[3] = { 0,0,0 };
-				cgltf_accessor_read_float(posAcc, v, pos, 3);
+				float pos[4] = { 0,0,0,0 };
+				cgltf_size posComps = cgltf_num_components(posAcc->type);
+				cgltf_accessor_read_float(posAcc, v, pos, posComps);
 				vx.pos.x = pos[0]; vx.pos.y = pos[1]; vx.pos.z = pos[2];
 
-				float nrm[3] = { 0,0,0 };
+				float nrm[4] = { 0,0,0,0 };
 				if (normAcc)
-					cgltf_accessor_read_float(normAcc, v, nrm, 3);
+				{
+					cgltf_size nrmComps = cgltf_num_components(normAcc->type);
+					cgltf_accessor_read_float(normAcc, v, nrm, nrmComps);
+				}
 				vx.normal.x = nrm[0]; vx.normal.y = nrm[1]; vx.normal.z = nrm[2];
 
-				float uv[2] = { 0,0 };
+				float uv[4] = { 0,0,0,0 };
 				if (uvAcc)
-					cgltf_accessor_read_float(uvAcc, v, uv, 2);
+				{
+					cgltf_size uvComps = cgltf_num_components(uvAcc->type);
+					cgltf_accessor_read_float(uvAcc, v, uv, uvComps);
+				}
 				vx.uv.x = uv[0]; vx.uv.y = uv[1];
 
 				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.pos);
