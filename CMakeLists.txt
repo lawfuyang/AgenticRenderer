@@ -101,7 +101,14 @@ set(CGLTF_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/cgltf")
 set(CGLTF_SUBDIR "cgltf-${CGLTF_VERSION}")
 set(CGLTF_SRC_DIR "${CGLTF_INSTALL_DIR}/${CGLTF_SUBDIR}")
 
-# NVRHI Configuration
+# ----------------------------------------------------------------------------
+# DirectX Shader Compiler (DXC) - downloaded into external/dxc
+# ----------------------------------------------------------------------------
+set(DXC_VERSION "v1.8.2505.1")
+set(DXC_URL "https://github.com/microsoft/DirectXShaderCompiler/releases/download/${DXC_VERSION}/dxc_2025_07_14.zip")
+download_library("dxc" "${DXC_VERSION}" "${DXC_URL}" "dxc_*")
+set(DXC_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/dxc")
+set(DXC_EXE "${DXC_INSTALL_DIR}/bin/x64/dxc.exe")
 set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX12 OFF CACHE BOOL "" FORCE)
@@ -184,12 +191,6 @@ set(SHADER_CONFIG       ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
 set(SHADER_OUTPUT_DIR   ${CMAKE_SOURCE_DIR}/bin/shaders)
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
 
-# Optional: pass an explicit compiler path if ShaderMake discovered DXC
-set(_SHADERMAKE_COMPILER_ARG)
-if(DEFINED SHADERMAKE_DXC_PATH AND EXISTS "${SHADERMAKE_DXC_PATH}")
-    set(_SHADERMAKE_COMPILER_ARG --compiler "${SHADERMAKE_DXC_PATH}")
-endif()
-
 # Resolve ShaderMake executable path per configuration when possible
 if(TARGET ShaderMake)
     set(SHADERMAKE_PATH_GENEX $<TARGET_FILE:ShaderMake>)
@@ -204,8 +205,8 @@ add_custom_target(build_shaders
             --binary
             -c "${SHADER_CONFIG}"
             -o "${SHADER_OUTPUT_DIR}"
-            ${_SHADERMAKE_COMPILER_ARG}
-            --shaderModel 6_6
+            --compiler "${DXC_EXE}"
+            --shaderModel 6_8
             --hlsl2021
             --vulkanVersion 1.4
             --compilerOptions "-fspv-target-env=vulkan1.3"
