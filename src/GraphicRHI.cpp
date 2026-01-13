@@ -384,6 +384,7 @@ bool GraphicRHI::CreateLogicalDevice()
     // Enable device features
     vk::PhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.multiDrawIndirect = VK_TRUE;
 
     // Enable Vulkan 1.3 features
     vk::PhysicalDeviceVulkan13Features vulkan13Features{};
@@ -398,8 +399,12 @@ bool GraphicRHI::CreateLogicalDevice()
     vulkan12Features.runtimeDescriptorArray = VK_TRUE;
     vulkan12Features.timelineSemaphore = VK_TRUE;
 
+    vk::PhysicalDeviceVulkan11Features vulkan11Features{};
+    vulkan11Features.pNext = &vulkan12Features;
+    vulkan11Features.shaderDrawParameters = VK_TRUE;
+
     vk::DeviceCreateInfo createInfo{};
-    createInfo.pNext = &vulkan12Features;
+    createInfo.pNext = &vulkan11Features;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(m_DeviceExtensions.size());

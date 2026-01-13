@@ -6,6 +6,7 @@ bool CommonResources::Initialize()
 {
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::IDevice* device = renderer->m_NvrhiDevice;
+    nvrhi::GraphicsAPI api = device->getGraphicsAPI();
 
     // Helper lambda to create samplers with error checking
     auto createSampler = [device](const char* name, bool linearFilter, nvrhi::SamplerAddressMode addressMode, float anisotropy = 1.0f) -> nvrhi::SamplerHandle
@@ -33,25 +34,28 @@ bool CommonResources::Initialize()
     Anisotropic = createSampler("Anisotropic", true, nvrhi::SamplerAddressMode::Wrap, 16.0f);
 
     // Initialize common raster states
+    // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding
+    bool frontCCW = (api != nvrhi::GraphicsAPI::VULKAN);
+
     // Solid, no cull
     RasterCullNone.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullNone.cullMode = nvrhi::RasterCullMode::None;
-    RasterCullNone.frontCounterClockwise = true;
+    RasterCullNone.frontCounterClockwise = frontCCW;
 
     // Solid, back-face cull
     RasterCullBack.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullBack.cullMode = nvrhi::RasterCullMode::Back;
-    RasterCullBack.frontCounterClockwise = true;
+    RasterCullBack.frontCounterClockwise = frontCCW;
 
     // Solid, front-face cull
     RasterCullFront.fillMode = nvrhi::RasterFillMode::Solid;
     RasterCullFront.cullMode = nvrhi::RasterCullMode::Front;
-    RasterCullFront.frontCounterClockwise = true;
+    RasterCullFront.frontCounterClockwise = frontCCW;
 
     // Wireframe, no cull
     RasterWireframeNoCull.fillMode = nvrhi::RasterFillMode::Wireframe;
     RasterWireframeNoCull.cullMode = nvrhi::RasterCullMode::None;
-    RasterWireframeNoCull.frontCounterClockwise = true;
+    RasterWireframeNoCull.frontCounterClockwise = frontCCW;
 
     // Initialize common blend states
     {

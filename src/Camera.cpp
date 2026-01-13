@@ -59,7 +59,7 @@ void Camera::ProcessEvent(const SDL_Event& event)
             m_LastMouseY = event.motion.y;
 
             m_Yaw += dx * m_MouseSensitivity;
-            m_Pitch += -dy * m_MouseSensitivity;
+            m_Pitch += dy * m_MouseSensitivity;  // Positive dy (mouse down) should increase pitch (look down)
             // Clamp pitch
             if (m_Pitch > DirectX::XM_PIDIV2 - 0.01f) m_Pitch = DirectX::XM_PIDIV2 - 0.01f;
             if (m_Pitch < -DirectX::XM_PIDIV2 + 0.01f) m_Pitch = -DirectX::XM_PIDIV2 + 0.01f;
@@ -129,20 +129,22 @@ Matrix Camera::GetViewMatrix() const
 
 Matrix Camera::GetProjMatrix() const
 {
-    using namespace DirectX;
     // Create an infinite projection matrix (no far plane) for better depth precision.
     float yScale = 1.0f / std::tan(m_FovY * 0.5f);
     float xScale = yScale / m_Aspect;
-    // Row-major XMMATRIX constructed from row vectors
-        XMMATRIX m = XMMATRIX(
-            XMVectorSet(xScale, 0.0f, 0.0f, 0.0f),
-            XMVectorSet(0.0f, yScale, 0.0f, 0.0f),
-            XMVectorSet(0.0f, 0.0f, 1.0f, 1.0f),
-            XMVectorSet(0.0f, 0.0f, -m_Near, 0.0f)
-        );
-    Matrix out{};
-    XMStoreFloat4x4(&out, m);
-    return out;
+
+    Matrix m{};
+    m._11 = xScale;
+    // Negate Y scale for Vulkan to match DirectX Y-up convention
+    Renderer* renderer = Renderer::GetInstance();
+    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+    m._22 = (api == nvrhi::GraphicsAPI::VULKAN) ? -yScale : yScale;
+    m._33 = 0.0f;
+    m._34 = 1.0f;
+    m._43 = m_Near;
+    m._44 = 0.0f;
+
+    return m;
 }
 
 Matrix Camera::GetViewProjMatrix() const

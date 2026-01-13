@@ -50,14 +50,20 @@ struct VertexInput
 };
 #endif
 
-// Shared per-object data structure (one definition used by both C++ and HLSL).
-struct PerObjectData
+// Shared per-frame data structure (one definition used by both C++ and HLSL).
+struct PerFrameData
+{
+  Matrix ViewProj;
+  Vector4 CameraPos; // xyz: camera world-space position, w: unused
+};
+
+// Per-instance data for instanced rendering
+struct PerInstanceData
 {
   Matrix World;
-  Matrix ViewProj;
   Vector4 BaseColor;
   Vector2 RoughnessMetallic; // x: roughness, y: metallic
-  Vector4 CameraPos; // xyz: camera world-space position, w: unused
+  Vector2 Padding;
 };
 #endif // FORWARD_LIGHTING_DEFINE
 

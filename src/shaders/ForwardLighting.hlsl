@@ -5,11 +5,14 @@
 // Include shared types (VertexInput, PerObjectData)
 #include "ShaderShared.hlsl"
 
-// Define the cbuffer here using the shared PerObjectData struct
-cbuffer PerObjectCB : register(b0)
+// Define the cbuffer here using the shared PerFrameData struct
+cbuffer PerFrameCB : register(b0)
 {
-    PerObjectData perObject;
+    PerFrameData perFrame;
 };
+
+// Structured buffer for per-instance data
+StructuredBuffer<PerInstanceData> instances : register(t0);
 
 // Hardcoded directional light (in world space)
 static const float3 kLightDirConst = float3(0.6f, -0.7f, -0.4f);
@@ -20,16 +23,19 @@ struct VSOut
     float3 normal : NORMAL;
     float2 uv : TEXCOORD0;
     float3 worldPos : TEXCOORD1;
+    nointerpolation uint instanceID : TEXCOORD2;
 };
 
-VSOut VSMain(VertexInput input)
+VSOut VSMain(VertexInput input, uint instanceID : SV_StartInstanceLocation)
 {
+    PerInstanceData inst = instances[instanceID];
     VSOut o;
-    float4 worldPos = mul(float4(input.pos, 1.0f), perObject.World);
-    o.Position = mul(worldPos, perObject.ViewProj);
-    o.normal = normalize(mul((float3x3)perObject.World, input.normal));
+    float4 worldPos = mul(float4(input.pos, 1.0f), inst.World);
+    o.Position = mul(worldPos, perFrame.ViewProj);
+    o.normal = normalize(mul((float3x3)inst.World, input.normal));
     o.uv = input.uv;
     o.worldPos = worldPos.xyz;
+    o.instanceID = instanceID;
     return o;
 }
 
@@ -82,15 +88,19 @@ float OrenNayar(float3 N, float3 V, float3 L, float roughness, float NdotV, floa
     float theta_r = acos(NdotV);
     float alpha = max(theta_i, theta_r);
     float beta = min(theta_i, theta_r);
+    // Clamp beta to prevent tan(beta) from becoming infinite at grazing angles
+    beta = min(beta, PI * 0.5f - 1e-6f);
     float oren = A + B * cosPhi * sin(alpha) * tan(beta);
     return oren;
 }
 
 float4 PSMain(VSOut input) : SV_TARGET
 {
+    PerInstanceData inst = instances[input.instanceID];
+
     // Reusable locals
     float3 N = normalize(input.normal);
-    float3 V = normalize(perObject.CameraPos.xyz - input.worldPos);
+    float3 V = normalize(perFrame.CameraPos.xyz - input.worldPos);
     float3 L = normalize(kLightDirConst);
     float3 H = normalize(V + L);
 
@@ -99,10 +109,10 @@ float4 PSMain(VSOut input) : SV_TARGET
     float NdotH = saturate(dot(N, H));
     float VdotH = saturate(dot(V, H));
 
-    float3 baseColor = perObject.BaseColor.xyz;
-    float alpha = perObject.BaseColor.w;
-    float roughness = perObject.RoughnessMetallic.x;
-    float metallic = perObject.RoughnessMetallic.y;
+    float3 baseColor = inst.BaseColor.xyz;
+    float alpha = inst.BaseColor.w;
+    float roughness = inst.RoughnessMetallic.x;
+    float metallic = inst.RoughnessMetallic.y;
 
     // Fresnel (Schlick)
     float3 F0 = lerp(float3(0.04f, 0.04f, 0.04f), baseColor, metallic);
