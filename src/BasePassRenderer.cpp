@@ -45,15 +45,19 @@ bool BasePassRenderer::Initialize()
 void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
 {
     Renderer* renderer = Renderer::GetInstance();
-    
-    // Framebuffer
+
+    // ============================================================================
+    // Framebuffer Setup
+    // ============================================================================
     nvrhi::TextureHandle rt = renderer->GetCurrentBackBufferTexture();
     nvrhi::TextureHandle depth = renderer->m_DepthTexture;
     nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
         nvrhi::FramebufferDesc().addColorAttachment(rt).setDepthAttachment(depth)
     );
 
-    // Prepare graphics state
+    // ============================================================================
+    // Graphics Pipeline Setup
+    // ============================================================================
     nvrhi::GraphicsState state;
     nvrhi::GraphicsPipelineDesc pipelineDesc;
     pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
@@ -69,24 +73,35 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     fbInfo.setDepthFormat(nvrhi::Format::D32);
     state.framebuffer = framebuffer;
 
-    // Create a volatile constant buffer for this frame (nvrhi will suballocate versions as needed)
-    nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc((uint32_t)sizeof(PerFrameData), "PerFrameCB", 8);
+    // ============================================================================
+    // Constant Buffer Setup
+    // ============================================================================
+    nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
+        (uint32_t)sizeof(PerFrameData), "PerFrameCB", 8
+    );
     nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
     renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
 
-    // Set index/vertex buffers common for all draws
+    // ============================================================================
+    // Vertex/Index Buffer and Viewport Setup
+    // ============================================================================
     state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
-    state.indexBuffer = nvrhi::IndexBufferBinding{ renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
+    state.indexBuffer = nvrhi::IndexBufferBinding{
+        renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0
+    };
 
-    // Viewport
     uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
     uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
-    state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f)); // Inverted Y viewport for Vulkan
+    state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
     state.viewport.scissorRects.resize(1);
-    state.viewport.scissorRects[0].minX = 0; state.viewport.scissorRects[0].minY = 0;
-    state.viewport.scissorRects[0].maxX = (int)w; state.viewport.scissorRects[0].maxY = (int)h;
+    state.viewport.scissorRects[0].minX = 0;
+    state.viewport.scissorRects[0].minY = 0;
+    state.viewport.scissorRects[0].maxX = (int)w;
+    state.viewport.scissorRects[0].maxY = (int)h;
 
-    // Collect all instances
+    // ============================================================================
+    // Instance Data Collection
+    // ============================================================================
     std::vector<PerInstanceData> instances;
     std::vector<nvrhi::DrawIndexedIndirectArguments> indirectArgs;
 
@@ -98,6 +113,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     {
         const Scene::Node& node = renderer->m_Scene.m_Nodes[ni];
         if (node.m_MeshIndex < 0) continue;
+
         const Scene::Mesh& mesh = renderer->m_Scene.m_Meshes[node.m_MeshIndex];
 
         for (const Scene::Primitive& prim : mesh.m_Primitives)
@@ -107,7 +123,8 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
             inst.BaseColor = Vector4{1.0f, 1.0f, 1.0f, 1.0f};
             inst.RoughnessMetallic = Vector2{1.0f, 0.0f};
 
-            if (prim.m_MaterialIndex >= 0 && prim.m_MaterialIndex < (int)renderer->m_Scene.m_Materials.size())
+            if (prim.m_MaterialIndex >= 0 &&
+                prim.m_MaterialIndex < (int)renderer->m_Scene.m_Materials.size())
             {
                 const Scene::Material& mat = renderer->m_Scene.m_Materials[prim.m_MaterialIndex];
                 inst.BaseColor = mat.m_BaseColorFactor;
@@ -120,14 +137,16 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
             args.indexCount = prim.m_IndexCount;
             args.instanceCount = 1;
             args.startIndexLocation = prim.m_IndexOffset;
-            args.baseVertexLocation = 0; // indices are already adjusted to global vertex indices
-            args.startInstanceLocation = (uint32_t)instances.size() - 1; // index in instances buffer
+            args.baseVertexLocation = 0;
+            args.startInstanceLocation = (uint32_t)instances.size() - 1;
 
             indirectArgs.push_back(args);
         }
     }
 
-    // Create structured buffer for instances
+    // ============================================================================
+    // Instance and Indirect Buffer Creation
+    // ============================================================================
     nvrhi::BufferDesc instBufDesc = nvrhi::BufferDesc()
         .setByteSize(instances.size() * sizeof(PerInstanceData))
         .setStructStride(sizeof(PerInstanceData))
@@ -137,7 +156,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     renderer->m_RHI.SetDebugName(instanceBuffer, "InstanceBuffer");
     commandList->writeBuffer(instanceBuffer, instances.data(), instances.size() * sizeof(PerInstanceData));
 
-    // Create indirect buffer
     nvrhi::BufferDesc indirectBufDesc = nvrhi::BufferDesc()
         .setByteSize(indirectArgs.size() * sizeof(nvrhi::DrawIndexedIndirectArguments))
         .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
@@ -146,25 +164,32 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         .setKeepInitialState(true);
     nvrhi::BufferHandle indirectBuffer = renderer->m_NvrhiDevice->createBuffer(indirectBufDesc);
     renderer->m_RHI.SetDebugName(indirectBuffer, "IndirectBuffer");
-    commandList->writeBuffer(indirectBuffer, indirectArgs.data(), indirectArgs.size() * sizeof(nvrhi::DrawIndexedIndirectArguments));
+    commandList->writeBuffer(indirectBuffer, indirectArgs.data(),
+        indirectArgs.size() * sizeof(nvrhi::DrawIndexedIndirectArguments));
 
-    // Update binding set to include the structured buffer (no sampler since combined)
+    // ============================================================================
+    // Binding Set Setup
+    // ============================================================================
     nvrhi::BindingSetDesc bset;
-    bset.bindings = { 
-        nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB), 
+    bset.bindings = {
+        nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, instanceBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
     };
-    nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
+    nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(
+        bset, nvrhi::ShaderType::All
+    );
     pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
-    
+
     nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
     state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
 
     nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
     state.pipeline = pipeline;
 
-    // Write per-frame constants
+    // ============================================================================
+    // Per-Frame Constants and Rendering
+    // ============================================================================
     PerFrameData cb{};
     cb.ViewProj = viewProj;
     cb.CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
@@ -172,12 +197,8 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     cb.LightIntensity = renderer->m_DirectionalLight.intensity / 10000.0f;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
-    // Set indirect params
     state.indirectParams = indirectBuffer;
 
-    // Set graphics state
     commandList->setGraphicsState(state);
-
-    // Draw all indirectly
     commandList->drawIndexedIndirect(0, (uint32_t)indirectArgs.size());
 }
