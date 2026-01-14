@@ -208,8 +208,7 @@ add_custom_target(build_shaders
             --compiler "${DXC_EXE}"
             --shaderModel 6_8
             --hlsl2021
-            --vulkanVersion 1.4
-            --compilerOptions "-fspv-target-env=vulkan1.3"
+            --vulkanVersion 1.3
             --vulkanMemoryLayout dx
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
             --relaxedInclude "pch.h"
