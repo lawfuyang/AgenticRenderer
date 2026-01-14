@@ -59,9 +59,8 @@ void Camera::ProcessEvent(const SDL_Event& event)
             m_LastMouseY = event.motion.y;
 
             Renderer* renderer = Renderer::GetInstance();
-            nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
             float yawDelta = dx * m_MouseSensitivity;
-            if (api == nvrhi::GraphicsAPI::VULKAN) yawDelta = -yawDelta;
+            yawDelta = -yawDelta; // Negate yaw for Vulkan coordinate system
             m_Yaw += yawDelta;
             m_Pitch += dy * m_MouseSensitivity;  // Positive dy (mouse down) should increase pitch (look down)
             // Clamp pitch
@@ -92,8 +91,7 @@ void Camera::Update()
 
     // Movement in local space
     Vector forward = DirectX::XMVectorSet(0, 0, 1, 0);
-    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
-    Vector right = (api == nvrhi::GraphicsAPI::VULKAN) ? DirectX::XMVectorSet(-1, 0, 0, 0) : DirectX::XMVectorSet(1, 0, 0, 0);
+    Vector right = DirectX::XMVectorSet(-1, 0, 0, 0); // Negate X for Vulkan right-handed coordinate system
 
     // Construct rotation from yaw/pitch
     Vector rot = DirectX::XMQuaternionRotationRollPitchYaw(m_Pitch, m_Yaw, 0.0f);
@@ -137,11 +135,10 @@ Matrix Camera::GetProjMatrix() const
 
     Matrix m{};
     m._11 = xScale;
-    // Negate Y scale for Vulkan to match DirectX Y-up convention
+    // Negate X and Y scales for Vulkan to match DirectX Y-up convention and right-handed coordinates
     Renderer* renderer = Renderer::GetInstance();
-    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
-    m._11 = (api == nvrhi::GraphicsAPI::VULKAN) ? -xScale : xScale;
-    m._22 = (api == nvrhi::GraphicsAPI::VULKAN) ? -yScale : yScale;
+    m._11 = -xScale;
+    m._22 = -yScale;
     m._33 = 0.0f;
     m._34 = 1.0f;
     m._43 = m_Proj.nearZ;
@@ -190,6 +187,5 @@ void Camera::SetFromMatrix(const Matrix& worldTransform)
     XMStoreFloat3(&fwd, worldForward);
     m_Yaw = atan2f(fwd.x, fwd.z);
     Renderer* renderer = Renderer::GetInstance();
-    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
-    m_Pitch = (api == nvrhi::GraphicsAPI::VULKAN) ? -asinf(fwd.y) : asinf(fwd.y);
+    m_Pitch = -asinf(fwd.y); // Negate pitch for Vulkan coordinate system
 }

@@ -81,11 +81,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // Viewport
     uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
     uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
-    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
-    if (api == nvrhi::GraphicsAPI::VULKAN)
-        state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
-    else
-        state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, 0.0f, (float)h, 0.0f, 1.0f));
+    state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f)); // Inverted Y viewport for Vulkan
     state.viewport.scissorRects.resize(1);
     state.viewport.scissorRects[0].minX = 0; state.viewport.scissorRects[0].minY = 0;
     state.viewport.scissorRects[0].maxX = (int)w; state.viewport.scissorRects[0].maxY = (int)h;

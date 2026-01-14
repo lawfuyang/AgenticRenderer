@@ -227,16 +227,9 @@ void ImGuiLayer::RenderFrame(nvrhi::CommandListHandle commandList)
         state.indexBuffer = nvrhi::IndexBufferBinding{ m_IndexBuffer, sizeof(ImDrawIdx) == 2 ? nvrhi::Format::R16_UINT : nvrhi::Format::R32_UINT, 0 };
 
         // Set viewport to framebuffer size. Vulkan uses an inverted Y, so flip min/max Y for Vulkan.
-        nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
-        if (api == nvrhi::GraphicsAPI::VULKAN)
         {
             // minX = 0, maxX = fb_width, minY = fb_height, maxY = 0 => inverted Y viewport for Vulkan
             state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)fb_width, (float)fb_height, 0.0f, 0.0f, 1.0f));
-        }
-        else
-        {
-            // Normal (DirectX-like) viewport: minX=0, maxX=fb_width, minY=0, maxY=fb_height
-            state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)fb_width, 0.0f, (float)fb_height, 0.0f, 1.0f));
         }
         state.viewport.scissorRects.resize(1);
 

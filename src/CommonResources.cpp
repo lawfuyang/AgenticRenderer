@@ -36,7 +36,7 @@ bool CommonResources::Initialize()
     // Initialize common raster states
     // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding
     // With X negation in projection for Vulkan, winding is flipped again
-    bool frontCCW = (api == nvrhi::GraphicsAPI::VULKAN);
+    bool frontCCW = true;
 
     // Solid, no cull
     RasterCullNone.fillMode = nvrhi::RasterFillMode::Solid;
