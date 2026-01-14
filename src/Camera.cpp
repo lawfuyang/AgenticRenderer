@@ -63,7 +63,6 @@ void Camera::ProcessEvent(const SDL_Event& event)
             // Clamp pitch
             if (m_Pitch > DirectX::XM_PIDIV2 - 0.01f) m_Pitch = DirectX::XM_PIDIV2 - 0.01f;
             if (m_Pitch < -DirectX::XM_PIDIV2 + 0.01f) m_Pitch = -DirectX::XM_PIDIV2 + 0.01f;
-            m_Dirty = true;
         }
     }
     break;
@@ -71,8 +70,7 @@ void Camera::ProcessEvent(const SDL_Event& event)
     {
         int w = event.window.data1;
         int h = event.window.data2;
-        if (h > 0) m_Aspect = float(w) / float(h);
-        m_Dirty = true;
+        if (h > 0) m_Proj.aspectRatio = float(w) / float(h);
     }
     break;
     default:
@@ -110,7 +108,6 @@ void Camera::Update()
         move = DirectX::XMVectorScale(move, m_MoveSpeed * dt);
         pos = DirectX::XMVectorAdd(pos, move);
         DirectX::XMStoreFloat3(reinterpret_cast<Vector3*>(&m_Position), pos);
-        m_Dirty = true;
     }
 }
 
@@ -130,8 +127,8 @@ Matrix Camera::GetViewMatrix() const
 Matrix Camera::GetProjMatrix() const
 {
     // Create an infinite projection matrix (no far plane) for better depth precision.
-    float yScale = 1.0f / std::tan(m_FovY * 0.5f);
-    float xScale = yScale / m_Aspect;
+    float yScale = 1.0f / std::tan(m_Proj.fovY * 0.5f);
+    float xScale = yScale / m_Proj.aspectRatio;
 
     Matrix m{};
     m._11 = xScale;
@@ -141,7 +138,7 @@ Matrix Camera::GetProjMatrix() const
     m._22 = (api == nvrhi::GraphicsAPI::VULKAN) ? -yScale : yScale;
     m._33 = 0.0f;
     m._34 = 1.0f;
-    m._43 = m_Near;
+    m._43 = m_Proj.nearZ;
     m._44 = 0.0f;
 
     return m;
@@ -159,4 +156,32 @@ Matrix Camera::GetViewProjMatrix() const
     Matrix out{};
     XMStoreFloat4x4(&out, vp);
     return out;
+}
+
+void Camera::SetFromMatrix(const Matrix& worldTransform)
+{
+    using namespace DirectX;
+    XMMATRIX m = XMLoadFloat4x4(&worldTransform);
+
+    // Extract position
+    XMVECTOR pos = m.r[3];
+    XMStoreFloat3(reinterpret_cast<Vector3*>(&m_Position), pos);
+
+    // Extract rotation matrix (3x3 part)
+    XMMATRIX rotationM = m;
+    rotationM.r[3] = XMVectorSet(0, 0, 0, 1); // remove translation
+
+    // GLTF cameras look down -Z, our camera looks down +Z, so adjust by 180 degrees around Y
+    XMMATRIX rotY180 = XMMatrixRotationY(XM_PI);
+    XMMATRIX effectiveRot = XMMatrixMultiply(rotY180, rotationM);
+
+    // Forward direction in world space
+    XMVECTOR worldForward = XMVector3TransformNormal(XMVectorSet(0, 0, 1, 0), effectiveRot);
+    worldForward = XMVector3Normalize(worldForward);
+
+    // Compute yaw and pitch from forward direction
+    XMFLOAT3 fwd;
+    XMStoreFloat3(&fwd, worldForward);
+    m_Yaw = atan2f(fwd.x, fwd.z);
+    m_Pitch = asinf(fwd.y);
 }

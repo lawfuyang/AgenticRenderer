@@ -117,6 +117,58 @@ bool Scene::LoadScene()
 	t_texmat_end = SDL_GetTicks();
 	SDL_Log("[Scene] Materials+Textures in %llu ms", (unsigned long long)(t_texmat_end - t_texmat_start));
 
+	// Cameras
+	uint64_t t_cameras_start = SDL_GetTicks();
+	for (cgltf_size i = 0; i < data->cameras_count; ++i)
+	{
+		const cgltf_camera& cgCam = data->cameras[i];
+		Camera cam;
+		cam.m_Name = cgCam.name ? cgCam.name : std::string();
+		if (cgCam.type == cgltf_camera_type_perspective)
+		{
+			const auto& p = cgCam.data.perspective;
+			cam.m_Projection.aspectRatio = p.has_aspect_ratio ? p.aspect_ratio : (16.0f / 9.0f);
+			cam.m_Projection.fovY = p.yfov;
+			cam.m_Projection.nearZ = p.znear;
+			// farZ is always infinite, ignore p.zfar
+			m_Cameras.push_back(std::move(cam));
+		}
+		else if (cgCam.type == cgltf_camera_type_orthographic)
+		{
+			// Skip orthographic cameras
+			SDL_Log("[Scene] Skipping orthographic camera: %s", cam.m_Name.c_str());
+		}
+		else
+		{
+			SDL_Log("[Scene] Unknown camera type for camera: %s", cam.m_Name.c_str());
+		}
+	}
+	uint64_t t_cameras_end = SDL_GetTicks();
+	SDL_Log("[Scene] Cameras in %llu ms", (unsigned long long)(t_cameras_end - t_cameras_start));
+
+	// Lights
+	uint64_t t_lights_start = SDL_GetTicks();
+	for (cgltf_size i = 0; i < data->lights_count; ++i)
+	{
+		const cgltf_light& cgLight = data->lights[i];
+		Light light;
+		light.m_Name = cgLight.name ? cgLight.name : std::string();
+		light.m_Color = Vector3{ cgLight.color[0], cgLight.color[1], cgLight.color[2] };
+		light.m_Intensity = cgLight.intensity;
+		light.m_Range = cgLight.range;
+		light.m_SpotInnerConeAngle = cgLight.spot_inner_cone_angle;
+		light.m_SpotOuterConeAngle = cgLight.spot_outer_cone_angle;
+		if (cgLight.type == cgltf_light_type_directional)
+			light.m_Type = Light::Directional;
+		else if (cgLight.type == cgltf_light_type_point)
+			light.m_Type = Light::Point;
+		else if (cgLight.type == cgltf_light_type_spot)
+			light.m_Type = Light::Spot;
+		m_Lights.push_back(std::move(light));
+	}
+	uint64_t t_lights_end = SDL_GetTicks();
+	SDL_Log("[Scene] Lights in %llu ms", (unsigned long long)(t_lights_end - t_lights_start));
+
 	// Collect vertex/index data
 	uint64_t t_mesh_start = SDL_GetTicks();
 	std::vector<Vertex> allVertices;
@@ -226,6 +278,8 @@ bool Scene::LoadScene()
 		Node node;
 		node.m_Name = cn.name ? cn.name : std::string();
 		node.m_MeshIndex = cn.mesh ? static_cast<int>(cn.mesh - data->meshes) : -1;
+		node.m_CameraIndex = cn.camera ? static_cast<int>(cn.camera - data->cameras) : -1;
+		node.m_LightIndex = cn.light ? static_cast<int>(cn.light - data->lights) : -1;
 
 		// local transform
 		Matrix localOut{};
@@ -273,6 +327,20 @@ bool Scene::LoadScene()
 				m_Nodes[idx].m_Children.push_back(childIdx);
 				m_Nodes[childIdx].m_Parent = idx;
 			}
+		}
+	}
+
+	// Set node indices in cameras and lights
+	for (size_t i = 0; i < m_Nodes.size(); ++i)
+	{
+		const Node& node = m_Nodes[i];
+		if (node.m_CameraIndex >= 0 && node.m_CameraIndex < static_cast<int>(m_Cameras.size()))
+		{
+			m_Cameras[node.m_CameraIndex].m_NodeIndex = static_cast<int>(i);
+		}
+		if (node.m_LightIndex >= 0 && node.m_LightIndex < static_cast<int>(m_Lights.size()))
+		{
+			m_Lights[node.m_LightIndex].m_NodeIndex = static_cast<int>(i);
 		}
 	}
 
@@ -327,6 +395,38 @@ bool Scene::LoadScene()
 	}
 	uint64_t t_aabb_end = SDL_GetTicks();
 	SDL_Log("[Scene] AABB computation in %llu ms", (unsigned long long)(t_aabb_end - t_aabb_start));
+
+	// Set directional light from first GLTF directional light
+	for (const auto& light : m_Lights)
+	{
+		if (light.m_Type == Light::Directional && light.m_NodeIndex >= 0 && light.m_NodeIndex < static_cast<int>(m_Nodes.size()))
+		{
+			const Matrix& worldTransform = m_Nodes[light.m_NodeIndex].m_WorldTransform;
+			DirectX::XMMATRIX m = DirectX::XMLoadFloat4x4(&worldTransform);
+			// For directional light, direction is the forward (-Z) of the node
+			DirectX::XMVECTOR localDir = DirectX::XMVectorSet(0, 0, -1, 0);
+			DirectX::XMVECTOR worldDir = DirectX::XMVector3TransformNormal(localDir, m);
+			DirectX::XMFLOAT3 dir;
+			DirectX::XMStoreFloat3(&dir, DirectX::XMVector3Normalize(worldDir));
+			// Compute yaw and pitch from direction
+			float yaw = atan2f(dir.x, dir.z);
+			float pitch = asinf(dir.y);
+			Renderer* renderer = Renderer::GetInstance();
+			renderer->m_DirectionalLight.yaw = yaw;
+			renderer->m_DirectionalLight.pitch = pitch;
+			renderer->m_DirectionalLight.intensity = light.m_Intensity * 10000.0f; // assuming lux to our units
+			break; // only first one
+		}
+	}
+
+	// Set the first GLTF camera as the default camera
+	if (!m_Cameras.empty())
+	{
+		const Camera& firstCam = m_Cameras[0];
+		Renderer* renderer = Renderer::GetInstance();
+		renderer->SetCameraFromSceneCamera(firstCam);
+		renderer->m_SelectedCameraIndex = 0; // Set to first camera in dropdown
+	}
 
 	// Create GPU buffers for all vertex/index data
 	uint64_t t_gpu_start = SDL_GetTicks();
@@ -400,4 +500,6 @@ void Scene::Shutdown()
 	m_Nodes.clear();
 	m_Materials.clear();
 	m_Textures.clear();
+	m_Cameras.clear();
+	m_Lights.clear();
 }

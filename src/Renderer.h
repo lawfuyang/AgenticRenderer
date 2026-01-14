@@ -103,6 +103,8 @@ struct Renderer
     Scene m_Scene;
     // Camera
     Camera m_Camera;
+    // Selected camera index for GLTF cameras
+    int m_SelectedCameraIndex = -1;
     // Directional Light
     struct DirectionalLight
     {
@@ -120,6 +122,9 @@ struct Renderer
 
     // Get directional light direction in world space
     Vector3 GetDirectionalLightDirection() const;
+
+    // Set camera from a GLTF scene camera
+    void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
 
     // Command list pools
     std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;

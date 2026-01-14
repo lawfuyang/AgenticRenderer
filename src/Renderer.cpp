@@ -583,6 +583,16 @@ Vector3 Renderer::GetDirectionalLightDirection() const
     return Vector3{ sinYaw * cosPitch, sinPitch, cosYaw * cosPitch };
 }
 
+void Renderer::SetCameraFromSceneCamera(const Scene::Camera& sceneCam)
+{
+    if (sceneCam.m_NodeIndex >= 0 && sceneCam.m_NodeIndex < static_cast<int>(m_Scene.m_Nodes.size()))
+    {
+        const Matrix& worldTransform = m_Scene.m_Nodes[sceneCam.m_NodeIndex].m_WorldTransform;
+        m_Camera.SetFromMatrix(worldTransform);
+        m_Camera.SetProjection(sceneCam.m_Projection);
+    }
+}
+
 bool Renderer::CreateNvrhiDevice()
 {
     SDL_Log("[Init] Creating NVRHI Vulkan device");
@@ -779,6 +789,24 @@ void Renderer::UpdateImGuiFrame()
 
             if (ImGui::DragFloat("Mouse Sensitivity", &m_Camera.m_MouseSensitivity, 0.0005f, 0.0f, 1.0f, "%.4f"))
             {
+            }
+
+            // GLTF Camera selection
+            if (!m_Scene.m_Cameras.empty())
+            {
+                std::vector<const char*> cameraNames;
+                for (const auto& cam : m_Scene.m_Cameras)
+                {
+                    cameraNames.push_back(cam.m_Name.empty() ? "Unnamed Camera" : cam.m_Name.c_str());
+                }
+                if (ImGui::Combo("GLTF Camera", &m_SelectedCameraIndex, cameraNames.data(), static_cast<int>(cameraNames.size())))
+                {
+                    if (m_SelectedCameraIndex >= 0 && m_SelectedCameraIndex < static_cast<int>(m_Scene.m_Cameras.size()))
+                    {
+                        const Scene::Camera& selectedCam = m_Scene.m_Cameras[m_SelectedCameraIndex];
+                        SetCameraFromSceneCamera(selectedCam);
+                    }
+                }
             }
 
             ImGui::TreePop();

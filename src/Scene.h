@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "Camera.h"
 
 // Minimal scene representation for glTF meshes/nodes/materials/textures
 class Scene
@@ -36,6 +37,9 @@ public:
         // world AABB
         Vector3 m_AabbMin{};
         Vector3 m_AabbMax{};
+        // Camera/Light indices
+        int m_CameraIndex = -1;
+        int m_LightIndex = -1;
     };
 
     struct Material
@@ -52,11 +56,36 @@ public:
         std::string m_Uri;
     };
 
+    struct Camera
+    {
+        std::string m_Name;
+        ProjectionParams m_Projection;
+        // Associated node index for transform
+        int m_NodeIndex = -1;
+    };
+
+    struct Light
+    {
+        std::string m_Name;
+        enum Type { Directional, Point, Spot };
+        Type m_Type;
+        Vector3 m_Color = Vector3{1.0f, 1.0f, 1.0f};
+        float m_Intensity = 1.0f;
+        float m_Range = 0.0f; // 0 = infinite
+        // Spot
+        float m_SpotInnerConeAngle = 0.0f;
+        float m_SpotOuterConeAngle = DirectX::XM_PIDIV4; // 45deg
+        // Associated node index for transform
+        int m_NodeIndex = -1;
+    };
+
     // Public scene storage (instance members)
     std::vector<Mesh> m_Meshes;
     std::vector<Node> m_Nodes;
     std::vector<Material> m_Materials;
     std::vector<Texture> m_Textures;
+    std::vector<Camera> m_Cameras;
+    std::vector<Light> m_Lights;
 
     // GPU buffers created for the scene
     nvrhi::BufferHandle m_VertexBuffer;

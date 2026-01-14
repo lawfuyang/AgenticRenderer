@@ -2,6 +2,15 @@
 
 #include "pch.h"
 
+struct ProjectionParams
+{
+    // Perspective only
+    float aspectRatio = 16.0f / 9.0f;
+    float fovY = DirectX::XM_PIDIV4; // 45deg
+    float nearZ = 0.1f;
+    // farZ is always infinite
+};
+
 class Camera
 {
 public:
@@ -17,9 +26,11 @@ public:
     Matrix GetProjMatrix() const;
     Matrix GetViewProjMatrix() const;
 
-    // Mark view dirty
-    bool IsDirty() const { return m_Dirty; }
-    void ClearDirty() { m_Dirty = false; }
+    // Set camera from world transform matrix (for GLTF cameras)
+    void SetFromMatrix(const Matrix& worldTransform);
+
+    // Set projection parameters
+    void SetProjection(const ProjectionParams& proj) { m_Proj = proj; }
 
     // Movement / input tuning (access directly)
     float m_MoveSpeed = 5.0f;
@@ -39,9 +50,5 @@ private:
     int m_LastMouseX = 0;
     int m_LastMouseY = 0;
 
-    float m_Aspect = 16.0f/9.0f;
-    float m_FovY = DirectX::XM_PIDIV4; // 45deg
-    float m_Near = 0.1f;
-
-    bool m_Dirty = true;
+    ProjectionParams m_Proj{};
 };
