@@ -58,7 +58,11 @@ void Camera::ProcessEvent(const SDL_Event& event)
             m_LastMouseX = event.motion.x;
             m_LastMouseY = event.motion.y;
 
-            m_Yaw += dx * m_MouseSensitivity;
+            Renderer* renderer = Renderer::GetInstance();
+            nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+            float yawDelta = dx * m_MouseSensitivity;
+            if (api == nvrhi::GraphicsAPI::VULKAN) yawDelta = -yawDelta;
+            m_Yaw += yawDelta;
             m_Pitch += dy * m_MouseSensitivity;  // Positive dy (mouse down) should increase pitch (look down)
             // Clamp pitch
             if (m_Pitch > DirectX::XM_PIDIV2 - 0.01f) m_Pitch = DirectX::XM_PIDIV2 - 0.01f;
@@ -88,7 +92,8 @@ void Camera::Update()
 
     // Movement in local space
     Vector forward = DirectX::XMVectorSet(0, 0, 1, 0);
-    Vector right = DirectX::XMVectorSet(1, 0, 0, 0);
+    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+    Vector right = (api == nvrhi::GraphicsAPI::VULKAN) ? DirectX::XMVectorSet(-1, 0, 0, 0) : DirectX::XMVectorSet(1, 0, 0, 0);
 
     // Construct rotation from yaw/pitch
     Vector rot = DirectX::XMQuaternionRotationRollPitchYaw(m_Pitch, m_Yaw, 0.0f);
@@ -135,6 +140,7 @@ Matrix Camera::GetProjMatrix() const
     // Negate Y scale for Vulkan to match DirectX Y-up convention
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+    m._11 = (api == nvrhi::GraphicsAPI::VULKAN) ? -xScale : xScale;
     m._22 = (api == nvrhi::GraphicsAPI::VULKAN) ? -yScale : yScale;
     m._33 = 0.0f;
     m._34 = 1.0f;
@@ -183,5 +189,7 @@ void Camera::SetFromMatrix(const Matrix& worldTransform)
     XMFLOAT3 fwd;
     XMStoreFloat3(&fwd, worldForward);
     m_Yaw = atan2f(fwd.x, fwd.z);
-    m_Pitch = asinf(fwd.y);
+    Renderer* renderer = Renderer::GetInstance();
+    nvrhi::GraphicsAPI api = renderer->m_NvrhiDevice->getGraphicsAPI();
+    m_Pitch = (api == nvrhi::GraphicsAPI::VULKAN) ? -asinf(fwd.y) : asinf(fwd.y);
 }

@@ -783,14 +783,18 @@ void Renderer::UpdateImGuiFrame()
         // Camera controls
         if (ImGui::TreeNode("Camera"))
         {
-            if (ImGui::DragFloat("Move Speed", &m_Camera.m_MoveSpeed, 0.1f, 0.0f, 100.0f))
-            {
-            }
+            ImGui::DragFloat("Move Speed", &m_Camera.m_MoveSpeed, 0.1f, 0.0f, 100.0f);
+            ImGui::DragFloat("Mouse Sensitivity", &m_Camera.m_MouseSensitivity, 0.0005f, 0.0f, 1.0f, "%.4f");
 
-            if (ImGui::DragFloat("Mouse Sensitivity", &m_Camera.m_MouseSensitivity, 0.0005f, 0.0f, 1.0f, "%.4f"))
-            {
-            }
-
+            // Display camera position
+            Vector3 pos = m_Camera.GetPosition();
+            ImGui::Text("Position: %.2f, %.2f, %.2f", pos.x, pos.y, pos.z);
+            
+            // Display forward vector (from view matrix, third column)
+            Matrix view = m_Camera.GetViewMatrix();
+            Vector3 fwd = { view._13, view._23, view._33 };
+            ImGui::Text("Forward: %.2f, %.2f, %.2f", fwd.x, fwd.y, fwd.z);
+            
             // GLTF Camera selection
             if (!m_Scene.m_Cameras.empty())
             {
