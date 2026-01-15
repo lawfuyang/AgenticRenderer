@@ -25,9 +25,9 @@ bool BasePassRenderer::Initialize()
 
     // Create input layout matching shared VertexInput (pos, normal, uv)
     nvrhi::VertexAttributeDesc attributes[] = {
-        { "POSITION", nvrhi::Format::RGB32_FLOAT,  1, 0, offsetof(VertexInput, pos),    sizeof(VertexInput), false },
-        { "NORMAL",   nvrhi::Format::RGB32_FLOAT,  1, 0, offsetof(VertexInput, normal), sizeof(VertexInput), false },
-        { "TEXCOORD0",nvrhi::Format::RG32_FLOAT,   1, 0, offsetof(VertexInput, uv),     sizeof(VertexInput), false },
+        { "POSITION", nvrhi::Format::RGB32_FLOAT,  1, 0, offsetof(VertexInput, m_Pos),    sizeof(VertexInput), false },
+        { "NORMAL",   nvrhi::Format::RGB32_FLOAT,  1, 0, offsetof(VertexInput, m_Normal), sizeof(VertexInput), false },
+        { "TEXCOORD0",nvrhi::Format::RG32_FLOAT,   1, 0, offsetof(VertexInput, m_Uv),     sizeof(VertexInput), false },
     };
 
     // Create input layout (vertexShader parameter unused for Vulkan backend)
@@ -115,17 +115,8 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         for (const Scene::Primitive& prim : mesh.m_Primitives)
         {
             PerInstanceData inst{};
-            inst.World = node.m_WorldTransform;
-            inst.BaseColor = Vector4{1.0f, 1.0f, 1.0f, 1.0f};
-            inst.RoughnessMetallic = Vector2{1.0f, 0.0f};
-
-            if (prim.m_MaterialIndex >= 0 &&
-                prim.m_MaterialIndex < (int)renderer->m_Scene.m_Materials.size())
-            {
-                const Scene::Material& mat = renderer->m_Scene.m_Materials[prim.m_MaterialIndex];
-                inst.BaseColor = mat.m_BaseColorFactor;
-                inst.RoughnessMetallic = Vector2{ mat.m_RoughnessFactor, mat.m_MetallicFactor };
-            }
+            inst.m_World = node.m_WorldTransform;
+            inst.m_MaterialIndex = prim.m_MaterialIndex;
 
             instances.push_back(inst);
 
@@ -171,6 +162,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     {
         nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, instanceBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
     };
     nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
@@ -186,10 +178,10 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // Per-Frame Constants and Rendering
     // ============================================================================
     PerFrameData cb{};
-    cb.ViewProj = viewProj;
-    cb.CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
-    cb.LightDirection = renderer->GetDirectionalLightDirection();
-    cb.LightIntensity = renderer->m_DirectionalLight.intensity / 10000.0f;
+    cb.m_ViewProj = viewProj;
+    cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
+    cb.m_LightDirection = renderer->GetDirectionalLightDirection();
+    cb.m_LightIntensity = renderer->m_DirectionalLight.intensity / 10000.0f;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     state.indirectParams = indirectBuffer;

@@ -90,6 +90,7 @@ public:
     // GPU buffers created for the scene
     nvrhi::BufferHandle m_VertexBuffer;
     nvrhi::BufferHandle m_IndexBuffer;
+    nvrhi::BufferHandle m_MaterialConstantsBuffer;
 
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.

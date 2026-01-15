@@ -10,6 +10,7 @@
 // Map shared scalar/vector/matrix declarations to language-specific forms.
 #ifdef __cplusplus
   // In C++, prefer simple POD aliases (types are provided via pch.h)
+  typedef uint32_t uint;
 #else
   // HLSL path
   typedef float2 Vector2;
@@ -37,35 +38,42 @@ struct PushConstants
 #ifdef __cplusplus
 struct VertexInput
 {
-  Vector3 pos;
-  Vector3 normal;
-  Vector2 uv;
+  Vector3 m_Pos;
+  Vector3 m_Normal;
+  Vector2 m_Uv;
 };
 #else
 struct VertexInput
 {
-  float3 pos : POSITION;
-  float3 normal : NORMAL;
-  float2 uv : TEXCOORD0;
+  float3 m_Pos : POSITION;
+  float3 m_Normal : NORMAL;
+  float2 m_Uv : TEXCOORD0;
 };
 #endif
 
 // Shared per-frame data structure (one definition used by both C++ and HLSL).
 struct PerFrameData
 {
-  Matrix ViewProj;
-  Vector4 CameraPos; // xyz: camera world-space position, w: unused
-  Vector3 LightDirection;
-  float LightIntensity;
+  Matrix m_ViewProj;
+  Vector4 m_CameraPos; // xyz: camera world-space position, w: unused
+  Vector3 m_LightDirection;
+  float m_LightIntensity;
+};
+
+// Material constants (persistent, per-material data)
+struct MaterialConstants
+{
+  Vector4 m_BaseColor;
+  Vector2 m_RoughnessMetallic; // x: roughness, y: metallic
+  Vector2 m_Padding;
 };
 
 // Per-instance data for instanced rendering
 struct PerInstanceData
 {
-  Matrix World;
-  Vector4 BaseColor;
-  Vector2 RoughnessMetallic; // x: roughness, y: metallic
-  Vector2 Padding;
+  Matrix m_World;
+  uint m_MaterialIndex;
+  Vector3 m_Padding;
 };
 #endif // FORWARD_LIGHTING_DEFINE
 

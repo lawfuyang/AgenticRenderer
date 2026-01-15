@@ -13,6 +13,8 @@ cbuffer PerFrameCB : register(b0, space1)
 
 // Structured buffer for per-instance data
 StructuredBuffer<PerInstanceData> instances : register(t0, space1);
+// Structured buffer for material constants
+StructuredBuffer<MaterialConstants> materials : register(t1, space1);
 
 SamplerState g_Sampler : register(s0, space1);
 
@@ -39,17 +41,17 @@ VSOut VSMain(VertexInput input, uint instanceID : SV_StartInstanceLocation)
 {
     PerInstanceData inst = instances[instanceID];
     VSOut o;
-    float4 worldPos = mul(float4(input.pos, 1.0f), inst.World);
-    o.Position = mul(worldPos, perFrame.ViewProj);
+    float4 worldPos = mul(float4(input.m_Pos, 1.0f), inst.m_World);
+    o.Position = mul(worldPos, perFrame.m_ViewProj);
 
     // Alien math to calculate the normal and tangent in world space, without inverse-transposing the world matrix
     // https://github.com/graphitemaster/normals_revisited
     // https://x.com/iquilezles/status/1866219178409316362
     // https://www.shadertoy.com/view/3s33zj
-    float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(inst.World);
+    float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(inst.m_World);
 
-    o.normal = normalize(mul(input.normal, adjugateWorldMatrix));
-    o.uv = input.uv;
+    o.normal = normalize(mul(input.m_Normal, adjugateWorldMatrix));
+    o.uv = input.m_Uv;
     o.worldPos = worldPos.xyz;
     o.instanceID = instanceID;
     return o;
@@ -137,11 +139,12 @@ float4 SampleBindlessTexture(uint textureIndex, float2 uv)
 float4 PSMain(VSOut input) : SV_TARGET
 {
     PerInstanceData inst = instances[input.instanceID];
+    MaterialConstants mat = materials[inst.m_MaterialIndex];
 
     // Reusable locals
     float3 N = normalize(input.normal);
-    float3 V = normalize(perFrame.CameraPos.xyz - input.worldPos);
-    float3 L = perFrame.LightDirection;
+    float3 V = normalize(perFrame.m_CameraPos.xyz - input.worldPos);
+    float3 L = perFrame.m_LightDirection;
     float3 H = normalize(V + L);
 
     float NdotL = saturate(dot(N, L));
@@ -150,10 +153,10 @@ float4 PSMain(VSOut input) : SV_TARGET
     float VdotH = saturate(dot(V, H));
     float LdotV = saturate(dot(L, V));
 
-    float3 baseColor = inst.BaseColor.xyz;
-    float alpha = inst.BaseColor.w;
-    float roughness = inst.RoughnessMetallic.x;
-    float metallic = inst.RoughnessMetallic.y;
+    float3 baseColor = mat.m_BaseColor.xyz;
+    float alpha = mat.m_BaseColor.w;
+    float roughness = mat.m_RoughnessMetallic.x;
+    float metallic = mat.m_RoughnessMetallic.y;
 
     float a = roughness * roughness;
 	float a2 = clamp(a * a, 0.0001f, 1.0f);
@@ -173,7 +176,7 @@ float4 PSMain(VSOut input) : SV_TARGET
 
     spec += EnvBRDFApprox(specularColor, roughness, NdotV);
 
-    float3 radiance = float3(perFrame.LightIntensity, perFrame.LightIntensity, perFrame.LightIntensity);
+    float3 radiance = float3(perFrame.m_LightIntensity, perFrame.m_LightIntensity, perFrame.m_LightIntensity);
     // Fake ambient (IBL fallback): small ambient multiplied by baseColor and reduced by metallic
     float3 ambient = baseColor * 0.03f * (1.0f - metallic);
     float3 color = ambient + (diffuse + spec) * radiance * NdotL;

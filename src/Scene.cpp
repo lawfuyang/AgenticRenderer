@@ -3,6 +3,10 @@
 #include "Renderer.h"
 #include "CommonResources.h"
 
+// Enable ForwardLighting shared definitions for C++ side
+#define FORWARD_LIGHTING_DEFINE
+#include "shaders/ShaderShared.hlsl"
+
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
@@ -105,6 +109,32 @@ bool Scene::LoadScene()
 		if (pbr.metallic_roughness_texture.texture == NULL && metallic == 1.0f)
 			metallic = 0.0f;
 		m_Materials.back().m_MetallicFactor = metallic;
+	}
+
+	// Create material constants buffer
+	std::vector<MaterialConstants> materialConstants;
+	materialConstants.reserve(m_Materials.size());
+	for (const auto& mat : m_Materials)
+	{
+		MaterialConstants mc{};
+		mc.m_BaseColor = mat.m_BaseColorFactor;
+		mc.m_RoughnessMetallic = Vector2{ mat.m_RoughnessFactor, mat.m_MetallicFactor };
+		materialConstants.push_back(mc);
+	}
+	if (!materialConstants.empty())
+	{
+		Renderer* renderer = Renderer::GetInstance();
+		nvrhi::BufferDesc matBufDesc = nvrhi::BufferDesc()
+			.setByteSize(materialConstants.size() * sizeof(MaterialConstants))
+			.setStructStride(sizeof(MaterialConstants))
+			.setInitialState(nvrhi::ResourceStates::ShaderResource)
+			.setKeepInitialState(true);
+		m_MaterialConstantsBuffer = renderer->m_NvrhiDevice->createBuffer(matBufDesc);
+		renderer->m_RHI.SetDebugName(m_MaterialConstantsBuffer, "MaterialConstantsBuffer");
+
+		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload MaterialConstants");
+		cmd->writeBuffer(m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(MaterialConstants));
+		renderer->SubmitCommandList(cmd);
 	}
 
 	for (cgltf_size i = 0; i < data->images_count; ++i)
@@ -491,6 +521,7 @@ void Scene::Shutdown()
 	// Release GPU buffer handles so NVRHI can free underlying resources
 	m_VertexBuffer = nullptr;
 	m_IndexBuffer = nullptr;
+	m_MaterialConstantsBuffer = nullptr;
 
 	// Clear CPU-side containers
 	m_Meshes.clear();
