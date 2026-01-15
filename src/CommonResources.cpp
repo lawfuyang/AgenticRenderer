@@ -32,7 +32,8 @@ bool CommonResources::Initialize()
     LinearWrap = createSampler("LinearWrap", true, nvrhi::SamplerAddressMode::Wrap);
     PointClamp = createSampler("PointClamp", false, nvrhi::SamplerAddressMode::ClampToEdge);
     PointWrap = createSampler("PointWrap", false, nvrhi::SamplerAddressMode::Wrap);
-    Anisotropic = createSampler("Anisotropic", true, nvrhi::SamplerAddressMode::Wrap, 16.0f);
+    AnisotropicClamp = createSampler("AnisotropicClamp", true, nvrhi::SamplerAddressMode::ClampToEdge, 16.0f);
+    AnisotropicWrap = createSampler("AnisotropicWrap", true, nvrhi::SamplerAddressMode::Wrap, 16.0f);
 
     // Initialize common raster states
     // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding
@@ -238,7 +239,8 @@ void CommonResources::Shutdown()
     DefaultTextureGray = nullptr;
     DefaultTextureWhite = nullptr;
     DefaultTextureBlack = nullptr;
-    Anisotropic = nullptr;
+    AnisotropicClamp = nullptr;
+    AnisotropicWrap = nullptr;
     PointWrap = nullptr;
     PointClamp = nullptr;
     LinearWrap = nullptr;

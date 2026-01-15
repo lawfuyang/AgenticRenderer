@@ -69,7 +69,10 @@ struct MaterialConstants
   uint m_AlbedoTextureIndex;
   uint m_NormalTextureIndex;
   uint m_RoughnessMetallicTextureIndex;
-  Vector2 m_Padding;
+  uint m_AlbedoSamplerIndex;
+  uint m_NormalSamplerIndex;
+  uint m_RoughnessSamplerIndex;
+  Vector3 m_Padding;
 };
 
 // Per-instance data for instanced rendering
@@ -98,3 +101,6 @@ static const float PI = 3.14159265359f;
 #define TEXFLAG_ALBEDO (1u << 0)
 #define TEXFLAG_NORMAL (1u << 1)
 #define TEXFLAG_ROUGHNESS_METALLIC (1u << 2)
+
+#define SAMPLER_CLAMP_INDEX 0
+#define SAMPLER_WRAP_INDEX 1

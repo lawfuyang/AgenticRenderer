@@ -56,6 +56,9 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Materials+Images");
 
+	// Prepare per-image sampler mapping (default unknown)
+	std::vector<bool> samplerForImageIsWrap(data->images_count, false);
+
 	// Materials
 	for (cgltf_size i = 0; i < data->materials_count; ++i)
 	{
@@ -70,6 +73,13 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 		{
 			cgltf_size imgIndex = pbr.base_color_texture.texture->image - data->images;
 			scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
+			// Map sampler from glTF texture if provided
+			if (pbr.base_color_texture.texture->sampler)
+			{
+				cgltf_sampler* s = pbr.base_color_texture.texture->sampler;
+				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+				samplerForImageIsWrap[imgIndex] = isWrap;
+			}
 		}
 
 		float metallic = pbr.metallic_factor;
@@ -82,12 +92,24 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 		{
 			cgltf_size imgIndex = pbr.metallic_roughness_texture.texture->image - data->images;
 			scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
+			if (pbr.metallic_roughness_texture.texture->sampler)
+			{
+				cgltf_sampler* s = pbr.metallic_roughness_texture.texture->sampler;
+				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+				samplerForImageIsWrap[imgIndex] = isWrap;
+			}
 		}
 
 		if (data->materials[i].normal_texture.texture && data->materials[i].normal_texture.texture->image)
 		{
 			cgltf_size imgIndex = data->materials[i].normal_texture.texture->image - data->images;
 			scene.m_Materials.back().m_NormalTexture = static_cast<int>(imgIndex);
+			if (data->materials[i].normal_texture.texture->sampler)
+			{
+				cgltf_sampler* s = data->materials[i].normal_texture.texture->sampler;
+				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+				samplerForImageIsWrap[imgIndex] = isWrap;
+			}
 		}
 	}
 
@@ -96,6 +118,7 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 	{
 		scene.m_Textures.emplace_back();
 		scene.m_Textures.back().m_Uri = data->images[i].uri ? data->images[i].uri : std::string();
+		scene.m_Textures.back().m_Sampler = samplerForImageIsWrap[i] ? Scene::Texture::Wrap : Scene::Texture::Clamp;
 	}
 }
 
@@ -190,6 +213,21 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 		mc.m_AlbedoTextureIndex = mat.m_AlbedoTextureIndex;
 		mc.m_NormalTextureIndex = mat.m_NormalTextureIndex;
 		mc.m_RoughnessMetallicTextureIndex = mat.m_RoughnessMetallicTextureIndex;
+		// Per-texture sampler indices (do not assume they are the same)
+		if (mat.m_BaseColorTexture != -1)
+			mc.m_AlbedoSamplerIndex = (uint)scene.m_Textures[mat.m_BaseColorTexture].m_Sampler;
+		else
+			mc.m_AlbedoSamplerIndex = (uint)Scene::Texture::Wrap;
+
+		if (mat.m_NormalTexture != -1)
+			mc.m_NormalSamplerIndex = (uint)scene.m_Textures[mat.m_NormalTexture].m_Sampler;
+		else
+			mc.m_NormalSamplerIndex = (uint)Scene::Texture::Wrap;
+
+		if (mat.m_MetallicRoughnessTexture != -1)
+			mc.m_RoughnessSamplerIndex = (uint)scene.m_Textures[mat.m_MetallicRoughnessTexture].m_Sampler;
+		else
+			mc.m_RoughnessSamplerIndex = (uint)Scene::Texture::Wrap;
 		materialConstants.push_back(mc);
 	}
 

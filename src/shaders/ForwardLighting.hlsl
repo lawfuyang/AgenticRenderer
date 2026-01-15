@@ -16,7 +16,8 @@ StructuredBuffer<PerInstanceData> instances : register(t0, space1);
 // Structured buffer for material constants
 StructuredBuffer<MaterialConstants> materials : register(t1, space1);
 
-SamplerState g_Sampler : register(s0, space1);
+SamplerState g_SamplerAnisoClamp : register(s0, space1);
+SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 
 float3x3 MakeAdjugateMatrix(float4x4 m)
 {
@@ -138,11 +139,16 @@ float OrenNayar(float NdotL, float NdotV, float LdotV, float a2, float albedo)
   return albedo * max(0.0, NdotL) * (A + B * s / t) / PI;
 }
 
-// Helper function to sample from bindless textures
-float4 SampleBindlessTexture(uint textureIndex, float2 uv)
+// Helper function to sample from bindless textures using a sampler index.
+float4 SampleBindlessTexture(uint textureIndex, uint samplerIndex, float2 uv)
 {
     Texture2D tex = ResourceDescriptorHeap[textureIndex];
-    return tex.Sample(g_Sampler, uv);
+    
+    // Sample once using branch-based selection to avoid sampler-typed phi nodes.
+    if (samplerIndex == SAMPLER_CLAMP_INDEX)
+        return tex.Sample(g_SamplerAnisoClamp, uv);
+    else
+        return tex.Sample(g_SamplerAnisoWrap, uv);
 }
 
 float4 PSMain(VSOut input) : SV_TARGET
@@ -154,17 +160,17 @@ float4 PSMain(VSOut input) : SV_TARGET
     // Texture sampling (only when present)
     bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
     float4 albedoSample = hasAlbedo
-        ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, input.uv)
         : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
 
     bool hasORM = (mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0;
     float4 ormSample = hasORM
-        ? SampleBindlessTexture(mat.m_RoughnessMetallicTextureIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, input.uv)
         : float4(mat.m_RoughnessMetallic.x, mat.m_RoughnessMetallic.y, 0.0f, 0.0f);
 
     bool hasNormal = (mat.m_TextureFlags & TEXFLAG_NORMAL) != 0;
     float4 nmSample = hasNormal
-        ? SampleBindlessTexture(mat.m_NormalTextureIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_NormalTextureIndex, mat.m_NormalSamplerIndex, input.uv)
         : float4(0.5f, 0.5f, 1.0f, 0.0f);
 
     // Normal (from normal map when available)

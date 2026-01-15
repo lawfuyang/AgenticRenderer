@@ -62,6 +62,13 @@ public:
         std::string m_Uri;
         nvrhi::TextureHandle m_Handle;
         uint32_t m_BindlessIndex = UINT32_MAX;
+        // Sampler preference mapped from glTF: 0 = Clamp, 1 = Wrap
+        enum SamplerType
+        {
+            Clamp = 0,
+            Wrap = 1
+        };
+        SamplerType m_Sampler = Wrap;
     };
 
     struct Camera
