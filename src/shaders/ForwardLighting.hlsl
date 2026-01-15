@@ -71,11 +71,10 @@ float3x3 CalculateTBNWithoutTangent(float3 p, float3 n, float2 uv)
     float2 duv1 = ddx(uv);
     float2 duv2 = ddy(uv);
 
-    float3x3 M = float3x3(dp1, dp2, cross(dp1, dp2));
-    float2x3 inverseM = float2x3(cross(M[1], M[2]), cross(M[2], M[0]));
-    float3 t = normalize(mul(float2(duv1.x, duv2.x), inverseM));
-    float3 b = normalize(mul(float2(duv1.y, duv2.y), inverseM));
-    return float3x3(t, b, n);
+    float r = 1.0 / (duv1.x * duv2.y - duv2.x * duv1.y);
+    float3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+    float3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
+    return float3x3(normalize(T), normalize(B), n);
 }
 
 // 0.08 is a max F0 we define for dielectrics which matches with Crystalware and gems (0.05 - 0.08)
