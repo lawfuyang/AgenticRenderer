@@ -147,11 +147,11 @@ float4 SampleBindlessTexture(uint textureIndex, float2 uv)
 
 float4 PSMain(VSOut input) : SV_TARGET
 {
+    // Instance + material
     PerInstanceData inst = instances[input.instanceID];
     MaterialConstants mat = materials[inst.m_MaterialIndex];
 
-    // Only sample textures when the material indicates presence.
-    // When absent, assign the "sample" variables from MaterialConstants to avoid sampling.
+    // Texture sampling (only when present)
     bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
     float4 albedoSample = hasAlbedo
         ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, input.uv)
@@ -167,7 +167,7 @@ float4 PSMain(VSOut input) : SV_TARGET
         ? SampleBindlessTexture(mat.m_NormalTextureIndex, input.uv)
         : float4(0.5f, 0.5f, 1.0f, 0.0f);
 
-    // Reusable locals
+    // Normal (from normal map when available)
     float3 N;
     if (hasNormal)
     {
@@ -179,15 +179,20 @@ float4 PSMain(VSOut input) : SV_TARGET
     {
         N = normalize(input.normal);
     }
-    float3 V = normalize(perFrame.m_CameraPos.xyz - input.worldPos);
-    float3 H = normalize(V + perFrame.m_LightDirection);
 
-    float NdotL = saturate(dot(N, perFrame.m_LightDirection));
-    float NdotV = saturate(dot(N, V)); // Bias to avoid artifacting
+    // View / light directions
+    float3 V = normalize(perFrame.m_CameraPos.xyz - input.worldPos);
+    float3 L = perFrame.m_LightDirection;
+    float3 H = normalize(V + L);
+
+    // Dot products
+    float NdotL = saturate(dot(N, L));
+    float NdotV = saturate(dot(N, V));
     float NdotH = saturate(dot(N, H));
     float VdotH = saturate(dot(V, H));
-    float LdotV = saturate(dot(perFrame.m_LightDirection, V));
+    float LdotV = saturate(dot(L, V));
 
+    // Base color and alpha
     float3 baseColor;
     float alpha;
     if (hasAlbedo)
@@ -200,7 +205,8 @@ float4 PSMain(VSOut input) : SV_TARGET
         baseColor = mat.m_BaseColor.xyz;
         alpha = mat.m_BaseColor.w;
     }
-    // Start with material constants, then override from ORM texture when present
+
+    // Material properties (roughness, metallic)
     float roughness = mat.m_RoughnessMetallic.x;
     float metallic = mat.m_RoughnessMetallic.y;
     if (hasORM)
@@ -210,25 +216,27 @@ float4 PSMain(VSOut input) : SV_TARGET
         metallic = ormSample.z;
     }
 
+    // Derived values
     float a = roughness * roughness;
-	float a2 = clamp(a * a, 0.0001f, 1.0f);
+    float a2 = clamp(a * a, 0.0001f, 1.0f);
 
-    // Diffuse BRDF via Oren-Nayar
+    // Diffuse (Oren-Nayar)
     float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
     float3 diffuse = oren * (1.0f - metallic) * baseColor;
-    
-    const float materialSpecular = 0.5f; // TODO
+
+    // Specular
+    const float materialSpecular = 0.5f;
     float3 specularColor = ComputeF0(materialSpecular, baseColor, metallic);
 
-	// Generalized microfacet Specular BRDF
-	float D = D_GGX(a2, NdotH);
-	float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
+    float D = D_GGX(a2, NdotH);
+    float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
     float3 F = F_Schlick(specularColor, VdotH);
     float3 spec = (D * Vis) * F;
 
+    // Lighting and ambient
     float3 radiance = float3(perFrame.m_LightIntensity, perFrame.m_LightIntensity, perFrame.m_LightIntensity);
-    // Fake ambient (IBL fallback): small ambient multiplied by baseColor and reduced by metallic
-    float3 ambient = (1.0f - NdotL) * baseColor * 0.03f;
+    float3 ambient = (1.0f - NdotL) * baseColor * 0.03f; // IBL fallback
     float3 color = ambient + (diffuse + spec) * radiance * NdotL;
+
     return float4(color, alpha);
 }
