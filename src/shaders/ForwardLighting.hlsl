@@ -71,11 +71,10 @@ float3x3 CalculateTBNWithoutTangent(float3 p, float3 n, float2 uv)
     float2 duv1 = ddx(uv);
     float2 duv2 = ddy(uv);
 
-    float3x3 M = float3x3(dp1, dp2, cross(dp1, dp2));
-    float2x3 inverseM = float2x3(cross(M[1], M[2]), cross(M[2], M[0]));
-    float3 t = normalize(mul(float2(duv1.x, duv2.x), inverseM));
-    float3 b = normalize(mul(float2(duv1.y, duv2.y), inverseM));
-    return float3x3(t, b, n);
+    float r = 1.0 / (duv1.x * duv2.y - duv2.x * duv1.y);
+    float3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+    float3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
+    return float3x3(normalize(T), normalize(B), n);
 }
 
 // 0.08 is a max F0 we define for dielectrics which matches with Crystalware and gems (0.05 - 0.08)
@@ -124,17 +123,6 @@ float Vis_SmithJointApprox(float a2, float NdotV, float NdotL)
     float Vis_SmithV = NdotL * (NdotV * (1 - a2) + a2);
     float Vis_SmithL = NdotV * (NdotL * (1 - a2) + a2);
     return 0.5 * rcp(Vis_SmithV + Vis_SmithL);
-}
-
-// https://www.unrealengine.com/en-US/blog/physically-based-shading-on-mobile
-float3 EnvBRDFApprox(float3 specularColor, float roughness, float ndotv)
-{
-    const float4 c0 = float4(-1, -0.0275, -0.572, 0.022);
-    const float4 c1 = float4(1, 0.0425, 1.04, -0.04);
-    float4 r = roughness * c0 + c1;
-    float a004 = min(r.x * r.x, exp2(-9.28 * ndotv)) * r.x + r.y;
-    float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
-    return specularColor * AB.x + AB.y;
 }
 
 // Oren-Nayar diffuse model returning the scalar BRDF multiplier
@@ -222,7 +210,7 @@ float4 PSMain(VSOut input) : SV_TARGET
 
     // Diffuse BRDF via Oren-Nayar
     float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
-    float3 diffuse = oren * (1.0f - metallic) * baseColor / PI;
+    float3 diffuse = oren * (1.0f - metallic) * baseColor;
     
     const float materialSpecular = 0.5f; // TODO
     float3 specularColor = ComputeF0(materialSpecular, baseColor, metallic);
@@ -232,8 +220,6 @@ float4 PSMain(VSOut input) : SV_TARGET
 	float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
     float3 F = F_Schlick(specularColor, VdotH);
     float3 spec = (D * Vis) * F;
-
-    spec += EnvBRDFApprox(specularColor, roughness, NdotV);
 
     float3 radiance = float3(perFrame.m_LightIntensity, perFrame.m_LightIntensity, perFrame.m_LightIntensity);
     // Fake ambient (IBL fallback): small ambient multiplied by baseColor and reduced by metallic
