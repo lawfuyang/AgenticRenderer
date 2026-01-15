@@ -167,18 +167,23 @@ float4 PSMain(VSOut input) : SV_TARGET
         ? SampleBindlessTexture(mat.m_NormalTextureIndex, input.uv)
         : float4(0.5f, 0.5f, 1.0f, 0.0f);
 
-    float3 normalMap = TwoChannelNormalX2(nmSample.xy);
-
-    // Compute TBN matrix
-    float3x3 TBN = CalculateTBNWithoutTangent(input.worldPos, input.normal, input.uv);
-
     // Reusable locals
-    float3 N = normalize(mul(normalMap, TBN));
+    float3 N;
+    if (hasNormal)
+    {
+        float3 normalMap = TwoChannelNormalX2(nmSample.xy);
+        float3x3 TBN = CalculateTBNWithoutTangent(input.worldPos, input.normal, input.uv);
+        N = normalize(mul(normalMap, TBN));
+    }
+    else
+    {
+        N = normalize(input.normal);
+    }
     float3 V = normalize(perFrame.m_CameraPos.xyz - input.worldPos);
     float3 H = normalize(V + perFrame.m_LightDirection);
 
     float NdotL = saturate(dot(N, perFrame.m_LightDirection));
-    float NdotV = saturate(abs(dot(N, V)) + 1e-5); // Bias to avoid artifacting
+    float NdotV = saturate(dot(N, V)); // Bias to avoid artifacting
     float NdotH = saturate(dot(N, H));
     float VdotH = saturate(dot(V, H));
     float LdotV = saturate(dot(perFrame.m_LightDirection, V));
