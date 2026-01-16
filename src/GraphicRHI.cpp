@@ -443,7 +443,7 @@ bool GraphicRHI::CreateLogicalDevice()
     deviceFeatures.pipelineStatisticsQuery = VK_TRUE;
 
     vk::PhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
-    //meshShaderFeatures.meshShaderQueries = VK_TRUE;
+    meshShaderFeatures.meshShaderQueries = VK_TRUE;
 
     // Enable Vulkan 1.3 features
     vk::PhysicalDeviceVulkan13Features vulkan13Features{};
