@@ -541,7 +541,7 @@ void Renderer::Run()
         // Present swapchain
         if (!m_RHI.PresentSwapchain(m_CurrentSwapchainImage))
         {
-            SDL_Log("[Run ] Present failed, exiting loop");
+            SDL_LOG_ASSERT_FAIL("PresentSwapchain failed", "[Run ] PresentSwapchain failed");
             break;
         }
 
