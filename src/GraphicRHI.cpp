@@ -266,6 +266,7 @@ bool GraphicRHI::CreateInstance()
     // Optional NVRHI-compatible instance extensions for future-proofing
     const std::vector<const char*> optionalInstanceExtensions = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
     };
 
     // Filter to only supported extensions
@@ -422,6 +423,7 @@ bool GraphicRHI::CreateLogicalDevice()
         
         // Debug extensions
         VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
         
         // Descriptor extensions
         VK_EXT_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME,
@@ -440,8 +442,12 @@ bool GraphicRHI::CreateLogicalDevice()
     deviceFeatures.drawIndirectFirstInstance = VK_TRUE;
     deviceFeatures.pipelineStatisticsQuery = VK_TRUE;
 
+    vk::PhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+    //meshShaderFeatures.meshShaderQueries = VK_TRUE;
+
     // Enable Vulkan 1.3 features
     vk::PhysicalDeviceVulkan13Features vulkan13Features{};
+    vulkan13Features.pNext = &meshShaderFeatures;
     vulkan13Features.dynamicRendering = VK_TRUE;
     vulkan13Features.synchronization2 = VK_TRUE;
 
