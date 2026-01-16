@@ -60,6 +60,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         renderer->m_MainViewPipelineStatistics = renderer->m_NvrhiDevice->getPipelineStatistics(m_PipelineQueries[readIndex]);
         renderer->m_NvrhiDevice->resetPipelineStatisticsQuery(m_PipelineQueries[readIndex]);
     }
+    commandList->beginPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 
     // ============================================================================
     // Framebuffer Setup
@@ -202,14 +203,9 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     state.indirectParams = indirectBuffer;
-
-    // Begin pipeline statistics query
-    commandList->beginPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
-
     commandList->setGraphicsState(state);
 
     commandList->drawIndexedIndirect(0, (uint32_t)indirectArgs.size());
 
-    // End pipeline statistics query
     commandList->endPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 }
