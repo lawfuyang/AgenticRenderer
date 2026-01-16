@@ -452,6 +452,8 @@ bool Renderer::Initialize()
             return false;
         }
         m_Renderers.push_back(renderer);
+        renderer->m_GPUQueries[0] = m_NvrhiDevice->createTimerQuery();
+        renderer->m_GPUQueries[1] = m_NvrhiDevice->createTimerQuery();
     }
 
     // Load scene (if configured) after all renderer resources are ready
@@ -511,9 +513,20 @@ void Renderer::Run()
         #define ADD_RENDER_PASS(rendererName) \
         { \
             extern IRenderer* rendererName; \
+            int readIndex = m_FrameNumber % 2; \
+            int writeIndex = (m_FrameNumber + 1) % 2; \
+            if (m_NvrhiDevice->pollTimerQuery(rendererName->m_GPUQueries[readIndex])) \
+            { \
+                rendererName->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_NvrhiDevice->getTimerQueryTime(rendererName->m_GPUQueries[readIndex])); \
+                m_NvrhiDevice->resetTimerQuery(rendererName->m_GPUQueries[readIndex]); \
+            } \
+            SimpleTimer cpuTimer; \
             nvrhi::CommandListHandle cmd = AcquireCommandList(rendererName->GetName()); \
+            cmd->beginTimerQuery(rendererName->m_GPUQueries[writeIndex]); \
             rendererName->Render(cmd); \
+            cmd->endTimerQuery(rendererName->m_GPUQueries[writeIndex]); \
             SubmitCommandList(cmd); \
+            rendererName->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
         }
 
         ADD_RENDER_PASS(g_ClearRenderer);
@@ -547,6 +560,9 @@ void Renderer::Run()
         m_FrameTime = static_cast<double>(totalFrameTime);
         if (m_FrameTime > 0.0)
             m_FPS = 1000.0 / m_FrameTime;
+
+        // Increment frame number for double buffering
+        m_FrameNumber++;
     }
 }
 

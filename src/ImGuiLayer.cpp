@@ -112,6 +112,30 @@ void ImGuiLayer::UpdateFrame()
 
             ImGui::TreePop();
         }
+
+        // Timings
+        if (ImGui::TreeNode("Timings"))
+        {
+            if (ImGui::BeginTable("TimingsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("Pass");
+                ImGui::TableSetupColumn("CPU (ms)");
+                ImGui::TableSetupColumn("GPU (ms)");
+                ImGui::TableHeadersRow();
+                for (auto& r : renderer->m_Renderers)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", r->GetName());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%.3f", r->m_CPUTime);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.3f", r->m_GPUTime);
+                }
+                ImGui::EndTable();
+            }
+            ImGui::TreePop();
+        }
     }
     ImGui::End();
 

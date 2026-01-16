@@ -27,6 +27,16 @@ struct SimpleTimer
         const uint64_t now = SDL_GetPerformanceCounter();
         return static_cast<double>(now - start) / static_cast<double>(freq);
     }
+
+    double TotalMilliseconds() const
+    {
+        return SecondsToMilliseconds(TotalSeconds());
+    }
+
+    static float SecondsToMilliseconds(float seconds)
+    {
+        return seconds * 1000.0f;
+    }
 };
 
 struct ScopedTimerLog

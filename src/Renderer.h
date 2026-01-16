@@ -13,6 +13,10 @@ public:
     virtual bool Initialize() = 0;
     virtual void Render(nvrhi::CommandListHandle commandList) = 0;
     virtual const char* GetName() const = 0;
+
+    float m_CPUTime = 0.0f;
+    float m_GPUTime = 0.0f;
+    nvrhi::TimerQueryHandle m_GPUQueries[2];
 };
 
 class RendererRegistry
@@ -175,6 +179,9 @@ struct Renderer
     // Performance metrics
     double m_FrameTime = 0.0;
     double m_FPS       = 0.0;
+
+    // Frame counter for double buffering
+    uint32_t m_FrameNumber = 0;
 
     // ============================================================================
     // Public Methods
