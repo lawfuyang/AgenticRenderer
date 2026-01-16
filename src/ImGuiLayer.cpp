@@ -120,9 +120,9 @@ void ImGuiLayer::UpdateFrame()
         // Directional Light controls
         if (ImGui::TreeNode("Directional Light"))
         {
-            ImGui::DragFloat("Yaw", &renderer->m_DirectionalLight.yaw, 0.01f, -PI, PI);
-            ImGui::DragFloat("Pitch", &renderer->m_DirectionalLight.pitch, 0.01f, -PI * 0.5f, PI * 0.5f);
-            ImGui::DragFloat("Lux", &renderer->m_DirectionalLight.intensity, 100.0f, 0.0f, 200000.0f);
+            ImGui::DragFloat("Yaw", &renderer->m_Scene.m_DirectionalLight.yaw, 0.01f, -PI, PI);
+            ImGui::DragFloat("Pitch", &renderer->m_Scene.m_DirectionalLight.pitch, 0.01f, -PI * 0.5f, PI * 0.5f);
+            ImGui::DragFloat("Lux", &renderer->m_Scene.m_DirectionalLight.intensity, 100.0f, 0.0f, 200000.0f);
 
             ImGui::TreePop();
         }

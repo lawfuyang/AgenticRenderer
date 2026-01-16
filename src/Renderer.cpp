@@ -611,19 +611,6 @@ void Renderer::Shutdown()
     SDL_Log("[Shutdown] Clean exit");
 }
 
-Vector3 Renderer::GetDirectionalLightDirection() const
-{
-    // Convert yaw and pitch to direction vector
-    // Yaw: rotation around Y axis, Pitch: elevation from XZ plane
-    float cosYaw = cos(m_DirectionalLight.yaw);
-    float sinYaw = sin(m_DirectionalLight.yaw);
-    float cosPitch = cos(m_DirectionalLight.pitch);
-    float sinPitch = sin(m_DirectionalLight.pitch);
-    
-    // Direction from surface to light (pointing toward the light)
-    return Vector3{ -sinYaw * cosPitch, -sinPitch, -cosYaw * cosPitch };
-}
-
 void Renderer::SetCameraFromSceneCamera(const Scene::Camera& sceneCam)
 {
     if (sceneCam.m_NodeIndex >= 0 && sceneCam.m_NodeIndex < static_cast<int>(m_Scene.m_Nodes.size()))

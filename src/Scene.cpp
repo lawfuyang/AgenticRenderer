@@ -523,9 +523,9 @@ static void SetupDirectionalLightAndCamera(Scene& scene, Renderer* renderer)
 			DirectX::XMStoreFloat3(&dir, DirectX::XMVector3Normalize(worldDir));
 			float yaw = atan2f(dir.x, dir.z);
 			float pitch = asinf(dir.y);
-			renderer->m_DirectionalLight.yaw = yaw;
-			renderer->m_DirectionalLight.pitch = pitch;
-			renderer->m_DirectionalLight.intensity = light.m_Intensity * 10000.0f;
+			scene.m_DirectionalLight.yaw = yaw;
+			scene.m_DirectionalLight.pitch = pitch;
+			scene.m_DirectionalLight.intensity = light.m_Intensity * 10000.0f;
 			break;
 		}
 	}
@@ -653,4 +653,17 @@ void Scene::Shutdown()
 	m_Textures.clear();
 	m_Cameras.clear();
 	m_Lights.clear();
+}
+
+Vector3 Scene::GetDirectionalLightDirection() const
+{
+    // Convert yaw and pitch to direction vector
+    // Yaw: rotation around Y axis, Pitch: elevation from XZ plane
+    float cosYaw = cos(m_DirectionalLight.yaw);
+    float sinYaw = sin(m_DirectionalLight.yaw);
+    float cosPitch = cos(m_DirectionalLight.pitch);
+    float sinPitch = sin(m_DirectionalLight.pitch);
+    
+    // Direction from surface to light (pointing toward the light)
+    return Vector3{ -sinYaw * cosPitch, -sinPitch, -cosYaw * cosPitch };
 }

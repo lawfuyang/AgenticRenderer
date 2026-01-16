@@ -94,6 +94,13 @@ public:
         int m_NodeIndex = -1;
     };
 
+    struct DirectionalLight
+    {
+        float yaw       = 0.0f;
+        float pitch     = -DirectX::XM_PI / 3.0f; // -60 degrees, like Unreal Engine default sunlight
+        float intensity = 10000.0f;  // Default to 10,000 lux (bright daylight)
+    };
+
     // Public scene storage (instance members)
     std::vector<Mesh> m_Meshes;
     std::vector<Node> m_Nodes;
@@ -101,6 +108,8 @@ public:
     std::vector<Texture> m_Textures;
     std::vector<Camera> m_Cameras;
     std::vector<Light> m_Lights;
+
+    DirectionalLight m_DirectionalLight;
 
     // GPU buffers created for the scene
     nvrhi::BufferHandle m_VertexBuffer;
@@ -112,4 +121,7 @@ public:
     bool LoadScene();
     // Release GPU resources and clear scene data
     void Shutdown();
+
+    // Get directional light direction in world space
+    Vector3 GetDirectionalLightDirection() const;
 };

@@ -165,14 +165,6 @@ struct Renderer
     // Selected camera index for GLTF cameras
     int m_SelectedCameraIndex = -1;
 
-    // Directional Light
-    struct DirectionalLight
-    {
-        float yaw       = 0.0f;
-        float pitch     = -0.5f;
-        float intensity = 10000.0f;  // Default to 10,000 lux (bright daylight)
-    } m_DirectionalLight;
-
     // Renderers
     std::vector<std::shared_ptr<IRenderer>> m_Renderers;
 
@@ -192,9 +184,6 @@ struct Renderer
 
     // Return last frame time in milliseconds
     double GetFrameTimeMs() const { return m_FrameTime; }
-
-    // Get directional light direction in world space
-    Vector3 GetDirectionalLightDirection() const;
 
     // Set camera from a GLTF scene camera
     void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
