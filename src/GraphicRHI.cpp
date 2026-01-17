@@ -104,6 +104,12 @@ namespace
     {
         (void)pUserData;
 
+        // vkCreateDevice(): Internal Warning: Ray Query validation option was enabled, but the rayQuery feature are not supported. [Disabling gpuav_validate_ray_query]
+        if (pCallbackData->messageIdNumber == -2030147807)
+        {
+            return VK_FALSE;
+        }
+
         const char* severityStr = "";
         if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
             severityStr = "ERROR";
@@ -122,7 +128,7 @@ namespace
         else if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
             typeStr = "PERFORMANCE";
 
-        SDL_Log("[Vulkan %s][%s] %s (ID: %u)", severityStr, typeStr, pCallbackData->pMessage, pCallbackData->messageIdNumber);
+        SDL_Log("[Vulkan %s][%s] %s (ID: %i)", severityStr, typeStr, pCallbackData->pMessage, pCallbackData->messageIdNumber);
 
         // Break in debugger on validation errors and warnings
         if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ||
@@ -441,6 +447,9 @@ bool GraphicRHI::CreateLogicalDevice()
     deviceFeatures.multiDrawIndirect = VK_TRUE;
     deviceFeatures.drawIndirectFirstInstance = VK_TRUE;
     deviceFeatures.pipelineStatisticsQuery = VK_TRUE;
+    deviceFeatures.fragmentStoresAndAtomics = VK_TRUE;
+    deviceFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
+    deviceFeatures.shaderInt64 = VK_TRUE;
 
     vk::PhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
     meshShaderFeatures.meshShaderQueries = VK_TRUE;
@@ -464,6 +473,10 @@ bool GraphicRHI::CreateLogicalDevice()
     vulkan12Features.runtimeDescriptorArray = VK_TRUE;
     vulkan12Features.timelineSemaphore = VK_TRUE;
     vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
+    vulkan12Features.vulkanMemoryModel = VK_TRUE;
+    vulkan12Features.vulkanMemoryModelDeviceScope = VK_TRUE;
+    vulkan12Features.scalarBlockLayout = VK_TRUE;
+    vulkan12Features.storageBuffer8BitAccess = VK_TRUE;
 
     vk::PhysicalDeviceVulkan11Features vulkan11Features{};
     vulkan11Features.pNext = &vulkan12Features;
