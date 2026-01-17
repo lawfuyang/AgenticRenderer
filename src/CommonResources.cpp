@@ -2,7 +2,7 @@
 #include "CommonResources.h"
 #include "Renderer.h"
 
-#include "shaders/ShaderShared.hlsl"
+#include "shaders/ShaderShared.h"
 
 bool CommonResources::Initialize()
 {

@@ -5,8 +5,7 @@
 #include "Utilities.h"
 
 // Enable ForwardLighting shared definitions for C++ side
-#define FORWARD_LIGHTING_DEFINE
-#include "shaders/ShaderShared.hlsl"
+#include "shaders/ShaderShared.h"
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
@@ -577,6 +576,28 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 
 		renderer->SubmitCommandList(cmd);
 	}
+
+	// Create instance data buffer
+	if (!scene.m_InstanceData.empty())
+	{
+		nvrhi::BufferDesc desc{};
+		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(PerInstanceData));
+		desc.structStride = sizeof(PerInstanceData);
+		desc.initialState = nvrhi::ResourceStates::ShaderResource;
+		desc.keepInitialState = true;
+		scene.m_InstanceDataBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
+		renderer->m_RHI.SetDebugName(scene.m_InstanceDataBuffer, "Scene_InstanceDataBuffer");
+	}
+
+	// Upload instance data
+	if (scene.m_InstanceDataBuffer)
+	{
+		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Scene Data");
+		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
+			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(PerInstanceData), 0);
+
+		renderer->SubmitCommandList(cmd);
+	}
 }
 
 bool Scene::LoadScene()
@@ -625,6 +646,23 @@ bool Scene::LoadScene()
 
 	ProcessNodesAndHierarchy(data, *this);
 
+	// Fill instance data
+	m_InstanceData.clear();
+	for (const auto& node : m_Nodes)
+	{
+		if (node.m_MeshIndex < 0) continue;
+		const auto& mesh = m_Meshes[node.m_MeshIndex];
+		for (const auto& prim : mesh.m_Primitives)
+		{
+			PerInstanceData inst{};
+			inst.m_World = node.m_WorldTransform;
+			inst.m_MaterialIndex = prim.m_MaterialIndex;
+			inst.m_IndexOffset = prim.m_IndexOffset;
+			inst.m_IndexCount = prim.m_IndexCount;
+			m_InstanceData.push_back(inst);
+		}
+	}
+
 	SetupDirectionalLightAndCamera(*this, renderer);
 
 	CreateAndUploadGpuBuffers(*this, renderer, allVertices, allIndices);
@@ -641,6 +679,7 @@ void Scene::Shutdown()
 	m_VertexBuffer = nullptr;
 	m_IndexBuffer = nullptr;
 	m_MaterialConstantsBuffer = nullptr;
+	m_InstanceDataBuffer = nullptr;
 
 	// Clear CPU-side containers
 	m_Meshes.clear();
@@ -653,6 +692,7 @@ void Scene::Shutdown()
 	m_Textures.clear();
 	m_Cameras.clear();
 	m_Lights.clear();
+	m_InstanceData.clear();
 }
 
 Vector3 Scene::GetDirectionalLightDirection() const

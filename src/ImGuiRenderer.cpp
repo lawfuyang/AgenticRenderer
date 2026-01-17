@@ -1,8 +1,7 @@
 #include "Renderer.h"
 
-// Request the shared PushConstants definition for C++ and include it.
-#define IMGUI_DEFINE_PUSH_CONSTANTS
-#include "shaders/ShaderShared.hlsl"
+// Include shared structs
+#include "shaders/ShaderShared.h"
 
 #include <imgui.h>
 #include "CommonResources.h"
@@ -155,7 +154,7 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     // Setup binding set for push constants, font texture, and sampler
     nvrhi::BindingSetDesc bindingSetDesc;
     bindingSetDesc.bindings = {
-        nvrhi::BindingSetItem::PushConstants(0, sizeof(PushConstants)),
+        nvrhi::BindingSetItem::PushConstants(0, sizeof(ImGuiPushConstants)),
         nvrhi::BindingSetItem::Texture_SRV(0, m_FontTexture),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
     };
@@ -200,7 +199,7 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     // Push Constants Setup
     // ============================================================================
     // Setup push constants for scale and translate
-    PushConstants pushConstants{};
+    ImGuiPushConstants pushConstants{};
     pushConstants.uScale.x = 2.0f / draw_data->DisplaySize.x;
     pushConstants.uScale.y = 2.0f / draw_data->DisplaySize.y;
     pushConstants.uTranslate.x = -1.0f - draw_data->DisplayPos.x * pushConstants.uScale.x;

@@ -2,9 +2,8 @@
 #include "ImGuiLayer.h"
 #include "Renderer.h"
 
-// Request the shared PushConstants definition for C++ and include it.
-#define IMGUI_DEFINE_PUSH_CONSTANTS
-#include "shaders/ShaderShared.hlsl"
+// Include shared structs
+#include "shaders/ShaderShared.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>

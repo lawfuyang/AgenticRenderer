@@ -1,10 +1,17 @@
+////////////////////////////////////////////////////////////////////////////////
+// NOTE TO FUTURE AI: This file is shared between C++ and HLSL. It uses #ifdef __cplusplus
+// to conditionally include C++ headers and define types. When modifying, ensure compatibility
+// for both languages. Structs are defined with the same layout for CPU/GPU data sharing.
+// Always test compilation in both C++ and HLSL contexts after changes.
+////////////////////////////////////////////////////////////////////////////////
+
 #pragma once
 
 // Minimal language-specific macro layer. The rest of this file uses the macros below so both C++ and HLSL follow the exact same code path.
 
 // Include Math aliases on C++ side so we can map shared types to them.
 #ifdef __cplusplus
-#include "pch.h"
+typedef uint32_t uint;
 #endif
 
 // Map shared scalar/vector/matrix declarations to language-specific forms.
@@ -21,19 +28,15 @@
   typedef float4 Color;
 #endif
 
-#ifdef IMGUI_DEFINE_PUSH_CONSTANTS
-struct PushConstants
+struct ImGuiPushConstants
 {
 	Vector2 uScale;
 	Vector2 uTranslate;
 };
-#endif
 
 // Forward lighting related shared types
 
-// Forward-lighting specific shared types. Guarded so only the
-// forward lighting shader + renderer include these definitions.
-#ifdef FORWARD_LIGHTING_DEFINE
+// Forward-lighting specific shared types.
 // Vertex input: provide simple C++ and HLSL variants
 #ifdef __cplusplus
 struct VertexInput
@@ -52,7 +55,7 @@ struct VertexInput
 #endif
 
 // Shared per-frame data structure (one definition used by both C++ and HLSL).
-struct PerFrameData
+struct ForwardLightingPerFrameData
 {
   Matrix m_ViewProj;
   Vector4 m_CameraPos; // xyz: camera world-space position, w: unused
@@ -80,9 +83,21 @@ struct PerInstanceData
 {
   Matrix m_World;
   uint m_MaterialIndex;
+  uint m_IndexOffset;
+  uint m_IndexCount;
+  uint padding0;
   Vector3 m_Padding;
+  uint padding1;
 };
-#endif // FORWARD_LIGHTING_DEFINE
+
+struct DrawIndexedIndirectArguments
+{
+  uint m_IndexCount;
+  uint m_InstanceCount;
+  uint m_StartIndexLocation;
+  int m_BaseVertexLocation;
+  uint m_StartInstanceLocation;
+};
 
 #ifdef __cplusplus
 constexpr float PI = 3.14159265358979323846f;
@@ -90,17 +105,16 @@ constexpr float PI = 3.14159265358979323846f;
 static const float PI = 3.14159265359f;
 #endif
 
+#define TEXFLAG_ALBEDO (1u << 0)
+#define TEXFLAG_NORMAL (1u << 1)
+#define TEXFLAG_ROUGHNESS_METALLIC (1u << 2)
+
 // Default texture indices for bindless access
 #define DEFAULT_TEXTURE_BLACK 0
 #define DEFAULT_TEXTURE_WHITE 1
 #define DEFAULT_TEXTURE_GRAY 2
 #define DEFAULT_TEXTURE_NORMAL 3
 #define DEFAULT_TEXTURE_PBR 4
-
-// Texture presence flags stored in MaterialConstants.m_TextureFlags
-#define TEXFLAG_ALBEDO (1u << 0)
-#define TEXFLAG_NORMAL (1u << 1)
-#define TEXFLAG_ROUGHNESS_METALLIC (1u << 2)
 
 #define SAMPLER_CLAMP_INDEX 0
 #define SAMPLER_WRAP_INDEX 1

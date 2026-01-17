@@ -111,6 +111,11 @@ struct Renderer
         const nvrhi::GraphicsPipelineDesc& pipelineDesc,
         const nvrhi::FramebufferInfoEx& fbInfo);
 
+    // Get or create a compute pipeline given a shader and binding layout.
+    nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(
+        nvrhi::ShaderHandle shader,
+        nvrhi::BindingLayoutHandle bindingLayout);
+
     // ============================================================================
     // Shaders
     // ============================================================================
@@ -200,6 +205,7 @@ private:
     // Caches
     std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
     std::unordered_map<size_t, nvrhi::GraphicsPipelineHandle> m_GraphicsPipelineCache;
+    std::unordered_map<size_t, nvrhi::ComputePipelineHandle> m_ComputePipelineCache;
 
     // Global bindless texture descriptor table
     nvrhi::DescriptorTableHandle m_GlobalTextureDescriptorTable;

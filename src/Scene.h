@@ -3,6 +3,9 @@
 #include "pch.h"
 #include "Camera.h"
 
+// Include shared structs
+#include "shaders/ShaderShared.h"
+
 // Minimal scene representation for glTF meshes/nodes/materials/textures
 class Scene
 {
@@ -115,6 +118,10 @@ public:
     nvrhi::BufferHandle m_VertexBuffer;
     nvrhi::BufferHandle m_IndexBuffer;
     nvrhi::BufferHandle m_MaterialConstantsBuffer;
+
+    // GPU buffers for instances
+    std::vector<PerInstanceData> m_InstanceData;
+    nvrhi::BufferHandle m_InstanceDataBuffer;
 
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.

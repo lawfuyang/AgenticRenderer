@@ -3,8 +3,6 @@
 #include "Config.h"
 #include "CommonResources.h"
 
-#include "shaders/ShaderShared.hlsl"
-
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
@@ -595,6 +593,7 @@ void Renderer::Shutdown()
 
     m_BindingLayoutCache.clear();
     m_GraphicsPipelineCache.clear();
+    m_ComputePipelineCache.clear();
 
     UnloadShaders();
     DestroySwapchainTextures();
@@ -1005,6 +1004,32 @@ void Renderer::DestroySwapchainTextures()
         m_SwapchainTextures[i] = nullptr;
     }
     m_DepthTexture = nullptr;
+}
+
+// Pipeline caching
+nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout)
+{
+    // Hash relevant pipeline properties: CS shader handle, binding layout pointer
+    size_t h = 1469598103934665603ull;
+    h = h * 1099511628211u + std::hash<const void*>()(shader.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(bindingLayout.Get());
+
+    auto it = m_ComputePipelineCache.find(h);
+    if (it != m_ComputePipelineCache.end())
+        return it->second;
+
+    // Create pipeline and cache it
+    nvrhi::ComputePipelineDesc desc;
+    desc.CS = shader;
+    desc.bindingLayouts = { bindingLayout };
+    nvrhi::ComputePipelineHandle pipeline = m_NvrhiDevice->createComputePipeline(desc);
+    SDL_assert(pipeline && "Failed to create compute pipeline");
+    if (pipeline)
+    {
+        m_ComputePipelineCache.emplace(h, pipeline);
+    }
+
+    return pipeline;
 }
 
 int main(int argc, char* argv[])

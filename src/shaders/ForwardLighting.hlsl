@@ -1,14 +1,12 @@
 // Basic Forward Lighting shaders (VS + PS)
 
-// Define forward-lighting specific macro so shared header exposes relevant types
-#define FORWARD_LIGHTING_DEFINE
 // Include shared types (VertexInput, PerObjectData)
-#include "ShaderShared.hlsl"
+#include "ShaderShared.h"
 
-// Define the cbuffer here using the shared PerFrameData struct
+// Define the cbuffer here using the shared ForwardLightingPerFrameData struct
 cbuffer PerFrameCB : register(b0, space1)
 {
-    PerFrameData perFrame;
+    ForwardLightingPerFrameData perFrame;
 };
 
 // Structured buffer for per-instance data

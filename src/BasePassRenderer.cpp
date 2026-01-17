@@ -2,9 +2,7 @@
 #include "CommonResources.h"
 #include "Camera.h"
 
-// Enable ForwardLighting shared definitions for C++ side
-#define FORWARD_LIGHTING_DEFINE
-#include "shaders/ShaderShared.hlsl"
+#include "shaders/ShaderShared.h"
 
 class BasePassRenderer : public IRenderer
 {
@@ -63,6 +61,55 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     commandList->beginPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 
     // ============================================================================
+    // Dispatch Culling Compute Shader
+    // ============================================================================
+    Camera* cam = &renderer->m_Camera;
+    Matrix viewProj = cam->GetViewProjMatrix();
+    Vector3 camPos = renderer->m_Camera.GetPosition();
+
+    nvrhi::BufferHandle indirectBuffer;
+    if (!renderer->m_Scene.m_InstanceData.empty())
+    {
+        // Create indirect args buffer
+        nvrhi::BufferDesc indirectBufDesc = nvrhi::BufferDesc()
+            .setByteSize(renderer->m_Scene.m_InstanceData.size() * sizeof(nvrhi::DrawIndexedIndirectArguments))
+            .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
+            .setIsDrawIndirectArgs(true)
+            .setCanHaveUAVs(true)
+            .setInitialState(nvrhi::ResourceStates::IndirectArgument)
+            .setKeepInitialState(true);
+        indirectBuffer = renderer->m_NvrhiDevice->createBuffer(indirectBufDesc);
+        renderer->m_RHI.SetDebugName(indirectBuffer, "IndirectBuffer");
+
+        // Create constant buffer for num primitives
+        nvrhi::BufferDesc cullCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(uint32_t), "CullingCB", 1);
+        nvrhi::BufferHandle cullCB = renderer->m_NvrhiDevice->createBuffer(cullCBD);
+        renderer->m_RHI.SetDebugName(cullCB, "CullingCB");
+
+        nvrhi::BindingSetDesc cullBset;
+        cullBset.bindings =
+        {
+            nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, indirectBuffer)
+        };
+        nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
+        nvrhi::BindingSetHandle cullBindingSet = renderer->m_NvrhiDevice->createBindingSet(cullBset, cullLayout);
+
+        nvrhi::ComputeState cullState;
+        cullState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("GPUCulling_Culling_CSMain"), cullLayout);
+        cullState.bindings = { cullBindingSet };
+
+        uint32_t numPrimitives = (uint32_t)renderer->m_Scene.m_InstanceData.size();
+        commandList->writeBuffer(cullCB, &numPrimitives, sizeof(uint32_t), 0);
+
+        commandList->setComputeState(cullState);
+
+        uint32_t dispatchX = (numPrimitives + 63) / 64;
+        commandList->dispatch(dispatchX, 1, 1);
+    }
+
+    // ============================================================================
     // Framebuffer Setup
     // ============================================================================
     nvrhi::TextureHandle rt = renderer->GetCurrentBackBufferTexture();
@@ -89,14 +136,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     state.framebuffer = framebuffer;
 
     // ============================================================================
-    // Constant Buffer Setup
-    // ============================================================================
-    nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
-        (uint32_t)sizeof(PerFrameData), "PerFrameCB", 8);
-    nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
-    renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
-
-    // ============================================================================
     // Vertex/Index Buffer and Viewport Setup
     // ============================================================================
     state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
@@ -113,63 +152,12 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     state.viewport.scissorRects[0].maxY = (int)h;
 
     // ============================================================================
-    // Instance Data Collection
+    // Constant Buffer Setup
     // ============================================================================
-    std::vector<PerInstanceData> instances;
-    std::vector<nvrhi::DrawIndexedIndirectArguments> indirectArgs;
-
-    Camera* cam = &renderer->m_Camera;
-    Matrix viewProj = cam->GetViewProjMatrix();
-    Vector3 camPos = renderer->m_Camera.GetPosition();
-
-    for (size_t ni = 0; ni < renderer->m_Scene.m_Nodes.size(); ++ni)
-    {
-        const Scene::Node& node = renderer->m_Scene.m_Nodes[ni];
-        if (node.m_MeshIndex < 0) continue;
-
-        const Scene::Mesh& mesh = renderer->m_Scene.m_Meshes[node.m_MeshIndex];
-
-        for (const Scene::Primitive& prim : mesh.m_Primitives)
-        {
-            PerInstanceData inst{};
-            inst.m_World = node.m_WorldTransform;
-            inst.m_MaterialIndex = prim.m_MaterialIndex;
-
-            instances.push_back(inst);
-
-            nvrhi::DrawIndexedIndirectArguments args{};
-            args.indexCount = prim.m_IndexCount;
-            args.instanceCount = 1;
-            args.startIndexLocation = prim.m_IndexOffset;
-            args.baseVertexLocation = 0;
-            args.startInstanceLocation = (uint32_t)instances.size() - 1;
-
-            indirectArgs.push_back(args);
-        }
-    }
-
-    // ============================================================================
-    // Instance and Indirect Buffer Creation
-    // ============================================================================
-    nvrhi::BufferDesc instBufDesc = nvrhi::BufferDesc()
-        .setByteSize(instances.size() * sizeof(PerInstanceData))
-        .setStructStride(sizeof(PerInstanceData))
-        .setInitialState(nvrhi::ResourceStates::ShaderResource)
-        .setKeepInitialState(true);
-    nvrhi::BufferHandle instanceBuffer = renderer->m_NvrhiDevice->createBuffer(instBufDesc);
-    renderer->m_RHI.SetDebugName(instanceBuffer, "InstanceBuffer");
-    commandList->writeBuffer(instanceBuffer, instances.data(), instances.size() * sizeof(PerInstanceData));
-
-    nvrhi::BufferDesc indirectBufDesc = nvrhi::BufferDesc()
-        .setByteSize(indirectArgs.size() * sizeof(nvrhi::DrawIndexedIndirectArguments))
-        .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
-        .setIsDrawIndirectArgs(true)
-        .setInitialState(nvrhi::ResourceStates::IndirectArgument)
-        .setKeepInitialState(true);
-    nvrhi::BufferHandle indirectBuffer = renderer->m_NvrhiDevice->createBuffer(indirectBufDesc);
-    renderer->m_RHI.SetDebugName(indirectBuffer, "IndirectBuffer");
-    commandList->writeBuffer(indirectBuffer, indirectArgs.data(),
-        indirectArgs.size() * sizeof(nvrhi::DrawIndexedIndirectArguments));
+    nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
+        (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
+    nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
+    renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
 
     // ============================================================================
     // Binding Set Setup
@@ -178,7 +166,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     bset.bindings =
     {
         nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, instanceBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
@@ -195,7 +183,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // ============================================================================
     // Per-Frame Constants and Rendering
     // ============================================================================
-    PerFrameData cb{};
+    ForwardLightingPerFrameData cb{};
     cb.m_ViewProj = viewProj;
     cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
     cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
@@ -205,7 +193,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     state.indirectParams = indirectBuffer;
     commandList->setGraphicsState(state);
 
-    commandList->drawIndexedIndirect(0, (uint32_t)indirectArgs.size());
+    commandList->drawIndexedIndirect(0, (uint32_t)renderer->m_Scene.m_InstanceData.size());
 
     commandList->endPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 }
