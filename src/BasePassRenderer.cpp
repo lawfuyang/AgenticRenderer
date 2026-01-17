@@ -79,15 +79,10 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     float nearZ = proj._43;
 
     DirectX::XMVECTOR planes[5];
-    // Left: normal (-1, 0, 1/xScale), d=0
     planes[0] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(-1.0f, 0.0f, 1.0f / xScale, 0.0f));
-    // Right: normal (1, 0, -1/xScale), d=0
     planes[1] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(1.0f, 0.0f, 1.0f / xScale, 0.0f));
-    // Bottom: normal (0, -1, 1/yScale), d=0
     planes[2] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, -1.0f, 1.0f / yScale, 0.0f));
-    // Top: normal (0, 1, -1/yScale), d=0
     planes[3] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, 1.0f, 1.0f / yScale, 0.0f));
-    // Near: normal (0, 0, -1), d=-nearZ
     planes[4] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, nearZ));
 
     Vector4 frustumPlanes[5];
