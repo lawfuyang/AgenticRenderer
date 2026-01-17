@@ -186,6 +186,12 @@ struct Renderer
     // Frustum culling enable flag
     bool m_EnableFrustumCulling = true;
 
+    // Freeze culling camera flag
+    bool m_FreezeCullingCamera = false;
+
+    // Frozen culling view matrix
+    Matrix m_FrozenCullingViewMatrix;
+
     // ============================================================================
     // Public Methods
     // ============================================================================

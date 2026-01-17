@@ -131,6 +131,13 @@ void ImGuiLayer::UpdateFrame()
         {
             ImGui::Checkbox("Enable Frustum Culling", &renderer->m_EnableFrustumCulling);
 
+            bool prevFreeze = renderer->m_FreezeCullingCamera;
+            ImGui::Checkbox("Freeze Culling Camera", &renderer->m_FreezeCullingCamera);
+            if (!prevFreeze && renderer->m_FreezeCullingCamera)
+            {
+                renderer->m_FrozenCullingViewMatrix = renderer->m_Camera.GetViewMatrix();
+            }
+
             ImGui::TreePop();
         }
 

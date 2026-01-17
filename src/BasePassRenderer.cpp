@@ -66,6 +66,10 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     Camera* cam = &renderer->m_Camera;
     Matrix viewProj = cam->GetViewProjMatrix();
     Matrix view = cam->GetViewMatrix();
+    if (renderer->m_FreezeCullingCamera)
+    {
+        view = renderer->m_FrozenCullingViewMatrix;
+    }
     Matrix proj = cam->GetProjMatrix();
     Vector3 camPos = renderer->m_Camera.GetPosition();
 
