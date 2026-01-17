@@ -88,6 +88,13 @@ void Camera::ProcessEvent(const SDL_Event& event)
         if (h > 0) m_Proj.aspectRatio = float(w) / float(h);
     }
     break;
+    case SDL_EVENT_WINDOW_MINIMIZED:
+    {
+        // Prevent window minimization by immediately restoring it
+        SDL_RestoreWindow(SDL_GetWindowFromID(event.window.windowID));
+        SDL_Log("[Window] Prevented window minimization");
+    }
+    break;
     default:
         break;
     }
