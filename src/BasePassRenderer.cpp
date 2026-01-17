@@ -65,9 +65,34 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // ============================================================================
     Camera* cam = &renderer->m_Camera;
     Matrix viewProj = cam->GetViewProjMatrix();
+    Matrix view = cam->GetViewMatrix();
+    Matrix proj = cam->GetProjMatrix();
     Vector3 camPos = renderer->m_Camera.GetPosition();
 
+    // Compute frustum planes in LH view space
+    float xScale = fabs(proj._11);
+    float yScale = fabs(proj._22);
+    float nearZ = proj._43;
+
+    DirectX::XMVECTOR planes[5];
+    // Left: normal (-1, 0, 1/xScale), d=0
+    planes[0] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(-1.0f, 0.0f, 1.0f / xScale, 0.0f));
+    // Right: normal (1, 0, -1/xScale), d=0
+    planes[1] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(1.0f, 0.0f, 1.0f / xScale, 0.0f));
+    // Bottom: normal (0, -1, 1/yScale), d=0
+    planes[2] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, -1.0f, 1.0f / yScale, 0.0f));
+    // Top: normal (0, 1, -1/yScale), d=0
+    planes[3] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, 1.0f, 1.0f / yScale, 0.0f));
+    // Near: normal (0, 0, -1), d=-nearZ
+    planes[4] = DirectX::XMPlaneNormalize(DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, nearZ));
+
+    Vector4 frustumPlanes[5];
+    for (int i = 0; i < 5; i++) {
+        DirectX::XMStoreFloat4(&frustumPlanes[i], planes[i]);
+    }
+
     nvrhi::BufferHandle indirectBuffer;
+    nvrhi::BufferHandle countBuffer;
     if (!renderer->m_Scene.m_InstanceData.empty())
     {
         // Create indirect args buffer
@@ -81,8 +106,22 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         indirectBuffer = renderer->m_NvrhiDevice->createBuffer(indirectBufDesc);
         renderer->m_RHI.SetDebugName(indirectBuffer, "IndirectBuffer");
 
-        // Create constant buffer for num primitives
-        nvrhi::BufferDesc cullCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(uint32_t), "CullingCB", 1);
+        // Create count buffer
+        nvrhi::BufferDesc countBufDesc = nvrhi::BufferDesc()
+            .setByteSize(sizeof(uint32_t))
+            .setStructStride(sizeof(uint32_t))
+            .setCanHaveUAVs(true)
+            .setIsDrawIndirectArgs(true)
+            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+            .setKeepInitialState(true);
+        countBuffer = renderer->m_NvrhiDevice->createBuffer(countBufDesc);
+        renderer->m_RHI.SetDebugName(countBuffer, "VisibleCount");
+
+        uint32_t zero = 0;
+        commandList->writeBuffer(countBuffer, &zero, sizeof(uint32_t), 0);
+
+        // Create constant buffer for culling
+        nvrhi::BufferDesc cullCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(CullingConstants), "CullingCB", 1);
         nvrhi::BufferHandle cullCB = renderer->m_NvrhiDevice->createBuffer(cullCBD);
         renderer->m_RHI.SetDebugName(cullCB, "CullingCB");
 
@@ -91,7 +130,8 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         {
             nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, indirectBuffer)
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, indirectBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, countBuffer)
         };
         nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
         nvrhi::BindingSetHandle cullBindingSet = renderer->m_NvrhiDevice->createBindingSet(cullBset, cullLayout);
@@ -101,7 +141,11 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         cullState.bindings = { cullBindingSet };
 
         uint32_t numPrimitives = (uint32_t)renderer->m_Scene.m_InstanceData.size();
-        commandList->writeBuffer(cullCB, &numPrimitives, sizeof(uint32_t), 0);
+        CullingConstants cullData;
+        cullData.g_NumPrimitives = numPrimitives;
+        memcpy(cullData.g_FrustumPlanes, frustumPlanes, sizeof(frustumPlanes));
+        cullData.g_View = view;
+        commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
 
         commandList->setComputeState(cullState);
 
@@ -191,6 +235,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     state.indirectParams = indirectBuffer;
+    state.indirectCountParams = countBuffer;
     commandList->setGraphicsState(state);
 
     commandList->drawIndexedIndirect(0, (uint32_t)renderer->m_Scene.m_InstanceData.size());

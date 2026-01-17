@@ -17,20 +17,73 @@
 
 cbuffer CullingCB : register(b0)
 {
-    uint g_NumPrimitives;
+    CullingConstants g_Culling;
 };
 
 StructuredBuffer<PerInstanceData> g_InstanceData : register(t0);
-RWStructuredBuffer<DrawIndexedIndirectArguments> g_IndirectArgs : register(u0);
+RWStructuredBuffer<DrawIndexedIndirectArguments> g_VisibleArgs : register(u0);
+RWStructuredBuffer<uint> g_VisibleCount : register(u1);
+
+bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
+{
+    // Compute all 8 corners of the AABB in world space
+    Vector3 corners[8];
+    corners[0] = Vector3(min.x, min.y, min.z);
+    corners[1] = Vector3(max.x, min.y, min.z);
+    corners[2] = Vector3(min.x, max.y, min.z);
+    corners[3] = Vector3(max.x, max.y, min.z);
+    corners[4] = Vector3(min.x, min.y, max.z);
+    corners[5] = Vector3(max.x, min.y, max.z);
+    corners[6] = Vector3(min.x, max.y, max.z);
+    corners[7] = Vector3(max.x, max.y, max.z);
+
+    // Transform to view space and find AABB in view space
+    Vector3 viewMin = Vector3(1e30, 1e30, 1e30);
+    Vector3 viewMax = Vector3(-1e30, -1e30, -1e30);
+    for (int i = 0; i < 8; i++)
+    {
+        Vector4 worldPos = Vector4(corners[i], 1.0);
+        Vector3 viewPos = mul(worldPos, view).xyz;
+        viewMin.x = viewPos.x < viewMin.x ? viewPos.x : viewMin.x;
+        viewMin.y = viewPos.y < viewMin.y ? viewPos.y : viewMin.y;
+        viewMin.z = viewPos.z < viewMin.z ? viewPos.z : viewMin.z;
+        viewMax.x = viewPos.x > viewMax.x ? viewPos.x : viewMax.x;
+        viewMax.y = viewPos.y > viewMax.y ? viewPos.y : viewMax.y;
+        viewMax.z = viewPos.z > viewMax.z ? viewPos.z : viewMax.z;
+    }
+
+    // Check against view-space frustum planes
+    for (int i = 0; i < 5; i++)
+    {
+        Vector3 n = planes[i].xyz;
+        float d = planes[i].w;
+        // Find the p-vertex (farthest in the negative normal direction)
+        Vector3 p = Vector3(
+            n.x > 0 ? viewMax.x : viewMin.x,
+            n.y > 0 ? viewMax.y : viewMin.y,
+            n.z > 0 ? viewMax.z : viewMin.z
+        );
+        float dist = dot(n, p) + d;
+        if (dist < 0)
+            return false; // AABB is outside this plane
+    }
+    return true;
+}
 
 [numthreads(64, 1, 1)]
 void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
 	uint instanceIndex = dispatchThreadId.x;
-	if (instanceIndex >= g_NumPrimitives)
+	if (instanceIndex >= g_Culling.g_NumPrimitives)
 		return;
 
 	PerInstanceData inst = g_InstanceData[instanceIndex];
+
+    if (!FrustumAABBTest(inst.m_Min, inst.m_Max, g_Culling.g_FrustumPlanes, g_Culling.g_View))
+        return;
+
+	uint index;
+	InterlockedAdd(g_VisibleCount[0], 1, index);
 
 	DrawIndexedIndirectArguments args;
 	args.m_IndexCount = inst.m_IndexCount;
@@ -39,5 +92,5 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 	args.m_BaseVertexLocation = 0;
 	args.m_StartInstanceLocation = instanceIndex;
 
-	g_IndirectArgs[instanceIndex] = args;
+	g_VisibleArgs[index] = args;
 }

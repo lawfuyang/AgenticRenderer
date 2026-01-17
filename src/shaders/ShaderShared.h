@@ -86,8 +86,10 @@ struct PerInstanceData
   uint m_IndexOffset;
   uint m_IndexCount;
   uint padding0;
-  Vector3 m_Padding;
+  Vector3 m_Min;
   uint padding1;
+  Vector3 m_Max;
+  uint padding2;
 };
 
 struct DrawIndexedIndirectArguments
@@ -97,6 +99,13 @@ struct DrawIndexedIndirectArguments
   uint m_StartIndexLocation;
   int m_BaseVertexLocation;
   uint m_StartInstanceLocation;
+};
+
+struct CullingConstants
+{
+  Vector4 g_FrustumPlanes[5];
+  Matrix g_View;
+  uint g_NumPrimitives;
 };
 
 #ifdef __cplusplus

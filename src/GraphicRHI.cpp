@@ -424,6 +424,7 @@ bool GraphicRHI::CreateLogicalDevice()
         
         // Advanced rendering
         VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME,
+        VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME,
         VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME,
         VK_NV_MESH_SHADER_EXTENSION_NAME,
         
@@ -477,6 +478,7 @@ bool GraphicRHI::CreateLogicalDevice()
     vulkan12Features.vulkanMemoryModelDeviceScope = VK_TRUE;
     vulkan12Features.scalarBlockLayout = VK_TRUE;
     vulkan12Features.storageBuffer8BitAccess = VK_TRUE;
+    vulkan12Features.drawIndirectCount = VK_TRUE;
 
     vk::PhysicalDeviceVulkan11Features vulkan11Features{};
     vulkan11Features.pNext = &vulkan12Features;

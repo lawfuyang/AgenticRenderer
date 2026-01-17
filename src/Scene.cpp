@@ -335,6 +335,12 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				continue;
 			}
 
+			bool useAccessorBounds = posAcc->has_min && posAcc->has_max;
+			if (useAccessorBounds) {
+				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, Vector3{posAcc->min[0], posAcc->min[1], posAcc->min[2]});
+				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, Vector3{posAcc->max[0], posAcc->max[1], posAcc->max[2]});
+			}
+
 			const cgltf_size vertCount = posAcc->count;
 			p.m_VertexOffset = static_cast<uint32_t>(outVertices.size());
 			p.m_VertexCount = static_cast<uint32_t>(vertCount);
@@ -363,7 +369,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				}
 				vx.uv.x = uv[0]; vx.uv.y = uv[1];
 
-				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.pos);
+				if (!useAccessorBounds) ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.pos);
 				outVertices.push_back(vx);
 			}
 
@@ -480,29 +486,35 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 		if (node.m_MeshIndex >= 0 && node.m_MeshIndex < static_cast<int>(scene.m_Meshes.size()))
 		{
 			Scene::Mesh& mesh = scene.m_Meshes[node.m_MeshIndex];
-			node.m_AabbMin = Vector3{ FLT_MAX, FLT_MAX, FLT_MAX };
-			node.m_AabbMax = Vector3{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
 
-			DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(&node.m_WorldTransform);
-			Vector3 corners[8];
-			corners[0] = Vector3{ mesh.m_AabbMin.x, mesh.m_AabbMin.y, mesh.m_AabbMin.z };
-			corners[1] = Vector3{ mesh.m_AabbMax.x, mesh.m_AabbMin.y, mesh.m_AabbMin.z };
-			corners[2] = Vector3{ mesh.m_AabbMin.x, mesh.m_AabbMax.y, mesh.m_AabbMin.z };
-			corners[3] = Vector3{ mesh.m_AabbMax.x, mesh.m_AabbMax.y, mesh.m_AabbMin.z };
-			corners[4] = Vector3{ mesh.m_AabbMin.x, mesh.m_AabbMin.y, mesh.m_AabbMax.z };
-			corners[5] = Vector3{ mesh.m_AabbMax.x, mesh.m_AabbMin.y, mesh.m_AabbMax.z };
-			corners[6] = Vector3{ mesh.m_AabbMin.x, mesh.m_AabbMax.y, mesh.m_AabbMax.z };
-			corners[7] = Vector3{ mesh.m_AabbMax.x, mesh.m_AabbMax.y, mesh.m_AabbMax.z };
+			// Create local bounding box
+			DirectX::BoundingBox localBox;
+			localBox.Center = DirectX::XMFLOAT3(
+				(mesh.m_AabbMin.x + mesh.m_AabbMax.x) * 0.5f,
+				(mesh.m_AabbMin.y + mesh.m_AabbMax.y) * 0.5f,
+				(mesh.m_AabbMin.z + mesh.m_AabbMax.z) * 0.5f
+			);
+			localBox.Extents = DirectX::XMFLOAT3(
+				(mesh.m_AabbMax.x - mesh.m_AabbMin.x) * 0.5f,
+				(mesh.m_AabbMax.y - mesh.m_AabbMin.y) * 0.5f,
+				(mesh.m_AabbMax.z - mesh.m_AabbMin.z) * 0.5f
+			);
 
-			for (int c = 0; c < 8; ++c)
-			{
-				Vector v = DirectX::XMLoadFloat3(reinterpret_cast<const Vector3*>(&corners[c]));
-				Vector vt = DirectX::XMVector3Transform(v, world);
-				Vector3 vt3;
-				DirectX::XMStoreFloat3(&vt3, vt);
-				Vector3 tv{ vt3.x, vt3.y, vt3.z };
-				ExtendAABB(node.m_AabbMin, node.m_AabbMax, tv);
-			}
+			// Transform to world space
+			DirectX::BoundingBox worldBox;
+			localBox.Transform(worldBox, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
+
+			// Set node AABB
+			node.m_AabbMin = Vector3{
+				worldBox.Center.x - worldBox.Extents.x,
+				worldBox.Center.y - worldBox.Extents.y,
+				worldBox.Center.z - worldBox.Extents.z
+			};
+			node.m_AabbMax = Vector3{
+				worldBox.Center.x + worldBox.Extents.x,
+				worldBox.Center.y + worldBox.Extents.y,
+				worldBox.Center.z + worldBox.Extents.z
+			};
 		}
 	}
 }
@@ -659,6 +671,9 @@ bool Scene::LoadScene()
 			inst.m_MaterialIndex = prim.m_MaterialIndex;
 			inst.m_IndexOffset = prim.m_IndexOffset;
 			inst.m_IndexCount = prim.m_IndexCount;
+			// Use precomputed bounding AABB
+			inst.m_Min = node.m_AabbMin;
+			inst.m_Max = node.m_AabbMax;
 			m_InstanceData.push_back(inst);
 		}
 	}
