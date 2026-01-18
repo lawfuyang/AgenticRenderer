@@ -3,18 +3,13 @@
 #include "Renderer.h"
 #include "CommonResources.h"
 #include "Utilities.h"
+#include "TextureLoader.h"
 
 // Enable ForwardLighting shared definitions for C++ side
 #include "shaders/ShaderShared.h"
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
-
-// stb_image for loading textures
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#define STB_IMAGE_IMPLEMENTATION
-#include "../external/stb_image.h"
 
 #include "meshoptimizer.h"
 
@@ -234,18 +229,15 @@ static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::fi
 			continue;
 		}
 
-		int width = 0, height = 0, channels = 0;
-		unsigned char* imgData = stbi_load(fullPath.c_str(), &width, &height, &channels, 4);
-		if (!imgData)
+		nvrhi::TextureDesc desc;
+		std::vector<uint8_t> imgData;
+		LoadSTBITexture(fullPath, desc, imgData);
+		if (imgData.empty())
 		{
-			SDL_LOG_ASSERT_FAIL("Texture load failed", "[Scene] Failed to load texture: %s", fullPath.c_str());
+			SDL_LOG_ASSERT_FAIL("Texture loading failed", "[Scene] Texture loading failed for %s", tex.m_Uri.c_str());
 			continue;
 		}
 
-		nvrhi::TextureDesc desc;
-		desc.width = width;
-		desc.height = height;
-		desc.format = nvrhi::Format::RGBA8_UNORM;
 		desc.isShaderResource = true;
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
@@ -254,15 +246,14 @@ static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::fi
 		if (!tex.m_Handle)
 		{
 			SDL_LOG_ASSERT_FAIL("Texture creation failed", "[Scene] GPU texture creation failed for %s", tex.m_Uri.c_str());
-			stbi_image_free(imgData);
 			continue;
 		}
 
 		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Texture");
 		const size_t bytesPerPixel = nvrhi::getFormatInfo(desc.format).bytesPerBlock;
-		const size_t rowPitch = (size_t)width * bytesPerPixel;
-		const size_t depthPitch = rowPitch * (size_t)height;
-		cmd->writeTexture(tex.m_Handle, 0, 0, imgData, rowPitch, depthPitch);
+		const size_t rowPitch = (size_t)desc.width * bytesPerPixel;
+		const size_t depthPitch = rowPitch * (size_t)desc.height;
+		cmd->writeTexture(tex.m_Handle, 0, 0, imgData.data(), rowPitch, depthPitch);
 		renderer->SubmitCommandList(cmd);
 
 		tex.m_BindlessIndex = renderer->RegisterTexture(tex.m_Handle);
@@ -270,8 +261,6 @@ static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::fi
 		{
 			SDL_LOG_ASSERT_FAIL("Bindless texture registration failed", "[Scene] Bindless texture registration failed for %s", tex.m_Uri.c_str());
 		}
-
-		stbi_image_free(imgData);
 	}
 }
 
