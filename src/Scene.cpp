@@ -137,6 +137,24 @@ static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& pa
 }
 
 // --- Helper pieces extracted from Scene::LoadScene for clarity ---
+static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, std::vector<bool>& samplerForImageIsWrap, const cgltf_data* data)
+{
+    if (tex && tex->image)
+    {
+        cgltf_size imgIndex = tex->image - data->images;
+        if (!Config::Get().m_SkipTextures)
+        {
+            textureIndex = static_cast<int>(imgIndex);
+        }
+        if (tex->sampler)
+        {
+            cgltf_sampler* s = tex->sampler;
+            bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+            samplerForImageIsWrap[imgIndex] = isWrap;
+        }
+    }
+}
+
 static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Materials+Images");
@@ -163,36 +181,8 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 			// Metallic = dielectric approximation
 			scene.m_Materials.back().m_MetallicFactor = std::max(std::max(sg.specular_factor[0], sg.specular_factor[1]), sg.specular_factor[2]);
 
-			if (sg.diffuse_texture.texture && sg.diffuse_texture.texture->image)
-			{
-				cgltf_size imgIndex = sg.diffuse_texture.texture->image - data->images;
-				if (!Config::Get().m_SkipTextures)
-				{
-					scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
-				}
-				// Map sampler from glTF texture if provided
-				if (sg.diffuse_texture.texture->sampler)
-				{
-					cgltf_sampler* s = sg.diffuse_texture.texture->sampler;
-					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-					samplerForImageIsWrap[imgIndex] = isWrap;
-				}
-			}
-
-			if (sg.specular_glossiness_texture.texture && sg.specular_glossiness_texture.texture->image)
-			{
-				cgltf_size imgIndex = sg.specular_glossiness_texture.texture->image - data->images;
-				if (!Config::Get().m_SkipTextures)
-				{
-					scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
-				}
-				if (sg.specular_glossiness_texture.texture->sampler)
-				{
-					cgltf_sampler* s = sg.specular_glossiness_texture.texture->sampler;
-					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-					samplerForImageIsWrap[imgIndex] = isWrap;
-				}
-			}
+			SetTextureAndSampler(sg.diffuse_texture.texture, scene.m_Materials.back().m_BaseColorTexture, samplerForImageIsWrap, data);
+			SetTextureAndSampler(sg.specular_glossiness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
 		}
 		else
 		{
@@ -200,21 +190,7 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 			scene.m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
 			scene.m_Materials.back().m_BaseColorFactor.z = pbr.base_color_factor[2];
 			scene.m_Materials.back().m_BaseColorFactor.w = pbr.base_color_factor[3];
-			if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image)
-			{
-				cgltf_size imgIndex = pbr.base_color_texture.texture->image - data->images;
-				if (!Config::Get().m_SkipTextures)
-				{
-					scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
-				}
-				// Map sampler from glTF texture if provided
-				if (pbr.base_color_texture.texture->sampler)
-				{
-					cgltf_sampler* s = pbr.base_color_texture.texture->sampler;
-					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-					samplerForImageIsWrap[imgIndex] = isWrap;
-				}
-			}
+			SetTextureAndSampler(pbr.base_color_texture.texture, scene.m_Materials.back().m_BaseColorTexture, samplerForImageIsWrap, data);
 
 			float metallic = pbr.metallic_factor;
 			if (pbr.metallic_roughness_texture.texture == NULL && metallic == 1.0f)
@@ -222,36 +198,10 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 			scene.m_Materials.back().m_RoughnessFactor = pbr.roughness_factor;
 			scene.m_Materials.back().m_MetallicFactor = metallic;
 
-			if (pbr.metallic_roughness_texture.texture && pbr.metallic_roughness_texture.texture->image)
-			{
-				cgltf_size imgIndex = pbr.metallic_roughness_texture.texture->image - data->images;
-				if (!Config::Get().m_SkipTextures)
-				{
-					scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
-				}
-				if (pbr.metallic_roughness_texture.texture->sampler)
-				{
-					cgltf_sampler* s = pbr.metallic_roughness_texture.texture->sampler;
-					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-					samplerForImageIsWrap[imgIndex] = isWrap;
-				}
-			}
+			SetTextureAndSampler(pbr.metallic_roughness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
 		}
 
-		if (data->materials[i].normal_texture.texture && data->materials[i].normal_texture.texture->image)
-		{
-			cgltf_size imgIndex = data->materials[i].normal_texture.texture->image - data->images;
-			if (!Config::Get().m_SkipTextures)
-			{
-				scene.m_Materials.back().m_NormalTexture = static_cast<int>(imgIndex);
-			}
-			if (data->materials[i].normal_texture.texture->sampler)
-			{
-				cgltf_sampler* s = data->materials[i].normal_texture.texture->sampler;
-				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-				samplerForImageIsWrap[imgIndex] = isWrap;
-			}
-		}
+		SetTextureAndSampler(data->materials[i].normal_texture.texture, scene.m_Materials.back().m_NormalTexture, samplerForImageIsWrap, data);
 	}
 
 	// Images -> textures (URI only)
