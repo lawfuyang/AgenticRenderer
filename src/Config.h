@@ -9,6 +9,8 @@ struct Config
     bool m_EnableGPUAssistedValidation = false;
     // Path to a glTF scene to load (empty = none)
     std::string m_GltfScene = "";
+    // Skip loading textures from glTF
+    bool m_SkipTextures = false;
 
     // Add more configuration options here as needed
     // int renderWidth = 1920;

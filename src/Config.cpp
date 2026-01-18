@@ -28,12 +28,18 @@ void Config::ParseCommandLine(int argc, char* argv[])
                 SDL_Log("[Config] Missing value for --gltf");
             }
         }
+        else if (std::strcmp(arg, "--skip-textures") == 0)
+        {
+            s_Instance.m_SkipTextures = true;
+            SDL_Log("[Config] Skipping GLTF texture loading via command line");
+        }
         else if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0)
         {
             SDL_Log("Agentic Renderer - Command Line Options:");
             SDL_Log("  --vulkandebug                 Enable Vulkan validation layers");
             SDL_Log("  --vulkandebug-gpu-assisted    Enable GPU-assisted Vulkan validation (requires --vulkandebug)");
             SDL_Log("  --gltf <path>                 Load the specified glTF scene file");
+            SDL_Log("  --skip-textures              Skip loading textures from glTF scene");
             SDL_Log("  --help, -h                    Show this help message");
         }
         else

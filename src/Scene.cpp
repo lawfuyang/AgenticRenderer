@@ -150,45 +150,101 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 		scene.m_Materials.emplace_back();
 		scene.m_Materials.back().m_Name = data->materials[i].name ? data->materials[i].name : std::string();
 		const cgltf_pbr_metallic_roughness& pbr = data->materials[i].pbr_metallic_roughness;
-		scene.m_Materials.back().m_BaseColorFactor.x = pbr.base_color_factor[0];
-		scene.m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
-		scene.m_Materials.back().m_BaseColorFactor.z = pbr.base_color_factor[2];
-		scene.m_Materials.back().m_BaseColorFactor.w = pbr.base_color_factor[3];
-		if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image)
+		if (data->materials[i].has_pbr_specular_glossiness)
 		{
-			cgltf_size imgIndex = pbr.base_color_texture.texture->image - data->images;
-			scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
-			// Map sampler from glTF texture if provided
-			if (pbr.base_color_texture.texture->sampler)
+			const cgltf_pbr_specular_glossiness& sg = data->materials[i].pbr_specular_glossiness;
+			// Convert specular-glossiness to metallic-roughness
+			scene.m_Materials.back().m_BaseColorFactor.x = sg.diffuse_factor[0];
+			scene.m_Materials.back().m_BaseColorFactor.y = sg.diffuse_factor[1];
+			scene.m_Materials.back().m_BaseColorFactor.z = sg.diffuse_factor[2];
+			scene.m_Materials.back().m_BaseColorFactor.w = sg.diffuse_factor[3];
+			// Roughness = 1 - glossiness
+			scene.m_Materials.back().m_RoughnessFactor = 1.0f - sg.glossiness_factor;
+			// Metallic = dielectric approximation
+			scene.m_Materials.back().m_MetallicFactor = std::max(std::max(sg.specular_factor[0], sg.specular_factor[1]), sg.specular_factor[2]);
+
+			if (sg.diffuse_texture.texture && sg.diffuse_texture.texture->image)
 			{
-				cgltf_sampler* s = pbr.base_color_texture.texture->sampler;
-				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-				samplerForImageIsWrap[imgIndex] = isWrap;
+				cgltf_size imgIndex = sg.diffuse_texture.texture->image - data->images;
+				if (!Config::Get().m_SkipTextures)
+				{
+					scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
+				}
+				// Map sampler from glTF texture if provided
+				if (sg.diffuse_texture.texture->sampler)
+				{
+					cgltf_sampler* s = sg.diffuse_texture.texture->sampler;
+					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+					samplerForImageIsWrap[imgIndex] = isWrap;
+				}
+			}
+
+			if (sg.specular_glossiness_texture.texture && sg.specular_glossiness_texture.texture->image)
+			{
+				cgltf_size imgIndex = sg.specular_glossiness_texture.texture->image - data->images;
+				if (!Config::Get().m_SkipTextures)
+				{
+					scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
+				}
+				if (sg.specular_glossiness_texture.texture->sampler)
+				{
+					cgltf_sampler* s = sg.specular_glossiness_texture.texture->sampler;
+					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+					samplerForImageIsWrap[imgIndex] = isWrap;
+				}
 			}
 		}
-
-		float metallic = pbr.metallic_factor;
-		if (pbr.metallic_roughness_texture.texture == NULL && metallic == 1.0f)
-			metallic = 0.0f;
-		scene.m_Materials.back().m_RoughnessFactor = pbr.roughness_factor;
-		scene.m_Materials.back().m_MetallicFactor = metallic;
-
-		if (pbr.metallic_roughness_texture.texture && pbr.metallic_roughness_texture.texture->image)
+		else
 		{
-			cgltf_size imgIndex = pbr.metallic_roughness_texture.texture->image - data->images;
-			scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
-			if (pbr.metallic_roughness_texture.texture->sampler)
+			scene.m_Materials.back().m_BaseColorFactor.x = pbr.base_color_factor[0];
+			scene.m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
+			scene.m_Materials.back().m_BaseColorFactor.z = pbr.base_color_factor[2];
+			scene.m_Materials.back().m_BaseColorFactor.w = pbr.base_color_factor[3];
+			if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image)
 			{
-				cgltf_sampler* s = pbr.metallic_roughness_texture.texture->sampler;
-				bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-				samplerForImageIsWrap[imgIndex] = isWrap;
+				cgltf_size imgIndex = pbr.base_color_texture.texture->image - data->images;
+				if (!Config::Get().m_SkipTextures)
+				{
+					scene.m_Materials.back().m_BaseColorTexture = static_cast<int>(imgIndex);
+				}
+				// Map sampler from glTF texture if provided
+				if (pbr.base_color_texture.texture->sampler)
+				{
+					cgltf_sampler* s = pbr.base_color_texture.texture->sampler;
+					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+					samplerForImageIsWrap[imgIndex] = isWrap;
+				}
+			}
+
+			float metallic = pbr.metallic_factor;
+			if (pbr.metallic_roughness_texture.texture == NULL && metallic == 1.0f)
+				metallic = 0.0f;
+			scene.m_Materials.back().m_RoughnessFactor = pbr.roughness_factor;
+			scene.m_Materials.back().m_MetallicFactor = metallic;
+
+			if (pbr.metallic_roughness_texture.texture && pbr.metallic_roughness_texture.texture->image)
+			{
+				cgltf_size imgIndex = pbr.metallic_roughness_texture.texture->image - data->images;
+				if (!Config::Get().m_SkipTextures)
+				{
+					scene.m_Materials.back().m_MetallicRoughnessTexture = static_cast<int>(imgIndex);
+				}
+				if (pbr.metallic_roughness_texture.texture->sampler)
+				{
+					cgltf_sampler* s = pbr.metallic_roughness_texture.texture->sampler;
+					bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+					samplerForImageIsWrap[imgIndex] = isWrap;
+				}
 			}
 		}
 
 		if (data->materials[i].normal_texture.texture && data->materials[i].normal_texture.texture->image)
 		{
 			cgltf_size imgIndex = data->materials[i].normal_texture.texture->image - data->images;
-			scene.m_Materials.back().m_NormalTexture = static_cast<int>(imgIndex);
+			if (!Config::Get().m_SkipTextures)
+			{
+				scene.m_Materials.back().m_NormalTexture = static_cast<int>(imgIndex);
+			}
 			if (data->materials[i].normal_texture.texture->sampler)
 			{
 				cgltf_sampler* s = data->materials[i].normal_texture.texture->sampler;
@@ -209,6 +265,11 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 
 static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::filesystem::path& sceneDir, Renderer* renderer)
 {
+	if (Config::Get().m_SkipTextures)
+	{
+		return;
+	}
+
 	SCOPED_TIMER("[Scene] LoadTextures");
 
 	for (size_t ti = 0; ti < scene.m_Textures.size(); ++ti)
@@ -616,7 +677,7 @@ static void SetupDirectionalLightAndCamera(Scene& scene, Renderer* renderer)
 			float pitch = asinf(dir.y);
 			scene.m_DirectionalLight.yaw = yaw;
 			scene.m_DirectionalLight.pitch = pitch;
-			scene.m_DirectionalLight.intensity = light.m_Intensity * 10000.0f;
+			scene.m_DirectionalLight.intensity = light.m_Intensity;
 			break;
 		}
 	}
