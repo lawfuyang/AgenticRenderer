@@ -141,7 +141,7 @@ static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, st
 {
     if (tex && tex->image)
     {
-        cgltf_size imgIndex = tex->image - data->images;
+        cgltf_size imgIndex = cgltf_image_index(data, tex->image);
         if (!Config::Get().m_SkipTextures)
         {
             textureIndex = static_cast<int>(imgIndex);
@@ -478,7 +478,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				}
 			}
 
-			p.m_MaterialIndex = prim.material ? static_cast<int>(prim.material - data->materials) : -1;
+			p.m_MaterialIndex = prim.material ? static_cast<int>(cgltf_material_index(data, prim.material)) : -1;
 			mesh.m_Primitives.push_back(p);
 		}
 
@@ -489,15 +489,15 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Nodes+Hierarchy");
-	std::unordered_map<const cgltf_node*, int> nodeMap;
+	std::unordered_map<cgltf_size, int> nodeMap;
 	for (cgltf_size ni = 0; ni < data->nodes_count; ++ni)
 	{
 		const cgltf_node& cn = data->nodes[ni];
 		Scene::Node node;
 		node.m_Name = cn.name ? cn.name : std::string();
-		node.m_MeshIndex = cn.mesh ? static_cast<int>(cn.mesh - data->meshes) : -1;
-		node.m_CameraIndex = cn.camera ? static_cast<int>(cn.camera - data->cameras) : -1;
-		node.m_LightIndex = cn.light ? static_cast<int>(cn.light - data->lights) : -1;
+		node.m_MeshIndex = cn.mesh ? static_cast<int>(cgltf_mesh_index(data, cn.mesh)) : -1;
+		node.m_CameraIndex = cn.camera ? static_cast<int>(cgltf_camera_index(data, cn.camera)) : -1;
+		node.m_LightIndex = cn.light ? static_cast<int>(cgltf_light_index(data, cn.light)) : -1;
 
 		Matrix localOut{};
 		if (cn.has_matrix)
@@ -525,20 +525,23 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 		node.m_WorldTransform = node.m_LocalTransform;
 
 		scene.m_Nodes.push_back(std::move(node));
-		nodeMap[&cn] = static_cast<int>(scene.m_Nodes.size()) - 1;
+		cgltf_size nodeIndex = cgltf_node_index(data, &cn);
+		nodeMap[nodeIndex] = static_cast<int>(scene.m_Nodes.size()) - 1;
 	}
 
 	// Build parent/children links
 	for (cgltf_size ni = 0; ni < data->nodes_count; ++ni)
 	{
 		const cgltf_node& cn = data->nodes[ni];
-		int idx = nodeMap.at(&cn);
+		cgltf_size nodeIndex = cgltf_node_index(data, &cn);
+		int idx = nodeMap.at(nodeIndex);
 		if (cn.children_count > 0)
 		{
 			for (cgltf_size ci = 0; ci < cn.children_count; ++ci)
 			{
 				const cgltf_node* child = cn.children[ci];
-				int childIdx = nodeMap.at(child);
+				cgltf_size childNodeIndex = cgltf_node_index(data, child);
+				int childIdx = nodeMap.at(childNodeIndex);
 				scene.m_Nodes[idx].m_Children.push_back(childIdx);
 				scene.m_Nodes[childIdx].m_Parent = idx;
 			}
