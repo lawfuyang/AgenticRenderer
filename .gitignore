@@ -45,8 +45,10 @@ build/
 out/
 bin/
 lib/
-external/*
-!external/nvrhi/
+external/sdl3
+external/cgltf
+external/dxc
+external/stb_image.h
 Debug/
 Release/
 RelWithDebInfo/
