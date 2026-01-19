@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "CommonResources.h"
 #include "Camera.h"
+#include "Utilities.h"
 
 #include "shaders/ShaderShared.h"
 
@@ -14,6 +15,8 @@ public:
 private:
     nvrhi::InputLayoutHandle m_InputLayout;
     nvrhi::PipelineStatisticsQueryHandle m_PipelineQueries[2];
+
+    void GenerateHZBMips(nvrhi::CommandListHandle commandList);
 };
 
 REGISTER_RENDERER(BasePassRenderer);
@@ -48,12 +51,18 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
 {
     Renderer* renderer = Renderer::GetInstance();
 
+    const uint32_t numPrimitives = (uint32_t)renderer->m_Scene.m_InstanceData.size();
+    if (numPrimitives == 0)
+    {
+        return;
+    }
+
     // ============================================================================
     // Pipeline Statistics Query
     // ============================================================================
     const int readIndex = renderer->m_FrameNumber % 2;
     const int writeIndex = (renderer->m_FrameNumber + 1) % 2;
-    if (renderer->m_NvrhiDevice->pollPipelineStatisticsQuery(m_PipelineQueries[readIndex])) 
+    if (renderer->m_NvrhiDevice->pollPipelineStatisticsQuery(m_PipelineQueries[readIndex]))
     {
         renderer->m_MainViewPipelineStatistics = renderer->m_NvrhiDevice->getPipelineStatistics(m_PipelineQueries[readIndex]);
         renderer->m_NvrhiDevice->resetPipelineStatisticsQuery(m_PipelineQueries[readIndex]);
@@ -61,7 +70,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     commandList->beginPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 
     // ============================================================================
-    // Dispatch Culling Compute Shader
+    // 2-Phase Occlusion Culling
     // ============================================================================
     Camera* cam = &renderer->m_Camera;
     Matrix viewProj = cam->GetViewProjMatrix();
@@ -90,47 +99,87 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         DirectX::XMStoreFloat4(&frustumPlanes[i], planes[i]);
     }
 
-    nvrhi::BufferHandle indirectBuffer;
-    nvrhi::BufferHandle countBuffer;
-    if (!renderer->m_Scene.m_InstanceData.empty())
+    nvrhi::BufferHandle visibleIndirectBuffer;
+    nvrhi::BufferHandle visibleCountBuffer;
+    nvrhi::BufferHandle occludedIndicesBuffer;
+    nvrhi::BufferHandle occludedCountBuffer;
+
+    // Create buffers for visible instances (Phase 1 + Phase 2 results)
+    nvrhi::BufferDesc visibleIndirectBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(nvrhi::DrawIndexedIndirectArguments))
+        .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
+        .setIsDrawIndirectArgs(true)
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true);
+    visibleIndirectBuffer = renderer->m_NvrhiDevice->createBuffer(visibleIndirectBufDesc);
+    renderer->m_RHI.SetDebugName(visibleIndirectBuffer, "VisibleIndirectBuffer");
+
+    nvrhi::BufferDesc visibleCountBufDesc = nvrhi::BufferDesc()
+        .setByteSize(sizeof(uint32_t))
+        .setStructStride(sizeof(uint32_t))
+        .setCanHaveUAVs(true)
+        .setIsDrawIndirectArgs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true);
+    visibleCountBuffer = renderer->m_NvrhiDevice->createBuffer(visibleCountBufDesc);
+    renderer->m_RHI.SetDebugName(visibleCountBuffer, "VisibleCount");
+
+    // Create buffers for occluded instances (Phase 1 results for Phase 2 input)
+    nvrhi::BufferDesc occludedIndicesBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(uint32_t))
+        .setStructStride(sizeof(uint32_t))
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true);
+    occludedIndicesBuffer = renderer->m_NvrhiDevice->createBuffer(occludedIndicesBufDesc);
+    renderer->m_RHI.SetDebugName(occludedIndicesBuffer, "OccludedIndices");
+
+    nvrhi::BufferDesc occludedCountBufDesc = nvrhi::BufferDesc()
+        .setByteSize(sizeof(uint32_t))
+        .setStructStride(sizeof(uint32_t))
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true);
+    occludedCountBuffer = renderer->m_NvrhiDevice->createBuffer(occludedCountBufDesc);
+    renderer->m_RHI.SetDebugName(occludedCountBuffer, "OccludedCount");
+
+    // Clear count buffers
+    commandList->clearBufferUInt(visibleCountBuffer, 0);
+    commandList->clearBufferUInt(occludedCountBuffer, 0);
+
+    // Clear HZB to far plane (0.0 for reversed-Z)
+    commandList->clearTextureFloat(renderer->m_HZBTexture, nvrhi::TextureSubresourceSet(0, 1, 0, 1), Renderer::DEPTH_FAR);
+
+    // ===== PHASE 1: Coarse culling against previous frame HZB =====
     {
-        // Create indirect args buffer
-        nvrhi::BufferDesc indirectBufDesc = nvrhi::BufferDesc()
-            .setByteSize(renderer->m_Scene.m_InstanceData.size() * sizeof(nvrhi::DrawIndexedIndirectArguments))
-            .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
-            .setIsDrawIndirectArgs(true)
-            .setCanHaveUAVs(true)
-            .setInitialState(nvrhi::ResourceStates::IndirectArgument)
-            .setKeepInitialState(true);
-        indirectBuffer = renderer->m_NvrhiDevice->createBuffer(indirectBufDesc);
-        renderer->m_RHI.SetDebugName(indirectBuffer, "IndirectBuffer");
-
-        // Create count buffer
-        nvrhi::BufferDesc countBufDesc = nvrhi::BufferDesc()
-            .setByteSize(sizeof(uint32_t))
-            .setStructStride(sizeof(uint32_t))
-            .setCanHaveUAVs(true)
-            .setIsDrawIndirectArgs(true)
-            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-            .setKeepInitialState(true);
-        countBuffer = renderer->m_NvrhiDevice->createBuffer(countBufDesc);
-        renderer->m_RHI.SetDebugName(countBuffer, "VisibleCount");
-
-        uint32_t zero = 0;
-        commandList->writeBuffer(countBuffer, &zero, sizeof(uint32_t), 0);
-
-        // Create constant buffer for culling
         nvrhi::BufferDesc cullCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(CullingConstants), "CullingCB", 1);
         nvrhi::BufferHandle cullCB = renderer->m_NvrhiDevice->createBuffer(cullCBD);
         renderer->m_RHI.SetDebugName(cullCB, "CullingCB");
+
+        CullingConstants cullData;
+        cullData.m_NumPrimitives = numPrimitives;
+        memcpy(cullData.m_FrustumPlanes, frustumPlanes, sizeof(frustumPlanes));
+        cullData.m_View = view;
+        cullData.m_ViewProj = viewProj;
+        cullData.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
+        cullData.m_EnableOcclusionCulling = renderer->m_EnableOcclusionCulling ? 1 : 0;
+        cullData.m_HZBWidth = renderer->m_HZBTexture->getDesc().width;
+        cullData.m_HZBHeight = renderer->m_HZBTexture->getDesc().height;
+        cullData.m_Phase = 0; // Phase 1
+        commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
 
         nvrhi::BindingSetDesc cullBset;
         cullBset.bindings =
         {
             nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, indirectBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, countBuffer)
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, visibleIndirectBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, visibleCountBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(2, occludedIndicesBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(3, occludedCountBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MaxReductionClamp)
         };
         nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
         nvrhi::BindingSetHandle cullBindingSet = renderer->m_NvrhiDevice->createBindingSet(cullBset, cullLayout);
@@ -139,31 +188,138 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         cullState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("GPUCulling_Culling_CSMain"), cullLayout);
         cullState.bindings = { cullBindingSet };
 
-        uint32_t numPrimitives = (uint32_t)renderer->m_Scene.m_InstanceData.size();
-        CullingConstants cullData;
-        cullData.m_NumPrimitives = numPrimitives;
-        memcpy(cullData.m_FrustumPlanes, frustumPlanes, sizeof(frustumPlanes));
-        cullData.m_View = view;
-        cullData.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
-        commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
-
         commandList->setComputeState(cullState);
-
-        uint32_t dispatchX = (numPrimitives + 63) / 64;
+        uint32_t dispatchX = DivideAndRoundUp(numPrimitives, 64);
         commandList->dispatch(dispatchX, 1, 1);
     }
 
-    // ============================================================================
-    // Framebuffer Setup
-    // ============================================================================
-    nvrhi::TextureHandle rt = renderer->GetCurrentBackBufferTexture();
-    nvrhi::TextureHandle depth = renderer->m_DepthTexture;
-    nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
-        nvrhi::FramebufferDesc().addColorAttachment(rt).setDepthAttachment(depth));
+    // ===== PHASE 1 RENDER: Full render for visible instances =====
+    if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
+    {
+        // Full render pass for visible instances
+        nvrhi::FramebufferDesc fbDesc;
+        fbDesc.addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture);
+        nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(fbDesc);
 
-    // ============================================================================
-    // Graphics Pipeline Setup
-    // ============================================================================
+        nvrhi::GraphicsState state;
+        nvrhi::GraphicsPipelineDesc pipelineDesc;
+        pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
+        pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
+        pipelineDesc.inputLayout = m_InputLayout;
+        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
+        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
+        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
+
+        nvrhi::FramebufferInfoEx fbInfo;
+        fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
+        fbInfo.setDepthFormat(nvrhi::Format::D32);
+        state.framebuffer = framebuffer;
+
+        state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
+        state.indexBuffer = nvrhi::IndexBufferBinding{
+            renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
+
+        uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
+        uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
+        state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
+        state.viewport.scissorRects.resize(1);
+        state.viewport.scissorRects[0].minX = 0;
+        state.viewport.scissorRects[0].minY = 0;
+        state.viewport.scissorRects[0].maxX = (int)w;
+        state.viewport.scissorRects[0].maxY = (int)h;
+
+        nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
+            (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
+        nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
+        renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
+
+        nvrhi::BindingSetDesc bset;
+        bset.bindings =
+        {
+            nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
+            nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
+        };
+        nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
+        pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
+
+        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
+        state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
+
+        nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
+        state.pipeline = pipeline;
+
+        ForwardLightingPerFrameData cb{};
+        cb.m_ViewProj = viewProj;
+        cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
+        cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
+        cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
+        commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
+
+        state.indirectParams = visibleIndirectBuffer;
+        state.indirectCountParams = visibleCountBuffer;
+        commandList->setGraphicsState(state);
+
+        commandList->drawIndexedIndirect(0, numPrimitives);
+    }
+
+    // generate HZB mips for Phase 2 testing
+    GenerateHZBMips(commandList);
+
+    // ===== PHASE 2: Test occluded instances against new HZB =====
+    if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
+    {
+        // Clear visible count buffer for Phase 2
+        commandList->clearBufferUInt(visibleCountBuffer, 0);
+
+        // Create constant buffer for Phase 2 culling
+        nvrhi::BufferDesc cullCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(CullingConstants), "CullingCB_Phase2", 1);
+        nvrhi::BufferHandle cullCB = renderer->m_NvrhiDevice->createBuffer(cullCBD);
+        renderer->m_RHI.SetDebugName(cullCB, "CullingCB_Phase2");
+
+        CullingConstants cullData;
+        cullData.m_NumPrimitives = numPrimitives; // Process all, but shader will check if they were occluded
+        memcpy(cullData.m_FrustumPlanes, frustumPlanes, sizeof(frustumPlanes));
+        cullData.m_View = view;
+        cullData.m_ViewProj = viewProj;
+        cullData.m_EnableFrustumCulling = 0; // No frustum culling in Phase 2
+        cullData.m_EnableOcclusionCulling = renderer->m_EnableOcclusionCulling ? 1 : 0;
+        cullData.m_HZBWidth = renderer->m_HZBTexture->getDesc().width;
+        cullData.m_HZBHeight = renderer->m_HZBTexture->getDesc().height;
+        cullData.m_Phase = 1; // Phase 2
+        commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
+
+        nvrhi::BindingSetDesc cullBset;
+        cullBset.bindings =
+        {
+            nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, visibleIndirectBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, visibleCountBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(2, occludedIndicesBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(3, occludedCountBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MaxReductionClamp)
+        };
+        nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
+        nvrhi::BindingSetHandle cullBindingSet = renderer->m_NvrhiDevice->createBindingSet(cullBset, cullLayout);
+
+        nvrhi::ComputeState cullState;
+        cullState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("GPUCulling_Culling_CSMain"), cullLayout);
+        cullState.bindings = { cullBindingSet };
+
+        commandList->setComputeState(cullState);
+        uint32_t dispatchX = DivideAndRoundUp(numPrimitives, 64);
+        commandList->dispatch(dispatchX, 1, 1);
+    }
+
+    // ===== PHASE 2 RENDER: Full render for remaining visible instances =====
+    nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
+        nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
+
     nvrhi::GraphicsState state;
     nvrhi::GraphicsPipelineDesc pipelineDesc;
     pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
@@ -179,9 +335,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     fbInfo.setDepthFormat(nvrhi::Format::D32);
     state.framebuffer = framebuffer;
 
-    // ============================================================================
-    // Vertex/Index Buffer and Viewport Setup
-    // ============================================================================
     state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
     state.indexBuffer = nvrhi::IndexBufferBinding{
         renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
@@ -195,17 +348,11 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     state.viewport.scissorRects[0].maxX = (int)w;
     state.viewport.scissorRects[0].maxY = (int)h;
 
-    // ============================================================================
-    // Constant Buffer Setup
-    // ============================================================================
     nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
         (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
     nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
     renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
 
-    // ============================================================================
-    // Binding Set Setup
-    // ============================================================================
     nvrhi::BindingSetDesc bset;
     bset.bindings =
     {
@@ -224,9 +371,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
     state.pipeline = pipeline;
 
-    // ============================================================================
-    // Per-Frame Constants and Rendering
-    // ============================================================================
     ForwardLightingPerFrameData cb{};
     cb.m_ViewProj = viewProj;
     cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
@@ -234,11 +378,98 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
-    state.indirectParams = indirectBuffer;
-    state.indirectCountParams = countBuffer;
+    state.indirectParams = visibleIndirectBuffer;
+    state.indirectCountParams = visibleCountBuffer;
     commandList->setGraphicsState(state);
 
-    commandList->drawIndexedIndirect(0, (uint32_t)renderer->m_Scene.m_InstanceData.size());
+    commandList->drawIndexedIndirect(0, numPrimitives);
+
+    // generate HZB mips for next frame
+    GenerateHZBMips(commandList);
 
     commandList->endPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
+}
+
+void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
+{
+    Renderer* renderer = Renderer::GetInstance();
+
+    if (!renderer->m_EnableOcclusionCulling || renderer->m_FreezeCullingCamera)
+    {
+        return;
+    }
+
+    // First, build HZB mip 0 from depth texture
+    {
+        // Create constant buffer for HZB from depth
+
+        nvrhi::BufferDesc hzbFromDepthCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(HZBFromDepthConstants), "HZBFromDepthCB", 1);
+        nvrhi::BufferHandle hzbFromDepthCB = renderer->m_NvrhiDevice->createBuffer(hzbFromDepthCBD);
+        renderer->m_RHI.SetDebugName(hzbFromDepthCB, "HZBFromDepthCB");
+
+        HZBFromDepthConstants hzbFromDepthData;
+        hzbFromDepthData.m_Width = renderer->m_HZBTexture->getDesc().width;
+        hzbFromDepthData.m_Height = renderer->m_HZBTexture->getDesc().height;
+        commandList->writeBuffer(hzbFromDepthCB, &hzbFromDepthData, sizeof(hzbFromDepthData), 0);
+
+        nvrhi::BindingSetDesc hzbFromDepthBset;
+        hzbFromDepthBset.bindings =
+        {
+            nvrhi::BindingSetItem::ConstantBuffer(0, hzbFromDepthCB),
+            nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_DepthTexture),
+            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MaxReductionClamp)
+        };
+        nvrhi::BindingLayoutHandle hzbFromDepthLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(hzbFromDepthBset, nvrhi::ShaderType::Compute);
+        nvrhi::BindingSetHandle hzbFromDepthBindingSet = renderer->m_NvrhiDevice->createBindingSet(hzbFromDepthBset, hzbFromDepthLayout);
+
+        nvrhi::ComputeState hzbFromDepthState;
+        hzbFromDepthState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("HZBFromDepth_HZBFromDepth_CSMain"), hzbFromDepthLayout);
+        hzbFromDepthState.bindings = { hzbFromDepthBindingSet };
+
+        commandList->setComputeState(hzbFromDepthState);
+        uint32_t dispatchX = DivideAndRoundUp(hzbFromDepthData.m_Width, 16);
+        uint32_t dispatchY = DivideAndRoundUp(hzbFromDepthData.m_Height, 16);
+        commandList->dispatch(dispatchX, dispatchY, 1);
+    }
+
+    // Then, generate HZB mips using downsample shader
+    uint32_t numMips = renderer->m_HZBTexture->getDesc().arraySize;
+    for (uint32_t mip = 1; mip < numMips; ++mip)
+    {
+        uint32_t inputWidth = renderer->m_HZBTexture->getDesc().width >> (mip - 1);
+        uint32_t inputHeight = renderer->m_HZBTexture->getDesc().height >> (mip - 1);
+        uint32_t outputWidth = renderer->m_HZBTexture->getDesc().width >> mip;
+        uint32_t outputHeight = renderer->m_HZBTexture->getDesc().height >> mip;
+
+        // Create constant buffer for downsample
+        nvrhi::BufferDesc downsampleCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DownsampleConstants), "DownsampleCB", 1);
+        nvrhi::BufferHandle downsampleCB = renderer->m_NvrhiDevice->createBuffer(downsampleCBD);
+        renderer->m_RHI.SetDebugName(downsampleCB, "DownsampleCB");
+
+        DownsampleConstants downsampleData;
+        downsampleData.m_InputMip = mip - 1;
+        downsampleData.m_OutputMip = mip;
+        downsampleData.m_Width = outputWidth;
+        downsampleData.m_Height = outputHeight;
+        commandList->writeBuffer(downsampleCB, &downsampleData, sizeof(downsampleData), 0);
+
+        nvrhi::BindingSetDesc downsampleBset;
+        downsampleBset.bindings =
+        {
+            nvrhi::BindingSetItem::ConstantBuffer(0, downsampleCB),
+            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture)
+        };
+        nvrhi::BindingLayoutHandle downsampleLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(downsampleBset, nvrhi::ShaderType::Compute);
+        nvrhi::BindingSetHandle downsampleBindingSet = renderer->m_NvrhiDevice->createBindingSet(downsampleBset, downsampleLayout);
+
+        nvrhi::ComputeState downsampleState;
+        downsampleState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("DownsampleDepth_Downsample_CSMain"), downsampleLayout);
+        downsampleState.bindings = { downsampleBindingSet };
+
+        commandList->setComputeState(downsampleState);
+        uint32_t dispatchX = DivideAndRoundUp(outputWidth, 8);
+        uint32_t dispatchY = DivideAndRoundUp(outputHeight, 8);
+        commandList->dispatch(dispatchX, dispatchY, 1);
+    }
 }

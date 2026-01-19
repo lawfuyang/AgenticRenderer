@@ -31,6 +31,8 @@ public:
     nvrhi::SamplerHandle PointWrap;     // Point/nearest filtering, wrap/repeat
     nvrhi::SamplerHandle AnisotropicClamp; // Anisotropic filtering, clamp
     nvrhi::SamplerHandle AnisotropicWrap;  // Anisotropic filtering, wrap
+    nvrhi::SamplerHandle MaxReductionClamp; // Max reduction, clamp to edge
+    nvrhi::SamplerHandle MinReductionClamp; // Min reduction, clamp to edge
 
     // Common raster states
     nvrhi::RasterState RasterCullNone;        // Solid fill, no cull

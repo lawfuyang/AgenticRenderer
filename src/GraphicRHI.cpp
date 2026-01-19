@@ -479,6 +479,7 @@ bool GraphicRHI::CreateLogicalDevice()
     vulkan12Features.scalarBlockLayout = VK_TRUE;
     vulkan12Features.storageBuffer8BitAccess = VK_TRUE;
     vulkan12Features.drawIndirectCount = VK_TRUE;
+    vulkan12Features.samplerFilterMinmax = VK_TRUE;
 
     vk::PhysicalDeviceVulkan11Features vulkan11Features{};
     vulkan11Features.pNext = &vulkan12Features;

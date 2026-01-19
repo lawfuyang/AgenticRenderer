@@ -130,6 +130,7 @@ void ImGuiLayer::UpdateFrame()
         if (ImGui::TreeNode("Culling"))
         {
             ImGui::Checkbox("Enable Frustum Culling", &renderer->m_EnableFrustumCulling);
+            ImGui::Checkbox("Enable Occlusion Culling", &renderer->m_EnableOcclusionCulling);
 
             bool prevFreeze = renderer->m_FreezeCullingCamera;
             ImGui::Checkbox("Freeze Culling Camera", &renderer->m_FreezeCullingCamera);

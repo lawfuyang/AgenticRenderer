@@ -11,14 +11,8 @@ bool CommonResources::Initialize()
     nvrhi::GraphicsAPI api = device->getGraphicsAPI();
 
     // Helper lambda to create samplers with error checking
-    auto createSampler = [device](const char* name, bool linearFilter, nvrhi::SamplerAddressMode addressMode, float anisotropy = 1.0f) -> nvrhi::SamplerHandle
+    auto createSampler = [device](const char* name, const nvrhi::SamplerDesc& desc) -> nvrhi::SamplerHandle
     {
-        nvrhi::SamplerDesc desc;
-        desc.setAllFilters(linearFilter);
-        desc.setAllAddressModes(addressMode);
-        if (anisotropy > 1.0f)
-            desc.setMaxAnisotropy(anisotropy);
-        
         nvrhi::SamplerHandle sampler = device->createSampler(desc);
         if (!sampler)
         {
@@ -28,12 +22,60 @@ bool CommonResources::Initialize()
     };
 
     // Create common samplers (all must succeed)
-    LinearClamp = createSampler("LinearClamp", true, nvrhi::SamplerAddressMode::ClampToEdge);
-    LinearWrap = createSampler("LinearWrap", true, nvrhi::SamplerAddressMode::Wrap);
-    PointClamp = createSampler("PointClamp", false, nvrhi::SamplerAddressMode::ClampToEdge);
-    PointWrap = createSampler("PointWrap", false, nvrhi::SamplerAddressMode::Wrap);
-    AnisotropicClamp = createSampler("AnisotropicClamp", true, nvrhi::SamplerAddressMode::ClampToEdge, 16.0f);
-    AnisotropicWrap = createSampler("AnisotropicWrap", true, nvrhi::SamplerAddressMode::Wrap, 16.0f);
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(true);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
+        LinearClamp = createSampler("LinearClamp", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(true);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Wrap);
+        LinearWrap = createSampler("LinearWrap", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(false);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
+        PointClamp = createSampler("PointClamp", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(false);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Wrap);
+        PointWrap = createSampler("PointWrap", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(true);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
+        desc.setMaxAnisotropy(16.0f);
+        AnisotropicClamp = createSampler("AnisotropicClamp", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(true);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Wrap);
+        desc.setMaxAnisotropy(16.0f);
+        AnisotropicWrap = createSampler("AnisotropicWrap", desc);
+    }
+
+    // Create reduction samplers for HZB occlusion culling
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(false); // Point sampling
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
+        desc.reductionType = nvrhi::SamplerReductionType::Maximum;
+        MaxReductionClamp = createSampler("MaxReductionClamp", desc);
+    }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(false); // Point sampling
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge);
+        desc.reductionType = nvrhi::SamplerReductionType::Minimum;
+        MinReductionClamp = createSampler("MinReductionClamp", desc);
+    }
 
     // Initialize common raster states
     // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding

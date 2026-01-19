@@ -427,6 +427,12 @@ bool Renderer::Initialize()
         return false;
     }
 
+    if (!CreateHZBTextures())
+    {
+        Shutdown();
+        return false;
+    }
+
     if (!LoadShaders())
     {
         Shutdown();
@@ -571,11 +577,12 @@ void Renderer::Shutdown()
 {
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
 
-    if (m_NvrhiDevice)
-    {
-        SDL_Log("[Shutdown] Waiting for GPU to idle");
-        m_NvrhiDevice->waitForIdle();
-    }
+    SDL_assert(m_PendingCommandLists.empty() && "Pending command lists should be empty on device destruction");
+    m_PendingCommandLists.clear();
+    m_CommandListFreeList.clear();
+
+    m_NvrhiDevice->waitForIdle();
+    m_NvrhiDevice->runGarbageCollection();
 
     m_ImGuiLayer.Shutdown();
     CommonResources::GetInstance().Shutdown();
@@ -596,8 +603,13 @@ void Renderer::Shutdown()
     m_ComputePipelineCache.clear();
 
     UnloadShaders();
+    DestroyHZBTextures();
     DestroySwapchainTextures();
-    DestroyNvrhiDevice();
+
+    m_NvrhiDevice->waitForIdle();
+    m_NvrhiDevice->runGarbageCollection();
+    m_NvrhiDevice = nullptr;
+
     m_RHI.Shutdown();
 
     if (m_Window)
@@ -865,19 +877,6 @@ nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi:
     return pipeline;
 }
 
-void Renderer::DestroyNvrhiDevice()
-{
-    SDL_assert(m_PendingCommandLists.empty() && "Pending command lists should be empty on device destruction");
-    m_PendingCommandLists.clear();
-    m_CommandListFreeList.clear();
-
-    if (m_NvrhiDevice)
-    {
-        SDL_Log("[Shutdown] Destroying NVRHI device");
-        m_NvrhiDevice = nullptr;
-    }
-}
-
 nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerName)
 {
     nvrhi::CommandListHandle handle;
@@ -1004,6 +1003,59 @@ void Renderer::DestroySwapchainTextures()
         m_SwapchainTextures[i] = nullptr;
     }
     m_DepthTexture = nullptr;
+}
+
+bool Renderer::CreateHZBTextures()
+{
+    SDL_Log("[Init] Creating HZB textures");
+
+    // Calculate HZB resolution - use next lower power of 2 for each dimension
+    uint32_t hzbWidth = NextLowerPow2(m_RHI.m_SwapchainExtent.width);
+    uint32_t hzbHeight = NextLowerPow2(m_RHI.m_SwapchainExtent.height);
+    hzbWidth = hzbWidth > m_RHI.m_SwapchainExtent.width ? hzbWidth >> 1 : hzbWidth;
+    hzbHeight = hzbHeight > m_RHI.m_SwapchainExtent.height ? hzbHeight >> 1 : hzbHeight;
+
+    // Calculate number of mip levels
+    uint32_t maxDim = std::max(hzbWidth, hzbHeight);
+    uint32_t mipLevels = 0;
+    while (maxDim > 0) {
+        mipLevels++;
+        maxDim >>= 1;
+    }
+
+    // Create current HZB texture
+    nvrhi::TextureDesc hzbDesc;
+    hzbDesc.width = hzbWidth;
+    hzbDesc.height = hzbHeight;
+    hzbDesc.arraySize = mipLevels;
+    hzbDesc.mipLevels = 1;
+    hzbDesc.format = nvrhi::Format::R32_FLOAT;
+    hzbDesc.debugName = "HZB";
+    hzbDesc.isRenderTarget = false;
+    hzbDesc.isUAV = true;
+    hzbDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    hzbDesc.dimension = nvrhi::TextureDimension::Texture2DArray;
+
+    m_HZBTexture = m_NvrhiDevice->createTexture(hzbDesc);
+    if (!m_HZBTexture)
+    {
+        SDL_LOG_ASSERT_FAIL("Failed to create HZB texture", "[Init] Failed to create HZB texture");
+        return false;
+    }
+    m_RHI.SetDebugName(m_HZBTexture, hzbDesc.debugName);
+
+    nvrhi::CommandListHandle cmd = AcquireCommandList("HZB_Clear");
+    cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, nvrhi::Color{ DEPTH_FAR, 0.0f, 0.0f, 0.0f });
+    SubmitCommandList(cmd);
+
+    SDL_Log("[Init] Created HZB textures (%ux%u, %u slices)", hzbWidth, hzbHeight, mipLevels);
+    return true;
+}
+
+void Renderer::DestroyHZBTextures()
+{
+    SDL_Log("[Shutdown] Destroying HZB textures");
+    m_HZBTexture = nullptr;
 }
 
 // Pipeline caching

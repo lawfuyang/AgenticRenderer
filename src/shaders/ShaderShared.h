@@ -105,8 +105,34 @@ struct CullingConstants
 {
   Vector4 m_FrustumPlanes[5];
   Matrix m_View;
+  Matrix m_ViewProj;
   uint m_NumPrimitives;
   uint m_EnableFrustumCulling;
+  uint m_EnableOcclusionCulling;
+  uint m_HZBWidth;
+  uint m_HZBHeight;
+  uint m_Phase; // 0 = Phase 1 (test all against HZB), 1 = Phase 2 (test occluded against new HZB)
+};
+
+struct HZBFromDepthConstants
+{
+  uint m_Width;
+  uint m_Height;
+};
+
+struct HZBConstants
+{
+  uint m_NumMips;
+  uint m_BaseWidth;
+  uint m_BaseHeight;
+};
+
+struct DownsampleConstants
+{
+  uint m_InputMip;
+  uint m_OutputMip;
+  uint m_Width;
+  uint m_Height;
 };
 
 #ifdef __cplusplus
@@ -128,3 +154,8 @@ static const float PI = 3.14159265359f;
 
 #define SAMPLER_CLAMP_INDEX 0
 #define SAMPLER_WRAP_INDEX 1
+
+#ifndef __cplusplus
+#define DEPTH_NEAR 1.0f
+#define DEPTH_FAR 0.0f
+#endif

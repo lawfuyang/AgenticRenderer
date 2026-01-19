@@ -23,6 +23,12 @@ cbuffer CullingCB : register(b0)
 StructuredBuffer<PerInstanceData> g_InstanceData : register(t0);
 RWStructuredBuffer<DrawIndexedIndirectArguments> g_VisibleArgs : register(u0);
 RWStructuredBuffer<uint> g_VisibleCount : register(u1);
+RWStructuredBuffer<uint> g_OccludedIndices : register(u2);
+RWStructuredBuffer<uint> g_OccludedCount : register(u3);
+
+// HZB textures for occlusion culling
+Texture2DArray<float> g_HZB : register(t1);
+SamplerState g_HZBMaxSampler : register(s0);
 
 bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
 {
@@ -70,6 +76,66 @@ bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
     return true;
 }
 
+bool OcclusionAABBTest(Vector3 aabbMin, Vector3 aabbMax, Matrix viewProj)
+{
+    // Project AABB to screen space and test against HZB
+    Vector3 corners[8];
+    corners[0] = Vector3(aabbMin.x, aabbMin.y, aabbMin.z);
+    corners[1] = Vector3(aabbMax.x, aabbMin.y, aabbMin.z);
+    corners[2] = Vector3(aabbMin.x, aabbMax.y, aabbMin.z);
+    corners[3] = Vector3(aabbMax.x, aabbMax.y, aabbMin.z);
+    corners[4] = Vector3(aabbMin.x, aabbMin.y, aabbMax.z);
+    corners[5] = Vector3(aabbMax.x, aabbMin.y, aabbMax.z);
+    corners[6] = Vector3(aabbMin.x, aabbMax.y, aabbMax.z);
+    corners[7] = Vector3(aabbMax.x, aabbMax.y, aabbMax.z);
+
+    // Find screen-space AABB
+    float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+    float minDepth = 1e30f, maxDepth = -1e30f;
+
+    for (int i = 0; i < 8; i++)
+    {
+        Vector4 clipPos = mul(Vector4(corners[i], 1.0f), viewProj);
+        if (clipPos.w <= 0.0f) continue; // Behind camera
+
+        Vector3 ndcPos = clipPos.xyz / clipPos.w;
+
+        // Convert to screen space (0,0) to (width,height)
+        float screenX = (ndcPos.x * 0.5f + 0.5f) * g_Culling.m_HZBWidth;
+        float screenY = (1.0f - (ndcPos.y * 0.5f + 0.5f)) * g_Culling.m_HZBHeight; // Flip Y
+
+        minX = min(minX, screenX);
+        minY = min(minY, screenY);
+        maxX = max(maxX, screenX);
+        maxY = max(maxY, screenY);
+        minDepth = min(minDepth, ndcPos.z);
+        maxDepth = max(maxDepth, ndcPos.z);
+    }
+
+    if (maxX < 0 || minX >= g_Culling.m_HZBWidth || maxY < 0 || minY >= g_Culling.m_HZBHeight)
+        return false; // Outside screen
+
+    // Clamp to valid range
+    minX = max(0, minX);
+    minY = max(0, minY);
+    maxX = min(g_Culling.m_HZBWidth - 1.0f, maxX);
+    maxY = min(g_Culling.m_HZBHeight - 1.0f, maxY);
+
+    // Compute appropriate mip level based on screen-space AABB size
+    float aabbWidth = maxX - minX;
+    float aabbHeight = maxY - minY;
+    float maxDim = max(aabbWidth, aabbHeight);
+    float mipLevel = max(0.0f, floor(log2(maxDim)));
+
+    // Sample HZB at center using max reduction sampler
+    float centerX = (minX + maxX) * 0.5f;
+    float centerY = (minY + maxY) * 0.5f;
+    float hzbDepth = g_HZB.SampleLevel(g_HZBMaxSampler, float3(centerX / g_Culling.m_HZBWidth, centerY / g_Culling.m_HZBHeight, mipLevel), 0);
+
+    // If the closest point of our AABB is behind the farthest point in HZB, it's occluded
+    return minDepth <= hzbDepth;
+}
+
 [numthreads(64, 1, 1)]
 void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -77,20 +143,68 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 	if (instanceIndex >= g_Culling.m_NumPrimitives)
 		return;
 
-	PerInstanceData inst = g_InstanceData[instanceIndex];
+	uint actualInstanceIndex = instanceIndex;
+	if (g_Culling.m_Phase == 1)
+	{
+		// Phase 2: Only process instances that were occluded in Phase 1
+		if (instanceIndex >= g_OccludedCount[0])
+			return;
+		actualInstanceIndex = g_OccludedIndices[instanceIndex];
+	}
 
+	PerInstanceData inst = g_InstanceData[actualInstanceIndex];
+
+    // Frustum culling (only in Phase 1)
     if (g_Culling.m_EnableFrustumCulling && !FrustumAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_FrustumPlanes, g_Culling.m_View))
         return;
 
-	uint index;
-	InterlockedAdd(g_VisibleCount[0], 1, index);
+    // Occlusion culling
+    bool isVisible = true;
+    if (g_Culling.m_EnableOcclusionCulling)
+    {
+        isVisible = OcclusionAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_ViewProj);
+    }
 
-	DrawIndexedIndirectArguments args;
-	args.m_IndexCount = inst.m_IndexCount;
-	args.m_InstanceCount = 1;
-	args.m_StartIndexLocation = inst.m_IndexOffset;
-	args.m_BaseVertexLocation = 0;
-	args.m_StartInstanceLocation = instanceIndex;
+    if (g_Culling.m_Phase == 0)
+    {
+        // Phase 1: Store visible instances for rendering, occluded indices for Phase 2
+        if (isVisible)
+        {
+            uint visibleIndex;
+            InterlockedAdd(g_VisibleCount[0], 1, visibleIndex);
 
-	g_VisibleArgs[index] = args;
+            DrawIndexedIndirectArguments args;
+            args.m_IndexCount = inst.m_IndexCount;
+            args.m_InstanceCount = 1;
+            args.m_StartIndexLocation = inst.m_IndexOffset;
+            args.m_BaseVertexLocation = 0;
+            args.m_StartInstanceLocation = actualInstanceIndex;
+
+            g_VisibleArgs[visibleIndex] = args;
+        }
+        else
+        {
+            uint occludedIndex;
+            InterlockedAdd(g_OccludedCount[0], 1, occludedIndex);
+            g_OccludedIndices[occludedIndex] = actualInstanceIndex;
+        }
+    }
+    else
+    {
+        // Phase 2: Only process instances that were occluded in Phase 1
+        if (isVisible)
+        {
+            uint visibleIndex;
+            InterlockedAdd(g_VisibleCount[0], 1, visibleIndex);
+
+            DrawIndexedIndirectArguments args;
+            args.m_IndexCount = inst.m_IndexCount;
+            args.m_InstanceCount = 1;
+            args.m_StartIndexLocation = inst.m_IndexOffset;
+            args.m_BaseVertexLocation = 0;
+            args.m_StartInstanceLocation = actualInstanceIndex;
+
+            g_VisibleArgs[visibleIndex] = args;
+        }
+    }
 }

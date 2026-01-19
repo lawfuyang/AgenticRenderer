@@ -64,6 +64,10 @@ struct Renderer
     static constexpr uint32_t SPIRV_CBUFFER_SHIFT   = 300;  // bRegShift (b#)
     static constexpr uint32_t SPIRV_UAV_SHIFT       = 400;  // uRegShift (u#)
 
+    // Depth buffer values for reversed-Z (near: 1.0, far: 0.0)
+    static constexpr float DEPTH_NEAR = 1.0f;
+    static constexpr float DEPTH_FAR = 0.0f;
+
     // ============================================================================
     // Instance Management
     // ============================================================================
@@ -192,6 +196,12 @@ struct Renderer
     // Frozen culling view matrix
     Matrix m_FrozenCullingViewMatrix;
 
+    // Occlusion culling enable flag
+    bool m_EnableOcclusionCulling = true;
+
+    // Hierarchical Z-Buffer (HZB) textures for occlusion culling
+    nvrhi::TextureHandle m_HZBTexture;
+
     // ============================================================================
     // Public Methods
     // ============================================================================
@@ -223,9 +233,10 @@ private:
 
     // Device / swapchain helpers
     bool CreateNvrhiDevice();
-    void DestroyNvrhiDevice();
     bool CreateSwapchainTextures();
     void DestroySwapchainTextures();
+    bool CreateHZBTextures();
+    void DestroyHZBTextures();
 
     // Shader loading
     bool LoadShaders();
