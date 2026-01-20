@@ -20,6 +20,7 @@ private:
     void PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const Vector4 frustumPlanes[5], const Matrix& view, const Matrix& viewProj, uint32_t numPrimitives,
                                  nvrhi::BufferHandle visibleIndirectBuffer, nvrhi::BufferHandle visibleCountBuffer,
                                  nvrhi::BufferHandle occludedIndicesBuffer, nvrhi::BufferHandle occludedCountBuffer, int phase);
+    void RenderInstances(nvrhi::CommandListHandle commandList, int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Vector3& camPos);
 };
 
 REGISTER_RENDERER(BasePassRenderer);
@@ -84,6 +85,81 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
     commandList->dispatch(dispatchX, 1, 1);
 
     // TODO: indirect for phase 2
+}
+
+void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Vector3& camPos)
+{
+    Renderer* renderer = Renderer::GetInstance();
+
+    const char* markerName = (phase == 0) ? "Base Pass Render - Visible Instances" : "Base Pass Render - Occlusion Tested Instances";
+    SCOPED_COMMAND_LIST_MARKER(commandList, markerName);
+
+    nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
+        nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
+
+    nvrhi::GraphicsState state;
+    nvrhi::GraphicsPipelineDesc pipelineDesc;
+    pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
+    pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
+    pipelineDesc.inputLayout = m_InputLayout;
+    pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+    pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
+    pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
+    pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
+
+    nvrhi::FramebufferInfoEx fbInfo;
+    fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
+    fbInfo.setDepthFormat(nvrhi::Format::D32);
+    state.framebuffer = framebuffer;
+
+    state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
+    state.indexBuffer = nvrhi::IndexBufferBinding{
+        renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
+
+    uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
+    uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
+    state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
+    state.viewport.scissorRects.resize(1);
+    state.viewport.scissorRects[0].minX = 0;
+    state.viewport.scissorRects[0].minY = 0;
+    state.viewport.scissorRects[0].maxX = (int)w;
+    state.viewport.scissorRects[0].maxY = (int)h;
+
+    nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
+        (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
+    nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
+    renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
+
+    nvrhi::BindingSetDesc bset;
+    bset.bindings =
+    {
+        nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
+        nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
+        nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
+    };
+    nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
+    pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
+
+    nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
+    state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
+
+    nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
+    state.pipeline = pipeline;
+
+    ForwardLightingPerFrameData cb{};
+    cb.m_ViewProj = viewProj;
+    cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
+    cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
+    cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
+    commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
+
+    state.indirectParams = indirectBuffer;
+    state.indirectCountParams = countBuffer;
+    commandList->setGraphicsState(state);
+
+    commandList->drawIndexedIndirect(0, (uint32_t)renderer->m_Scene.m_InstanceData.size());
 }
 
 bool BasePassRenderer::Initialize()
@@ -219,76 +295,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // ===== PHASE 1 RENDER: Full render for visible instances =====
     if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
     {
-        SCOPED_COMMAND_LIST_MARKER(commandList, "Base Pass Render - Visible Instances");
-
-        // Full render pass for visible instances
-        nvrhi::FramebufferDesc fbDesc;
-        fbDesc.addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture);
-        nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(fbDesc);
-
-        nvrhi::GraphicsState state;
-        nvrhi::GraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
-        pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
-        pipelineDesc.inputLayout = m_InputLayout;
-        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
-        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
-        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
-        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
-
-        nvrhi::FramebufferInfoEx fbInfo;
-        fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
-        fbInfo.setDepthFormat(nvrhi::Format::D32);
-        state.framebuffer = framebuffer;
-
-        state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
-        state.indexBuffer = nvrhi::IndexBufferBinding{
-            renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
-
-        uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
-        uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
-        state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
-        state.viewport.scissorRects.resize(1);
-        state.viewport.scissorRects[0].minX = 0;
-        state.viewport.scissorRects[0].minY = 0;
-        state.viewport.scissorRects[0].maxX = (int)w;
-        state.viewport.scissorRects[0].maxY = (int)h;
-
-        nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
-            (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
-        nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
-        renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
-
-        nvrhi::BindingSetDesc bset;
-        bset.bindings =
-        {
-            nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
-            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
-            nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
-        };
-        nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
-        pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
-
-        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
-        state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
-
-        nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
-        state.pipeline = pipeline;
-
-        ForwardLightingPerFrameData cb{};
-        cb.m_ViewProj = viewProj;
-        cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
-        cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
-        cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
-        commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
-
-        state.indirectParams = visibleIndirectBuffer;
-        state.indirectCountParams = visibleCountBuffer;
-        commandList->setGraphicsState(state);
-
-        commandList->drawIndexedIndirect(0, numPrimitives);
+        RenderInstances(commandList, 0, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
     }
 
     // ===== PHASE 2: Test occluded instances against new HZB =====
@@ -299,74 +306,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
 
     // ===== PHASE 2 RENDER: Full render for remaining visible instances =====
     {
-        SCOPED_COMMAND_LIST_MARKER(commandList, "Base Pass Render - Occlusion Tested Instances");
-
-        nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
-            nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
-
-        nvrhi::GraphicsState state;
-        nvrhi::GraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
-        pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
-        pipelineDesc.inputLayout = m_InputLayout;
-        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
-        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
-        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
-        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
-
-        nvrhi::FramebufferInfoEx fbInfo;
-        fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
-        fbInfo.setDepthFormat(nvrhi::Format::D32);
-        state.framebuffer = framebuffer;
-
-        state.vertexBuffers = { nvrhi::VertexBufferBinding{ renderer->m_Scene.m_VertexBuffer, 0, 0 } };
-        state.indexBuffer = nvrhi::IndexBufferBinding{
-            renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
-
-        uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
-        uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
-        state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
-        state.viewport.scissorRects.resize(1);
-        state.viewport.scissorRects[0].minX = 0;
-        state.viewport.scissorRects[0].minY = 0;
-        state.viewport.scissorRects[0].maxX = (int)w;
-        state.viewport.scissorRects[0].maxY = (int)h;
-
-        nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
-            (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
-        nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
-        renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
-
-        nvrhi::BindingSetDesc bset;
-        bset.bindings =
-        {
-            nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
-            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
-            nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
-        };
-        nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
-        pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
-
-        nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
-        state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
-
-        nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
-        state.pipeline = pipeline;
-
-        ForwardLightingPerFrameData cb{};
-        cb.m_ViewProj = viewProj;
-        cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
-        cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
-        cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
-        commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
-
-        state.indirectParams = visibleIndirectBuffer;
-        state.indirectCountParams = visibleCountBuffer;
-        commandList->setGraphicsState(state);
-
-        commandList->drawIndexedIndirect(0, numPrimitives);
+        RenderInstances(commandList, 1, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
     }
 
     // generate HZB mips for next frame
