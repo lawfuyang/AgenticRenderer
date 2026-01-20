@@ -148,9 +148,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     commandList->clearBufferUInt(visibleCountBuffer, 0);
     commandList->clearBufferUInt(occludedCountBuffer, 0);
 
-    // Clear HZB to far plane (0.0 for reversed-Z)
-    commandList->clearTextureFloat(renderer->m_HZBTexture, nvrhi::AllSubresources, Renderer::DEPTH_FAR);
-
     // ===== PHASE 1: Coarse culling against previous frame HZB =====
     {
         SCOPED_COMMAND_LIST_MARKER(commandList, "Occlusion Culling Phase 1");
@@ -176,11 +173,11 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         {
             nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, visibleIndirectBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(1, visibleCountBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(2, occludedIndicesBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(3, occludedCountBuffer),
-            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MaxReductionClamp)
         };
         nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
@@ -270,13 +267,16 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         commandList->drawIndexedIndirect(0, numPrimitives);
     }
 
-    // generate HZB mips for Phase 2 testing
-    GenerateHZBMips(commandList);
-
     // ===== PHASE 2: Test occluded instances against new HZB =====
     if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
     {
         SCOPED_COMMAND_LIST_MARKER(commandList, "Occlusion Culling Phase 2");
+
+        // Clear HZB to far plane for 2nd phase testing (0.0 for reversed-Z)
+        commandList->clearTextureFloat(renderer->m_HZBTexture, nvrhi::AllSubresources, Renderer::DEPTH_FAR);
+
+        // generate HZB mips for Phase 2 testing
+        GenerateHZBMips(commandList);
 
         // Clear visible count buffer for Phase 2
         commandList->clearBufferUInt(visibleCountBuffer, 0);
@@ -303,11 +303,11 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         {
             nvrhi::BindingSetItem::ConstantBuffer(0, cullCB),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, visibleIndirectBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(1, visibleCountBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(2, occludedIndicesBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(3, occludedCountBuffer),
-            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MaxReductionClamp)
         };
         nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);

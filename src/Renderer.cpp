@@ -1045,7 +1045,7 @@ bool Renderer::CreateHZBTextures()
     m_RHI.SetDebugName(m_HZBTexture, hzbDesc.debugName);
 
     nvrhi::CommandListHandle cmd = AcquireCommandList("HZB_Clear");
-    cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, nvrhi::Color{ DEPTH_FAR, 0.0f, 0.0f, 0.0f });
+    cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
     SubmitCommandList(cmd);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);

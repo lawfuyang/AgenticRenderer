@@ -21,35 +21,33 @@ cbuffer CullingCB : register(b0)
 };
 
 StructuredBuffer<PerInstanceData> g_InstanceData : register(t0);
+Texture2D<float> g_HZB : register(t1);
 RWStructuredBuffer<DrawIndexedIndirectArguments> g_VisibleArgs : register(u0);
 RWStructuredBuffer<uint> g_VisibleCount : register(u1);
 RWStructuredBuffer<uint> g_OccludedIndices : register(u2);
 RWStructuredBuffer<uint> g_OccludedCount : register(u3);
-
-// HZB textures for occlusion culling
-Texture2D<float> g_HZB : register(t1);
 SamplerState g_HZBMaxSampler : register(s0);
 
-bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
+bool FrustumAABBTest(float3 min, float3 max, float4 planes[5], float4x4 view)
 {
     // Compute all 8 corners of the AABB in world space
-    Vector3 corners[8];
-    corners[0] = Vector3(min.x, min.y, min.z);
-    corners[1] = Vector3(max.x, min.y, min.z);
-    corners[2] = Vector3(min.x, max.y, min.z);
-    corners[3] = Vector3(max.x, max.y, min.z);
-    corners[4] = Vector3(min.x, min.y, max.z);
-    corners[5] = Vector3(max.x, min.y, max.z);
-    corners[6] = Vector3(min.x, max.y, max.z);
-    corners[7] = Vector3(max.x, max.y, max.z);
+    float3 corners[8];
+    corners[0] = float3(min.x, min.y, min.z);
+    corners[1] = float3(max.x, min.y, min.z);
+    corners[2] = float3(min.x, max.y, min.z);
+    corners[3] = float3(max.x, max.y, min.z);
+    corners[4] = float3(min.x, min.y, max.z);
+    corners[5] = float3(max.x, min.y, max.z);
+    corners[6] = float3(min.x, max.y, max.z);
+    corners[7] = float3(max.x, max.y, max.z);
 
     // Transform to view space and find AABB in view space
-    Vector3 viewMin = Vector3(1e30, 1e30, 1e30);
-    Vector3 viewMax = Vector3(-1e30, -1e30, -1e30);
+    float3 viewMin = float3(1e30, 1e30, 1e30);
+    float3 viewMax = float3(-1e30, -1e30, -1e30);
     for (int i = 0; i < 8; i++)
     {
-        Vector4 worldPos = Vector4(corners[i], 1.0);
-        Vector3 viewPos = mul(worldPos, view).xyz;
+        float4 worldPos = float4(corners[i], 1.0);
+        float3 viewPos = mul(worldPos, view).xyz;
         viewMin.x = viewPos.x < viewMin.x ? viewPos.x : viewMin.x;
         viewMin.y = viewPos.y < viewMin.y ? viewPos.y : viewMin.y;
         viewMin.z = viewPos.z < viewMin.z ? viewPos.z : viewMin.z;
@@ -61,10 +59,10 @@ bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
     // Check against view-space frustum planes
     for (int i = 0; i < 5; i++)
     {
-        Vector3 n = planes[i].xyz;
+        float3 n = planes[i].xyz;
         float d = planes[i].w;
         // Find the p-vertex (farthest in the negative normal direction)
-        Vector3 p = Vector3(
+        float3 p = float3(
             n.x > 0 ? viewMax.x : viewMin.x,
             n.y > 0 ? viewMax.y : viewMin.y,
             n.z > 0 ? viewMax.z : viewMin.z
@@ -76,64 +74,84 @@ bool FrustumAABBTest(Vector3 min, Vector3 max, Vector4 planes[5], Matrix view)
     return true;
 }
 
-bool OcclusionAABBTest(Vector3 aabbMin, Vector3 aabbMax, Matrix viewProj)
+float Min8(float a, float b, float c, float d, float e, float f, float g, float h)
 {
-    // Project AABB to screen space and test against HZB
-    Vector3 corners[8];
-    corners[0] = Vector3(aabbMin.x, aabbMin.y, aabbMin.z);
-    corners[1] = Vector3(aabbMax.x, aabbMin.y, aabbMin.z);
-    corners[2] = Vector3(aabbMin.x, aabbMax.y, aabbMin.z);
-    corners[3] = Vector3(aabbMax.x, aabbMax.y, aabbMin.z);
-    corners[4] = Vector3(aabbMin.x, aabbMin.y, aabbMax.z);
-    corners[5] = Vector3(aabbMax.x, aabbMin.y, aabbMax.z);
-    corners[6] = Vector3(aabbMin.x, aabbMax.y, aabbMax.z);
-    corners[7] = Vector3(aabbMax.x, aabbMax.y, aabbMax.z);
+    return min(min(min(a, b), min(c, d)), min(min(e, f), min(g, h)));
+}
 
-    // Find screen-space AABB
-    float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
-    float minDepth = 1e30f, maxDepth = -1e30f;
+float Max8(float a, float b, float c, float d, float e, float f, float g, float h)
+{
+    return max(max(max(a, b), max(c, d)), max(max(e, f), max(g, h)));
+}
 
-    for (int i = 0; i < 8; i++)
-    {
-        Vector4 clipPos = mul(Vector4(corners[i], 1.0f), viewProj);
-        if (clipPos.w <= 0.0f) continue; // Behind camera
+float2 Min8(float2 a, float2 b, float2 c, float2 d, float2 e, float2 f, float2 g, float2 h)
+{
+    return min(min(min(a, b), min(c, d)), min(min(e, f), min(g, h)));
+}
 
-        Vector3 ndcPos = clipPos.xyz / clipPos.w;
+float2 Max8(float2 a, float2 b, float2 c, float2 d, float2 e, float2 f, float2 g, float2 h)
+{
+    return max(max(max(a, b), max(c, d)), max(max(e, f), max(g, h)));
+}
 
-        // Convert to screen space (0,0) to (width,height)
-        float screenX = (ndcPos.x * 0.5f + 0.5f) * g_Culling.m_HZBWidth;
-        float screenY = (1.0f - (ndcPos.y * 0.5f + 0.5f)) * g_Culling.m_HZBHeight; // Flip Y
+ // https://zeux.io/2023/01/12/approximate-projected-bounds/
+void ProjectBox(float3 bmin, float3 bmax, float4x4 viewProj, out float4 aabb, out float nearZ)
+{
+    nearZ = 0.0f;
+    
+    float4 SX = mul(float4(bmax.x - bmin.x, 0.0, 0.0, 0.0), viewProj);
+    float4 SY = mul(float4(0.0, bmax.y - bmin.y, 0.0, 0.0), viewProj);
+    float4 SZ = mul(float4(0.0, 0.0, bmax.z - bmin.z, 0.0), viewProj);
 
-        minX = min(minX, screenX);
-        minY = min(minY, screenY);
-        maxX = max(maxX, screenX);
-        maxY = max(maxY, screenY);
-        minDepth = min(minDepth, ndcPos.z);
-        maxDepth = max(maxDepth, ndcPos.z);
-    }
+    float4 P0 = mul(float4(bmin.x, bmin.y, bmin.z, 1.0), viewProj);
+    float4 P1 = P0 + SZ;
+    float4 P2 = P0 + SY;
+    float4 P3 = P2 + SZ;
+    float4 P4 = P0 + SX;
+    float4 P5 = P4 + SZ;
+    float4 P6 = P4 + SY;
+    float4 P7 = P6 + SZ;
 
-    if (maxX < 0 || minX >= g_Culling.m_HZBWidth || maxY < 0 || minY >= g_Culling.m_HZBHeight)
-        return false; // Outside screen
+    aabb.xy = Min8(
+        P0.xy / P0.w, P1.xy / P1.w, P2.xy / P2.w, P3.xy / P3.w,
+        P4.xy / P4.w, P5.xy / P5.w, P6.xy / P6.w, P7.xy / P7.w);
+    aabb.zw = Max8(
+        P0.xy / P0.w, P1.xy / P1.w, P2.xy / P2.w, P3.xy / P3.w,
+        P4.xy / P4.w, P5.xy / P5.w, P6.xy / P6.w, P7.xy / P7.w);
 
-    // Clamp to valid range
-    minX = max(0, minX);
-    minY = max(0, minY);
-    maxX = min(g_Culling.m_HZBWidth - 1.0f, maxX);
-    maxY = min(g_Culling.m_HZBHeight - 1.0f, maxY);
+    // clip space -> uv space
+    aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f, 0.5f, 0.5f, 0.5f);
+
+    nearZ = Max8(P0.z / P0.w, P1.z / P1.w, P2.z / P2.w, P3.z / P3.w, P4.z / P4.w, P5.z / P5.w, P6.z / P6.w, P7.z / P7.w);
+}
+
+bool OcclusionAABBTest(float3 aabbMin, float3 aabbMax, float4x4 viewProj, uint2 HZBDims)
+{
+    // Project AABB to UV space
+    float4 screenAABB;
+    float nearZ;
+    ProjectBox(aabbMin, aabbMax, viewProj, screenAABB, nearZ);
+
+    screenAABB = screenAABB * float4(HZBDims.x, HZBDims.y, HZBDims.x, HZBDims.y);
+
+    float minX = screenAABB.x;
+    float minY = screenAABB.y;
+    float maxX = screenAABB.z;
+    float maxY = screenAABB.w;
 
     // Compute appropriate mip level based on screen-space AABB size
     float aabbWidth = maxX - minX;
     float aabbHeight = maxY - minY;
     float maxDim = max(aabbWidth, aabbHeight);
-    float mipLevel = max(0.0f, floor(log2(maxDim)));
+    float mipLevel = floor(log2(max(maxDim, 1.0f)));
 
     // Sample HZB at center using max reduction sampler
     float centerX = (minX + maxX) * 0.5f;
     float centerY = (minY + maxY) * 0.5f;
-    float hzbDepth = g_HZB.SampleLevel(g_HZBMaxSampler, float2(centerX / g_Culling.m_HZBWidth, centerY / g_Culling.m_HZBHeight), mipLevel);
+    float hzbDepth = g_HZB.SampleLevel(g_HZBMaxSampler, float2(centerX / HZBDims.x, centerY / HZBDims.y), mipLevel);
 
-    // If the closest point of our AABB is behind the farthest point in HZB, it's occluded
-    return minDepth <= hzbDepth;
+    // If the closest point of our AABB is behind the farthest point in HZB, it's occluded (note reversed depth logic)
+    return nearZ >= hzbDepth;
 }
 
 [numthreads(64, 1, 1)]
@@ -162,7 +180,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     bool isVisible = true;
     if (g_Culling.m_EnableOcclusionCulling)
     {
-        isVisible = OcclusionAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_ViewProj);
+        isVisible = OcclusionAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_ViewProj, uint2(g_Culling.m_HZBWidth, g_Culling.m_HZBHeight));
     }
 
     if (g_Culling.m_Phase == 0)
