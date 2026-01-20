@@ -292,22 +292,17 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // ===== PHASE 1: Coarse culling against previous frame HZB =====
     PerformOcclusionCulling(commandList, frustumPlanes, view, viewProj, numPrimitives, visibleIndirectBuffer, visibleCountBuffer, occludedIndicesBuffer, occludedCountBuffer, 0);
 
-    // ===== PHASE 1 RENDER: Full render for visible instances =====
     if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
     {
+        // ===== PHASE 1 RENDER: Full render for visible instances =====
         RenderInstances(commandList, 0, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
-    }
 
-    // ===== PHASE 2: Test occluded instances against new HZB =====
-    if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
-    {
+        // ===== PHASE 2: Test occluded instances against new HZB =====
         PerformOcclusionCulling(commandList, frustumPlanes, view, viewProj, numPrimitives, visibleIndirectBuffer, visibleCountBuffer, occludedIndicesBuffer, occludedCountBuffer, 1);
     }
 
     // ===== PHASE 2 RENDER: Full render for remaining visible instances =====
-    {
-        RenderInstances(commandList, 1, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
-    }
+    RenderInstances(commandList, 1, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
 
     // generate HZB mips for next frame
     GenerateHZBMips(commandList);
