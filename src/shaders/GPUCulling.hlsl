@@ -127,30 +127,38 @@ void ProjectBox(float3 bmin, float3 bmax, float4x4 viewProj, out float4 aabb, ou
 
 bool OcclusionAABBTest(float3 aabbMin, float3 aabbMax, float4x4 viewProj, uint2 HZBDims)
 {
-    // Project AABB to UV space
+    // Project AABB to UV space [0, 1]
     float4 screenAABB;
     float nearZ;
     ProjectBox(aabbMin, aabbMax, viewProj, screenAABB, nearZ);
 
-    screenAABB = screenAABB * float4(HZBDims.x, HZBDims.y, HZBDims.x, HZBDims.y);
+    // Clamp UVs to [0, 1] to stay within HZB bounds
+    float4 uvAABB = saturate(screenAABB);
 
-    float minX = screenAABB.x;
-    float minY = screenAABB.y;
-    float maxX = screenAABB.z;
-    float maxY = screenAABB.w;
-
-    // Compute appropriate mip level based on screen-space AABB size
-    float aabbWidth = maxX - minX;
-    float aabbHeight = maxY - minY;
-    float maxDim = max(aabbWidth, aabbHeight);
+    float2 pixelDims = (uvAABB.zw - uvAABB.xy) * (float2)HZBDims;
+    float maxDim = max(pixelDims.x, pixelDims.y);
+    
+    // Choose mip level where the AABB covers at most a 2x2 area.
+    // Using floor(log2(maxDim)) ensures we sample from a level where 
+    // the AABB's largest dimension is between 1 and 2 texels.
     float mipLevel = floor(log2(max(maxDim, 1.0f)));
 
-    // Sample HZB at center using max reduction sampler
-    float centerX = (minX + maxX) * 0.5f;
-    float centerY = 1.0f - (minY + maxY) * 0.5f;
-    float hzbDepth = g_HZB.SampleLevel(g_MinReductionSampler, float2(centerX / HZBDims.x, centerY / HZBDims.y), mipLevel);
+    // To be conservative and avoid "too aggressive" culling, we sample 
+    // the 4 corners of the projected AABB. 
+    // Since our HZB is built with MIN reduction (farthest depth in Reverse-Z),
+    // we want to be visible if the object is closer than ANY potential gap.
+    // note the inversion of the V coordinate due to retarded Vulkan shit (TODO: confirm this)
+    float4 h;
+    h.x = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.x, 1.0 - uvAABB.y), mipLevel).r; // Top-left
+    h.y = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.z, 1.0 - uvAABB.y), mipLevel).r; // Top-right
+    h.z = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.x, 1.0 - uvAABB.w), mipLevel).r; // Bottom-left
+    h.w = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.z, 1.0 - uvAABB.w), mipLevel).r; // Bottom-right
 
-    // If the closest point of our AABB is behind the farthest point in HZB, it's occluded (note reversed depth logic)
+    // Farthest depth in the 2x2 footprint
+    float hzbDepth = min(min(h.x, h.y), min(h.z, h.w));
+
+    // Visibility test: Object is visible if its closest point (nearZ) 
+    // is closer than (>=) the farthest point in the HZB footprint.
     return nearZ >= hzbDepth;
 }
 
