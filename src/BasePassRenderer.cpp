@@ -34,7 +34,7 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
 
     Renderer* renderer = Renderer::GetInstance();
 
-    SCOPED_COMMAND_LIST_MARKER(commandList, phase == 0 ? "Occlusion Culling Phase 1" : "Occlusion Culling Phase 2");
+    nvrhi::utils::ScopedMarker commandListMarker{ commandList, phase == 0 ? "Occlusion Culling Phase 1" : "Occlusion Culling Phase 2" };
 
     if (phase == 1)
     {
@@ -115,7 +115,7 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, int
     Renderer* renderer = Renderer::GetInstance();
 
     const char* markerName = (phase == 0) ? "Base Pass Render - Visible Instances" : "Base Pass Render - Occlusion Tested Instances";
-    SCOPED_COMMAND_LIST_MARKER(commandList, markerName);
+    nvrhi::utils::ScopedMarker commandListMarker(commandList, markerName);
 
     nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
         nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
@@ -345,11 +345,11 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         return;
     }
 
-    SCOPED_COMMAND_LIST_MARKER(commandList, "Generate HZB Mips");
+    nvrhi::utils::ScopedMarker commandListMarker{ commandList, "Generate HZB Mips" };
 
     // First, build HZB mip 0 from depth texture
     {
-        SCOPED_COMMAND_LIST_MARKER(commandList, "HZB mip 0 From Depth");
+        nvrhi::utils::ScopedMarker hzbFromDepthMarker{ commandList, "HZB From Depth" };
 
         nvrhi::BufferDesc hzbFromDepthCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(HZBFromDepthConstants), "HZBFromDepthCB", 1);
         nvrhi::BufferHandle hzbFromDepthCB = renderer->m_NvrhiDevice->createBuffer(hzbFromDepthCBD);
