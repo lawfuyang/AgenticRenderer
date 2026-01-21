@@ -121,6 +121,7 @@ set(NVRHI_WITH_DX12 OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(external/nvrhi)
 add_subdirectory(external/meshoptimizer)
+add_subdirectory(external/microprofile)
 
 # ============================================================================
 # ImGui Configuration
