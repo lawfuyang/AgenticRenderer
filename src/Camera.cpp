@@ -58,7 +58,6 @@ void Camera::ProcessEvent(const SDL_Event& event)
             m_LastMouseX = event.motion.x;
             m_LastMouseY = event.motion.y;
 
-            Renderer* renderer = Renderer::GetInstance();
             float yawDelta = dx * m_MouseSensitivity;
             yawDelta = -yawDelta; // Negate yaw for Vulkan coordinate system
             m_Yaw += yawDelta;
@@ -155,7 +154,6 @@ Matrix Camera::GetProjMatrix() const
     Matrix m{};
     m._11 = xScale;
     // Negate X and Y scales for Vulkan to match DirectX Y-up convention and right-handed coordinates
-    Renderer* renderer = Renderer::GetInstance();
     m._11 = -xScale;
     m._22 = -yScale;
     m._33 = 0.0f;
@@ -205,7 +203,6 @@ void Camera::SetFromMatrix(const Matrix& worldTransform)
     XMFLOAT3 fwd;
     XMStoreFloat3(&fwd, worldForward);
     m_Yaw = atan2f(fwd.x, fwd.z);
-    Renderer* renderer = Renderer::GetInstance();
     m_Pitch = -asinf(fwd.y); // Negate pitch for Vulkan coordinate system
 }
 
