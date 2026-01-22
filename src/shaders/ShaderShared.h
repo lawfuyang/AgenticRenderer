@@ -134,12 +134,6 @@ struct HZBConstants
   uint m_BaseHeight;
 };
 
-struct DownsampleConstants
-{
-  uint m_OutputWidth;
-  uint m_OutputHeight;
-};
-
 #ifdef __cplusplus
 constexpr float PI = 3.14159265358979323846f;
 #else

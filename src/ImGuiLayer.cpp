@@ -135,7 +135,6 @@ void ImGuiLayer::UpdateFrame()
         {
             ImGui::Checkbox("Enable Frustum Culling", &renderer->m_EnableFrustumCulling);
             ImGui::Checkbox("Enable Occlusion Culling", &renderer->m_EnableOcclusionCulling);
-            ImGui::Checkbox("Use SPD for HZB", &renderer->m_EnableSPDHZB);
 
             bool prevFreeze = renderer->m_FreezeCullingCamera;
             ImGui::Checkbox("Freeze Culling Camera", &renderer->m_FreezeCullingCamera);
