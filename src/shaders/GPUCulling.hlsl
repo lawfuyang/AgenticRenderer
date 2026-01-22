@@ -146,7 +146,7 @@ bool OcclusionAABBTest(float3 aabbMin, float3 aabbMax, float4x4 viewProj, uint2 
     }
     
     // Choose mip level where the AABB covers at most a 2x2 area.
-    float mipLevel = floor(log2(max(maxDim, 1.0f)));
+    float mipLevel = ceil(log2(max(maxDim, 1.0f)));
 
     float4 h;
     h.x = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.x, uvAABB.y), mipLevel).r; // Top-left
