@@ -1,3 +1,5 @@
+#include "ShaderShared.h"
+
 typedef uint   FfxUInt32;
 typedef uint2  FfxUInt32x2;
 typedef uint3  FfxUInt32x3;
@@ -47,9 +49,7 @@ FfxUInt32x2 ffxRemapForWaveReduction(FfxUInt32 a)
 
 cbuffer SpdConstants : register(b0)
 {
-    uint m_Mips;
-    uint m_NumWorkGroups;
-    uint2 m_WorkGroupOffset;
+    SpdConstants g_SpdConstants;
 };
 
 // Resource boundaries for HZB
@@ -141,5 +141,5 @@ void SpdResetAtomicCounter(FfxUInt32 slice)
 [numthreads(256, 1, 1)]
 void HZBDownsampleSPD_CSMain(uint3 workGroupId : SV_GroupID, uint localInvocationIndex : SV_GroupIndex)
 {
-    SpdDownsample(workGroupId.xy, localInvocationIndex, m_Mips, m_NumWorkGroups, 0, m_WorkGroupOffset);
+    SpdDownsample(workGroupId.xy, localInvocationIndex, g_SpdConstants.m_Mips, g_SpdConstants.m_NumWorkGroups, 0, g_SpdConstants.m_WorkGroupOffset);
 }

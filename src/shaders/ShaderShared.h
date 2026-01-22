@@ -9,22 +9,14 @@
 
 // Minimal language-specific macro layer. The rest of this file uses the macros below so both C++ and HLSL follow the exact same code path.
 
-// Include Math aliases on C++ side so we can map shared types to them.
-#ifdef __cplusplus
-typedef uint32_t uint;
-#endif
-
-// Map shared scalar/vector/matrix declarations to language-specific forms.
-#ifdef __cplusplus
-  // In C++, prefer simple POD aliases (types are provided via pch.h)
-  typedef uint32_t uint;
-#else
+#if !defined(__cplusplus)
   // HLSL path
+  typedef uint32_t uint;
+  typedef uint2 Vector2U;
   typedef float2 Vector2;
   typedef float3 Vector3;
   typedef float4 Vector4;
-  // Ensure HLSL uses row-major layout to match DirectX::XMFLOAT4X4 on CPU
-  typedef row_major float4x4 Matrix;
+  typedef row_major float4x4 Matrix; // Ensure HLSL uses row-major layout to match DirectX::XMFLOAT4X4 on CPU
   typedef float4 Color;
 #endif
 
@@ -68,13 +60,13 @@ struct MaterialConstants
 {
   Vector4 m_BaseColor;
   Vector2 m_RoughnessMetallic; // x: roughness, y: metallic
-  uint m_TextureFlags;
-  uint m_AlbedoTextureIndex;
-  uint m_NormalTextureIndex;
-  uint m_RoughnessMetallicTextureIndex;
-  uint m_AlbedoSamplerIndex;
-  uint m_NormalSamplerIndex;
-  uint m_RoughnessSamplerIndex;
+  uint32_t m_TextureFlags;
+  uint32_t m_AlbedoTextureIndex;
+  uint32_t m_NormalTextureIndex;
+  uint32_t m_RoughnessMetallicTextureIndex;
+  uint32_t m_AlbedoSamplerIndex;
+  uint32_t m_NormalSamplerIndex;
+  uint32_t m_RoughnessSamplerIndex;
   Vector3 m_Padding;
 };
 
@@ -82,30 +74,30 @@ struct MaterialConstants
 struct PerInstanceData
 {
   Matrix m_World;
-  uint m_MaterialIndex;
-  uint m_IndexOffset;
-  uint m_IndexCount;
-  uint padding0;
+  uint32_t m_MaterialIndex;
+  uint32_t m_IndexOffset;
+  uint32_t m_IndexCount;
+  uint32_t padding0;
   Vector3 m_Min;
-  uint padding1;
+  uint32_t padding1;
   Vector3 m_Max;
-  uint padding2;
+  uint32_t padding2;
 };
 
 struct DrawIndexedIndirectArguments
 {
-  uint m_IndexCount;
-  uint m_InstanceCount;
-  uint m_StartIndexLocation;
+  uint32_t m_IndexCount;
+  uint32_t m_InstanceCount;
+  uint32_t m_StartIndexLocation;
   int m_BaseVertexLocation;
-  uint m_StartInstanceLocation;
+  uint32_t m_StartInstanceLocation;
 };
 
 struct DispatchIndirectArguments
 {
-  uint m_ThreadGroupCountX;
-  uint m_ThreadGroupCountY;
-  uint m_ThreadGroupCountZ;
+  uint32_t m_ThreadGroupCountX;
+  uint32_t m_ThreadGroupCountY;
+  uint32_t m_ThreadGroupCountZ;
 };
 
 struct CullingConstants
@@ -113,25 +105,32 @@ struct CullingConstants
   Vector4 m_FrustumPlanes[5];
   Matrix m_View;
   Matrix m_ViewProj;
-  uint m_NumPrimitives;
-  uint m_EnableFrustumCulling;
-  uint m_EnableOcclusionCulling;
-  uint m_HZBWidth;
-  uint m_HZBHeight;
-  uint m_Phase; // 0 = Phase 1 (test all against HZB), 1 = Phase 2 (test occluded against new HZB)
+  uint32_t m_NumPrimitives;
+  uint32_t m_EnableFrustumCulling;
+  uint32_t m_EnableOcclusionCulling;
+  uint32_t m_HZBWidth;
+  uint32_t m_HZBHeight;
+  uint32_t m_Phase; // 0 = Phase 1 (test all against HZB), 1 = Phase 2 (test occluded against new HZB)
 };
 
 struct HZBFromDepthConstants
 {
-  uint m_Width;
-  uint m_Height;
+  uint32_t m_Width;
+  uint32_t m_Height;
 };
 
 struct HZBConstants
 {
-  uint m_NumMips;
-  uint m_BaseWidth;
-  uint m_BaseHeight;
+  uint32_t m_NumMips;
+  uint32_t m_BaseWidth;
+  uint32_t m_BaseHeight;
+};
+
+struct SpdConstants
+{
+  uint32_t m_Mips;
+  uint32_t m_NumWorkGroups;
+  Vector2U m_WorkGroupOffset;
 };
 
 #ifdef __cplusplus

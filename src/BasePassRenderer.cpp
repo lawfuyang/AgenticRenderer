@@ -443,15 +443,11 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
     ffxSpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo, spdmips);
 
     // Constant buffer matching HZBDownsampleSPD.hlsl
-    struct SpdCBData {
-        uint32_t mips;
-        uint32_t numWorkGroups;
-        uint32_t workGroupOffset[2];
-    } spdData;
-    spdData.mips = numWorkGroupsAndMips[1];
-    spdData.numWorkGroups = numWorkGroupsAndMips[0];
-    spdData.workGroupOffset[0] = workGroupOffset[0];
-    spdData.workGroupOffset[1] = workGroupOffset[1];
+    SpdConstants spdData;
+    spdData.m_Mips = numWorkGroupsAndMips[1];
+    spdData.m_NumWorkGroups = numWorkGroupsAndMips[0];
+    spdData.m_WorkGroupOffset.x = workGroupOffset[0];
+    spdData.m_WorkGroupOffset.y = workGroupOffset[1];
 
     nvrhi::BufferDesc spdCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(spdData), "SpdCB", 1);
     nvrhi::BufferHandle spdCB = renderer->m_NvrhiDevice->createBuffer(spdCBD);

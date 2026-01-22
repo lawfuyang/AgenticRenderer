@@ -304,19 +304,19 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 		mc.m_RoughnessMetallicTextureIndex = mat.m_RoughnessMetallicTextureIndex;
 		// Per-texture sampler indices (do not assume they are the same)
 		if (mat.m_BaseColorTexture != -1)
-			mc.m_AlbedoSamplerIndex = (uint)scene.m_Textures[mat.m_BaseColorTexture].m_Sampler;
+			mc.m_AlbedoSamplerIndex = (uint32_t)scene.m_Textures[mat.m_BaseColorTexture].m_Sampler;
 		else
-			mc.m_AlbedoSamplerIndex = (uint)Scene::Texture::Wrap;
+			mc.m_AlbedoSamplerIndex = (uint32_t)Scene::Texture::Wrap;
 
 		if (mat.m_NormalTexture != -1)
-			mc.m_NormalSamplerIndex = (uint)scene.m_Textures[mat.m_NormalTexture].m_Sampler;
+			mc.m_NormalSamplerIndex = (uint32_t)scene.m_Textures[mat.m_NormalTexture].m_Sampler;
 		else
-			mc.m_NormalSamplerIndex = (uint)Scene::Texture::Wrap;
+			mc.m_NormalSamplerIndex = (uint32_t)Scene::Texture::Wrap;
 
 		if (mat.m_MetallicRoughnessTexture != -1)
-			mc.m_RoughnessSamplerIndex = (uint)scene.m_Textures[mat.m_MetallicRoughnessTexture].m_Sampler;
+			mc.m_RoughnessSamplerIndex = (uint32_t)scene.m_Textures[mat.m_MetallicRoughnessTexture].m_Sampler;
 		else
-			mc.m_RoughnessSamplerIndex = (uint)Scene::Texture::Wrap;
+			mc.m_RoughnessSamplerIndex = (uint32_t)Scene::Texture::Wrap;
 		materialConstants.push_back(mc);
 	}
 
