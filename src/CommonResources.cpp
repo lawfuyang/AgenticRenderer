@@ -192,15 +192,16 @@ bool CommonResources::Initialize()
 
     // Create default textures
     {
-        // Helper lambda to create a 1x1 texture with a solid color
-        auto createDefaultTexture = [device](const char* name, nvrhi::Color color) -> nvrhi::TextureHandle
+        // Helper lambda to create a 1x1 texture
+        auto createDefaultTexture = [device](const char* name, nvrhi::Format format = nvrhi::Format::RGBA8_UNORM, bool isUAV = false) -> nvrhi::TextureHandle
         {
             nvrhi::TextureDesc desc;
             desc.width = 1;
             desc.height = 1;
-            desc.format = nvrhi::Format::RGBA8_UNORM;
-            desc.isShaderResource = true;
-            desc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.format = format;
+            desc.isShaderResource = !isUAV;
+            desc.isUAV = isUAV;
+            desc.initialState = isUAV ? nvrhi::ResourceStates::UnorderedAccess : nvrhi::ResourceStates::ShaderResource;
             desc.keepInitialState = true;
             desc.debugName = name;
 
@@ -215,11 +216,14 @@ bool CommonResources::Initialize()
         };
 
         // Create the textures
-        DefaultTextureBlack = createDefaultTexture("DefaultBlack", nvrhi::Color(0.0f, 0.0f, 0.0f, 1.0f));
-        DefaultTextureWhite = createDefaultTexture("DefaultWhite", nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f));
-        DefaultTextureGray = createDefaultTexture("DefaultGray", nvrhi::Color(0.5f, 0.5f, 0.5f, 1.0f));
-        DefaultTextureNormal = createDefaultTexture("DefaultNormal", nvrhi::Color(0.5f, 0.5f, 1.0f, 1.0f));
-        DefaultTexturePBR = createDefaultTexture("DefaultPBR", nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f)); // ORM: Occlusion=1, Roughness=1, Metallic=0
+        DefaultTextureBlack = createDefaultTexture("DefaultBlack");
+        DefaultTextureWhite = createDefaultTexture("DefaultWhite");
+        DefaultTextureGray = createDefaultTexture("DefaultGray");
+        DefaultTextureNormal = createDefaultTexture("DefaultNormal");
+        DefaultTexturePBR = createDefaultTexture("DefaultPBR"); // ORM: Occlusion=1, Roughness=1, Metallic=0
+
+        // Create dummy UAV texture
+        DummyUAVTexture = createDefaultTexture("DummyUAV", nvrhi::Format::R32_FLOAT, true);
 
         // Upload texture data using renderer's command list management
         ScopedCommandList commandList{ "CommonResources_DefaultTextures" };
@@ -272,6 +276,7 @@ bool CommonResources::RegisterDefaultTextures()
 
 void CommonResources::Shutdown()
 {
+    DummyUAVTexture = nullptr;
     DefaultTexturePBR = nullptr;
     DefaultTextureNormal = nullptr;
     DefaultTextureGray = nullptr;

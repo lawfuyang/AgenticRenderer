@@ -62,5 +62,6 @@ public:
     nvrhi::TextureHandle DefaultTextureGray;         // RGBA(0.5,0.5,0.5,1)
     nvrhi::TextureHandle DefaultTextureNormal;       // RGBA(0.5,0.5,1,1) - neutral normal map
     nvrhi::TextureHandle DefaultTexturePBR;          // RGBA(0,1,1,1) - ORM: Metallic=0, Roughness=1, Occlusion=1
+    nvrhi::TextureHandle DummyUAVTexture;            // 1x1 UAV texture for filling slots
     CommonResources() = default;
 };
