@@ -533,11 +533,10 @@ void Renderer::Run()
                 m_NvrhiDevice->resetTimerQuery(rendererName->m_GPUQueries[readIndex]); \
             } \
             SimpleTimer cpuTimer; \
-            nvrhi::CommandListHandle cmd = AcquireCommandList(rendererName->GetName()); \
+            ScopedCommandList cmd{ rendererName->GetName() }; \
             cmd->beginTimerQuery(rendererName->m_GPUQueries[writeIndex]); \
             rendererName->Render(cmd); \
             cmd->endTimerQuery(rendererName->m_GPUQueries[writeIndex]); \
-            SubmitCommandList(cmd); \
             rendererName->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
         }
 
@@ -901,27 +900,22 @@ nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerNam
     }
     else
     {
-        SDL_assert(m_NvrhiDevice && "NVRHI device is not initialized");
         nvrhi::CommandListParameters params{};
         params.queueType = nvrhi::CommandQueue::Graphics;
         handle = m_NvrhiDevice->createCommandList(params);
     }
 
-    if (handle)
-    {
-        handle->open();
-        handle->beginMarker(markerName.data());
-    }
+    SDL_assert(handle && "Failed to acquire command list");
+
+    handle->open();
+    handle->beginMarker(markerName.data());
 
     return handle;
 }
 
 void Renderer::SubmitCommandList(const nvrhi::CommandListHandle& commandList)
 {
-    if (!commandList)
-    {
-        return;
-    }
+    SDL_assert(commandList && "Invalid command list submitted");
 
     commandList->endMarker();
     commandList->close();
@@ -1058,9 +1052,8 @@ bool Renderer::CreateHZBTextures()
     }
     m_RHI.SetDebugName(m_HZBTexture, hzbDesc.debugName);
 
-    nvrhi::CommandListHandle cmd = AcquireCommandList("HZB_Clear");
+    ScopedCommandList cmd{ "HZB_Clear" };
     cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
-    SubmitCommandList(cmd);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);
     return true;

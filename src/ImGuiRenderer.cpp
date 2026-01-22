@@ -312,9 +312,8 @@ bool ImGuiRenderer::CreateDeviceObjects()
         }
 
         // Upload font texture data
-        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("ImGui Font Upload");
+        ScopedCommandList cmd{ "ImGui Font Upload" };
         cmd->writeTexture(m_FontTexture, 0, 0, pixels, width * 4);
-        renderer->SubmitCommandList(cmd);
     }
 
     SDL_Log("[Init] ImGui device objects created successfully");

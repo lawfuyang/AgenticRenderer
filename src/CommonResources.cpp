@@ -222,7 +222,7 @@ bool CommonResources::Initialize()
         DefaultTexturePBR = createDefaultTexture("DefaultPBR", nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f)); // ORM: Occlusion=1, Roughness=1, Metallic=0
 
         // Upload texture data using renderer's command list management
-        nvrhi::CommandListHandle commandList = renderer->AcquireCommandList("CommonResources_DefaultTextures");
+        ScopedCommandList commandList{ "CommonResources_DefaultTextures" };
 
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)
@@ -243,8 +243,6 @@ bool CommonResources::Initialize()
         // PBR texture (ORM: Occlusion=1, Roughness=1, Metallic=0)
         uint32_t pbrPixel = 0xFFFFFF00; // RGBA(0,255,255,255) - R=Metallic(0), G=Roughness(255), B=Occlusion(255), A=255
         commandList->writeTexture(DefaultTexturePBR, 0, 0, &pbrPixel, sizeof(uint32_t), 0);
-
-        renderer->SubmitCommandList(commandList);
 
         // Note: Default textures are registered later in Renderer::Initialize after bindless system is set up
     }

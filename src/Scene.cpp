@@ -260,12 +260,11 @@ static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::fi
 			continue;
 		}
 
-		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Texture");
+		ScopedCommandList cmd{ "Upload Texture" };
 		const size_t bytesPerPixel = nvrhi::getFormatInfo(desc.format).bytesPerBlock;
 		const size_t rowPitch = (size_t)desc.width * bytesPerPixel;
 		const size_t depthPitch = rowPitch * (size_t)desc.height;
 		cmd->writeTexture(tex.m_Handle, 0, 0, imgData.data(), rowPitch, depthPitch);
-		renderer->SubmitCommandList(cmd);
 
 		tex.m_BindlessIndex = renderer->RegisterTexture(tex.m_Handle);
 		if (tex.m_BindlessIndex == UINT32_MAX)
@@ -331,9 +330,8 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 		scene.m_MaterialConstantsBuffer = renderer->m_NvrhiDevice->createBuffer(matBufDesc);
 		renderer->m_RHI.SetDebugName(scene.m_MaterialConstantsBuffer, "MaterialConstantsBuffer");
 
-		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload MaterialConstants");
+		ScopedCommandList cmd{ "Upload MaterialConstants" };
 		cmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(MaterialConstants));
-		renderer->SubmitCommandList(cmd);
 	}
 }
 
@@ -674,13 +672,11 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 
 	if (scene.m_VertexBuffer || scene.m_IndexBuffer)
 	{
-		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Scene");
+		ScopedCommandList cmd{ "Upload Scene" };
 		if (scene.m_VertexBuffer && vbytes > 0)
 			cmd->writeBuffer(scene.m_VertexBuffer, allVertices.data(), vbytes, 0);
 		if (scene.m_IndexBuffer && ibytes > 0)
 			cmd->writeBuffer(scene.m_IndexBuffer, allIndices.data(), ibytes, 0);
-
-		renderer->SubmitCommandList(cmd);
 	}
 
 	// Create instance data buffer
@@ -698,11 +694,9 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 	// Upload instance data
 	if (scene.m_InstanceDataBuffer)
 	{
-		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Scene Data");
+		ScopedCommandList cmd{ "Upload Scene Data" };
 		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
 			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(PerInstanceData), 0);
-
-		renderer->SubmitCommandList(cmd);
 	}
 }
 

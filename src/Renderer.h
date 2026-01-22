@@ -261,3 +261,23 @@ private:
     static Renderer* s_Instance;
     bool m_Running = true;
 };
+
+class ScopedCommandList
+{
+public:
+    ScopedCommandList(std::string_view markerName)
+        : m_CommandList(Renderer::GetInstance()->AcquireCommandList(markerName))
+    {
+    }
+
+    ~ScopedCommandList()
+    {
+        Renderer::GetInstance()->SubmitCommandList(m_CommandList);
+    }
+
+    nvrhi::CommandListHandle& operator->() { return m_CommandList; }
+    operator nvrhi::CommandListHandle& () { return m_CommandList; }
+
+private:
+    nvrhi::CommandListHandle m_CommandList;
+};
