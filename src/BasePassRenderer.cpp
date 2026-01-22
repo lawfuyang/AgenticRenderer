@@ -5,6 +5,17 @@
 
 #include "shaders/ShaderShared.h"
 
+#define FFX_CPU
+#define FFX_STATIC static
+using FfxUInt32 = uint32_t;
+using FfxInt32 = int32_t;
+using FfxFloat32 = float;
+using FfxUInt32x2 = uint32_t[2];
+using FfxUInt32x4 = uint32_t[4];
+#define ffxMax(a, b) std::max(a, b)
+#define ffxMin(a, b) std::min(a, b)
+#include "shaders/ffx_spd.h"
+
 class BasePassRenderer : public IRenderer
 {
 public:
@@ -414,45 +425,113 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         commandList->dispatch(dispatchX, dispatchY, 1);
     }
 
-    // Then, generate HZB mips using downsample shader
-    uint32_t numMips = renderer->m_HZBTexture->getDesc().mipLevels;
-    for (uint32_t mip = 1; mip < numMips; ++mip)
+    if (renderer->m_EnableSPDHZB)
     {
-        PROFILE_SCOPED("HZB Downsample Mip");
+        nvrhi::utils::ScopedMarker spdMarker{ commandList, "HZB Downsample SPD" };
 
-        uint32_t inputWidth = renderer->m_HZBTexture->getDesc().width >> (mip - 1);
-        uint32_t inputHeight = renderer->m_HZBTexture->getDesc().height >> (mip - 1);
-        uint32_t outputWidth = renderer->m_HZBTexture->getDesc().width >> mip;
-        uint32_t outputHeight = renderer->m_HZBTexture->getDesc().height >> mip;
+        uint32_t numMips = renderer->m_HZBTexture->getDesc().mipLevels;
 
-        // Create constant buffer for downsample
-        nvrhi::BufferDesc downsampleCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DownsampleConstants), "DownsampleCB", 1);
-        nvrhi::BufferHandle downsampleCB = renderer->m_NvrhiDevice->createBuffer(downsampleCBD);
-        renderer->m_RHI.SetDebugName(downsampleCB, "DownsampleCB");
+        // We generate mips 1..N. SPD will be configured to take mip 0 as source.
+        // So SPD "mips" count is numMips - 1. 
+        // Note: SPD refers to how many downsample steps to take.
+        uint32_t spdmips = numMips - 1;
 
-        DownsampleConstants downsampleData;
-        downsampleData.m_OutputWidth = outputWidth;
-        downsampleData.m_OutputHeight = outputHeight;
-        commandList->writeBuffer(downsampleCB, &downsampleData, sizeof(downsampleData), 0);
+        FfxUInt32x2 dispatchThreadGroupCountXY;
+        FfxUInt32x2 workGroupOffset;
+        FfxUInt32x2 numWorkGroupsAndMips;
+        FfxUInt32x4 rectInfo = { 0, 0, renderer->m_HZBTexture->getDesc().width, renderer->m_HZBTexture->getDesc().height };
 
-        nvrhi::BindingSetDesc downsampleBset;
-        downsampleBset.bindings =
+        ffxSpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo, spdmips);
+
+        // Constant buffer matching HZBDownsampleSPD.hlsl
+        struct SpdCBData {
+            uint32_t mips;
+            uint32_t numWorkGroups;
+            uint32_t workGroupOffset[2];
+        } spdData;
+        spdData.mips = numWorkGroupsAndMips[1];
+        spdData.numWorkGroups = numWorkGroupsAndMips[0];
+        spdData.workGroupOffset[0] = workGroupOffset[0];
+        spdData.workGroupOffset[1] = workGroupOffset[1];
+
+        nvrhi::BufferDesc spdCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(spdData), "SpdCB", 1);
+        nvrhi::BufferHandle spdCB = renderer->m_NvrhiDevice->createBuffer(spdCBD);
+        commandList->writeBuffer(spdCB, &spdData, sizeof(spdData), 0);
+
+        // Clear atomic counter
+        commandList->clearBufferUInt(renderer->m_SPDAtomicCounter, 0);
+
+        nvrhi::BindingSetDesc spdBset;
+        spdBset.bindings.push_back(nvrhi::BindingSetItem::ConstantBuffer(0, spdCB));
+        spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ 0, 1, 0, 1 }));
+
+        // Bind mips 1..N to UAV slots 0..N-1
+        uint32_t i = 1;
+        for (; i < numMips; ++i)
         {
-            nvrhi::BindingSetItem::ConstantBuffer(0, downsampleCB),
-            nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{mip - 1, 1, 0, 1}),
-            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{mip, 1, 0, 1}),
-            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
-        };
-        nvrhi::BindingLayoutHandle downsampleLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(downsampleBset, nvrhi::ShaderType::Compute);
-        nvrhi::BindingSetHandle downsampleBindingSet = renderer->m_NvrhiDevice->createBindingSet(downsampleBset, downsampleLayout);
+            spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ i, 1, 0, 1 }));
+        }
+        for (; i <= 12; ++i)
+        {
+            // Fill remaining UAV slots with a dummy to satisfy binding layout
+            spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, CommonResources::GetInstance().DummyUAVTexture));
+        }
+        
+        // Atomic counter always at slot 12
+        spdBset.bindings.push_back(nvrhi::BindingSetItem::StructuredBuffer_UAV(12, renderer->m_SPDAtomicCounter));
 
-        nvrhi::ComputeState downsampleState;
-        downsampleState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("DownsampleDepth_Downsample_CSMain"), downsampleLayout);
-        downsampleState.bindings = { downsampleBindingSet };
+        nvrhi::BindingLayoutHandle spdLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(spdBset, nvrhi::ShaderType::Compute);
+        nvrhi::BindingSetHandle spdBindingSet = renderer->m_NvrhiDevice->createBindingSet(spdBset, spdLayout);
 
-        commandList->setComputeState(downsampleState);
-        uint32_t dispatchX = DivideAndRoundUp(outputWidth, 8);
-        uint32_t dispatchY = DivideAndRoundUp(outputHeight, 8);
-        commandList->dispatch(dispatchX, dispatchY, 1);
+        nvrhi::ComputeState spdState;
+        spdState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("HZBDownsampleSPD_HZBDownsampleSPD_CSMain"), spdLayout);
+        spdState.bindings = { spdBindingSet };
+
+        commandList->setComputeState(spdState);
+        commandList->dispatch(dispatchThreadGroupCountXY[0], dispatchThreadGroupCountXY[1], 1);
+    }
+    else
+    {
+        // Then, generate HZB mips using downsample shader
+        uint32_t numMips = renderer->m_HZBTexture->getDesc().mipLevels;
+        for (uint32_t mip = 1; mip < numMips; ++mip)
+        {
+            PROFILE_SCOPED("HZB Downsample Mip");
+
+            uint32_t inputWidth = renderer->m_HZBTexture->getDesc().width >> (mip - 1);
+            uint32_t inputHeight = renderer->m_HZBTexture->getDesc().height >> (mip - 1);
+            uint32_t outputWidth = renderer->m_HZBTexture->getDesc().width >> mip;
+            uint32_t outputHeight = renderer->m_HZBTexture->getDesc().height >> mip;
+
+            // Create constant buffer for downsample
+            nvrhi::BufferDesc downsampleCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DownsampleConstants), "DownsampleCB", 1);
+            nvrhi::BufferHandle downsampleCB = renderer->m_NvrhiDevice->createBuffer(downsampleCBD);
+            renderer->m_RHI.SetDebugName(downsampleCB, "DownsampleCB");
+
+            DownsampleConstants downsampleData;
+            downsampleData.m_OutputWidth = outputWidth;
+            downsampleData.m_OutputHeight = outputHeight;
+            commandList->writeBuffer(downsampleCB, &downsampleData, sizeof(downsampleData), 0);
+
+            nvrhi::BindingSetDesc downsampleBset;
+            downsampleBset.bindings =
+            {
+                nvrhi::BindingSetItem::ConstantBuffer(0, downsampleCB),
+                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{mip - 1, 1, 0, 1}),
+                nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{mip, 1, 0, 1}),
+                nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
+            };
+            nvrhi::BindingLayoutHandle downsampleLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(downsampleBset, nvrhi::ShaderType::Compute);
+            nvrhi::BindingSetHandle downsampleBindingSet = renderer->m_NvrhiDevice->createBindingSet(downsampleBset, downsampleLayout);
+
+            nvrhi::ComputeState downsampleState;
+            downsampleState.pipeline = renderer->GetOrCreateComputePipeline(renderer->GetShaderHandle("DownsampleDepth_Downsample_CSMain"), downsampleLayout);
+            downsampleState.bindings = { downsampleBindingSet };
+
+            commandList->setComputeState(downsampleState);
+            uint32_t dispatchX = DivideAndRoundUp(outputWidth, 8);
+            uint32_t dispatchY = DivideAndRoundUp(outputHeight, 8);
+            commandList->dispatch(dispatchX, dispatchY, 1);
+        }
     }
 }

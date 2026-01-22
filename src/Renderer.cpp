@@ -1052,6 +1052,15 @@ bool Renderer::CreateHZBTextures()
     }
     m_RHI.SetDebugName(m_HZBTexture, hzbDesc.debugName);
 
+    // Create atomic counter buffer for SPD
+    nvrhi::BufferDesc counterDesc;
+    counterDesc.structStride = sizeof(uint32_t);
+    counterDesc.byteSize = sizeof(uint32_t);
+    counterDesc.canHaveUAVs = true;
+    counterDesc.debugName = "SPD Atomic Counter";
+    counterDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    m_SPDAtomicCounter = m_NvrhiDevice->createBuffer(counterDesc);
+
     ScopedCommandList cmd{ "HZB_Clear" };
     cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
@@ -1063,6 +1072,7 @@ void Renderer::DestroyHZBTextures()
 {
     SDL_Log("[Shutdown] Destroying HZB textures");
     m_HZBTexture = nullptr;
+    m_SPDAtomicCounter = nullptr;
 }
 
 // Pipeline caching

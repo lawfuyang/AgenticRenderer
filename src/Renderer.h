@@ -207,8 +207,14 @@ struct Renderer
     // Occlusion culling enable flag
     bool m_EnableOcclusionCulling = true;
 
+    // SPD HZB enable flag
+    bool m_EnableSPDHZB = true;
+
     // Hierarchical Z-Buffer (HZB) textures for occlusion culling
     nvrhi::TextureHandle m_HZBTexture;
+
+    // SPD Atomic Counter for HZB
+    nvrhi::BufferHandle m_SPDAtomicCounter;
 
     // ============================================================================
     // Public Methods
