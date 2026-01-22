@@ -403,9 +403,6 @@ bool Renderer::Initialize()
         return false;
     }
 
-    // Start garbage collection thread
-    m_GarbageCollectionThread = std::thread(&Renderer::GarbageCollectionThreadFunc, this);
-
     if (!CommonResources::GetInstance().Initialize())
     {
         SDL_Log("[Init] Failed to initialize common resources");
@@ -498,20 +495,27 @@ void Renderer::Run()
             break;
         }
 
-        m_GCCondition.notify_one();
-
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
         {
-            m_ImGuiLayer.ProcessEvent(event);
-            m_Camera.ProcessEvent(event);
+            PROFILE_SCOPED("Event Polling");
 
-            if (event.type == SDL_EVENT_QUIT)
+            SDL_Event event;
+            while (SDL_PollEvent(&event))
             {
-                SDL_Log("[Run ] Received quit event");
-                m_Running = false;
-                break;
-            }            
+                m_ImGuiLayer.ProcessEvent(event);
+                m_Camera.ProcessEvent(event);
+
+                if (event.type == SDL_EVENT_QUIT)
+                {
+                    SDL_Log("[Run ] Received quit event");
+                    m_Running = false;
+                    break;
+                }
+            }
+        }
+
+        {
+            PROFILE_SCOPED("Garbage Collection");
+            m_NvrhiDevice->runGarbageCollection();
         }
 
         // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
@@ -547,7 +551,10 @@ void Renderer::Run()
         #undef ADD_RENDER_PASS
 
         // Wait for GPU to finish all work before presenting
-        m_NvrhiDevice->waitForIdle();
+        {
+            PROFILE_SCOPED("WaitForIdle");
+            m_NvrhiDevice->waitForIdle();
+        }
 
         // Execute any queued GPU work in submission order
         ExecutePendingCommandLists();
@@ -584,9 +591,6 @@ void Renderer::Run()
 void Renderer::Shutdown()
 {
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
-
-    m_GCCondition.notify_one();
-    m_GarbageCollectionThread.join();
 
     MicroProfileShutdown();
 
@@ -1099,20 +1103,6 @@ nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderH
     }
 
     return pipeline;
-}
-
-void Renderer::GarbageCollectionThreadFunc()
-{
-    MicroProfileOnThreadCreate("GarbageCollector");
-
-    while (m_Running)
-    {
-        std::unique_lock<std::mutex> lock(m_GCMutex);
-        m_GCCondition.wait(lock);
-
-        PROFILE_SCOPED("GarbageCollectionThread");
-        m_NvrhiDevice->runGarbageCollection();
-    }
 }
 
 int main(int argc, char* argv[])

@@ -877,6 +877,8 @@ void GraphicRHI::DestroySwapchain()
 
 bool GraphicRHI::AcquireNextSwapchainImage(uint32_t* outImageIndex)
 {
+    PROFILE_FUNCTION();
+
     if (!outImageIndex)
     {
         return false;
@@ -915,6 +917,8 @@ bool GraphicRHI::AcquireNextSwapchainImage(uint32_t* outImageIndex)
 
 bool GraphicRHI::PresentSwapchain(uint32_t imageIndex)
 {
+    PROFILE_FUNCTION();
+
     vk::Queue queue = static_cast<vk::Queue>(m_GraphicsQueue);
     vk::SwapchainKHR swapchain = static_cast<vk::SwapchainKHR>(m_Swapchain);
     if (!queue || !swapchain)

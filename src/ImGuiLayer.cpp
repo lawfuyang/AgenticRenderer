@@ -45,6 +45,8 @@ void ImGuiLayer::ProcessEvent(const SDL_Event& event)
 
 void ImGuiLayer::UpdateFrame()
 {
+    PROFILE_FUNCTION();
+    
     // Build ImGui UI and end with ImGui::Render(); rendering happens in ImGuiRenderer::Render
     Renderer* renderer = Renderer::GetInstance();
     ImGui_ImplSDL3_NewFrame();

@@ -242,11 +242,6 @@ private:
     nvrhi::BindingLayoutHandle m_GlobalTextureBindingLayout;
     uint32_t m_NextTextureIndex = 0;
 
-    // Garbage collection thread
-    std::thread m_GarbageCollectionThread;
-    std::condition_variable m_GCCondition;
-    std::mutex m_GCMutex;
-
     // Device / swapchain helpers
     bool CreateNvrhiDevice();
     bool CreateSwapchainTextures();
@@ -257,9 +252,6 @@ private:
     // Shader loading
     bool LoadShaders();
     void UnloadShaders();
-
-    // Garbage collection thread
-    void GarbageCollectionThreadFunc();
 
     static Renderer* s_Instance;
     bool m_Running = true;
