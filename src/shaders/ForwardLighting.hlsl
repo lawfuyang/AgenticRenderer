@@ -1,18 +1,12 @@
-// Basic Forward Lighting shaders (VS + PS)
-
-// Include shared types (VertexInput, PerObjectData)
 #include "ShaderShared.h"
 
-// Define the cbuffer here using the shared ForwardLightingPerFrameData struct
 cbuffer PerFrameCB : register(b0, space1)
 {
     ForwardLightingPerFrameData perFrame;
 };
 
-// Structured buffer for per-instance data
-StructuredBuffer<PerInstanceData> instances : register(t0, space1);
-// Structured buffer for material constants
-StructuredBuffer<MaterialConstants> materials : register(t1, space1);
+StructuredBuffer<PerInstanceData> g_Instances : register(t0, space1);
+StructuredBuffer<MaterialConstants> g_Materials : register(t1, space1);
 
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
@@ -38,7 +32,7 @@ struct VSOut
 
 VSOut VSMain(VertexInput input, uint instanceID : SV_StartInstanceLocation)
 {
-    PerInstanceData inst = instances[instanceID];
+    PerInstanceData inst = g_Instances[instanceID];
     VSOut o;
     float4 worldPos = mul(float4(input.m_Pos, 1.0f), inst.m_World);
     o.Position = mul(worldPos, perFrame.m_ViewProj);
@@ -152,8 +146,8 @@ float4 SampleBindlessTexture(uint textureIndex, uint samplerIndex, float2 uv)
 float4 PSMain(VSOut input) : SV_TARGET
 {
     // Instance + material
-    PerInstanceData inst = instances[input.instanceID];
-    MaterialConstants mat = materials[inst.m_MaterialIndex];
+    PerInstanceData inst = g_Instances[input.instanceID];
+    MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
 
     // Texture sampling (only when present)
     bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
