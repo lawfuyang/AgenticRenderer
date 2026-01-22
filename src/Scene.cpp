@@ -5,20 +5,10 @@
 #include "Utilities.h"
 #include "TextureLoader.h"
 
-// Enable ForwardLighting shared definitions for C++ side
-#include "shaders/ShaderShared.h"
-
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
 #include "meshoptimizer.h"
-
-struct Vertex
-{
-	Vector3 pos;
-	Vector3 normal;
-	Vector2 uv;
-};
 
 const char* cgltf_result_tostring(cgltf_result result)
 {
@@ -385,7 +375,7 @@ static void ProcessLights(cgltf_data* data, Scene& scene)
 	}
 }
 
-static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices)
+static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<VertexInput>& outVertices, std::vector<uint32_t>& outIndices)
 {
 	SCOPED_TIMER("[Scene] Meshes");
 	outVertices.clear();
@@ -436,11 +426,11 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 
 			for (cgltf_size v = 0; v < vertCount; ++v)
 			{
-				Vertex vx{};
+				VertexInput vx{};
 				float pos[4] = { 0,0,0,0 };
 				cgltf_size posComps = cgltf_num_components(posAcc->type);
 				cgltf_accessor_read_float(posAcc, v, pos, posComps);
-				vx.pos.x = pos[0]; vx.pos.y = pos[1]; vx.pos.z = pos[2];
+				vx.m_Pos.x = pos[0]; vx.m_Pos.y = pos[1]; vx.m_Pos.z = pos[2];
 
 				float nrm[4] = { 0,0,0,0 };
 				if (normAcc)
@@ -448,7 +438,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 					cgltf_size nrmComps = cgltf_num_components(normAcc->type);
 					cgltf_accessor_read_float(normAcc, v, nrm, nrmComps);
 				}
-				vx.normal.x = nrm[0]; vx.normal.y = nrm[1]; vx.normal.z = nrm[2];
+				vx.m_Normal.x = nrm[0]; vx.m_Normal.y = nrm[1]; vx.m_Normal.z = nrm[2];
 
 				float uv[4] = { 0,0,0,0 };
 				if (uvAcc)
@@ -456,9 +446,9 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 					cgltf_size uvComps = cgltf_num_components(uvAcc->type);
 					cgltf_accessor_read_float(uvAcc, v, uv, uvComps);
 				}
-				vx.uv.x = uv[0]; vx.uv.y = uv[1];
+				vx.m_Uv.x = uv[0]; vx.m_Uv.y = uv[1];
 
-				if (!useAccessorBounds) ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.pos);
+				if (!useAccessorBounds) ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.m_Pos);
 				outVertices.push_back(vx);
 			}
 
@@ -641,11 +631,11 @@ static void SetupDirectionalLightAndCamera(Scene& scene, Renderer* renderer)
 	}
 }
 
-static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
+static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<VertexInput>& allVertices, const std::vector<uint32_t>& allIndices)
 {
 	SCOPED_TIMER("[Scene] GPU Upload");
 
-	const size_t vbytes = allVertices.size() * sizeof(Vertex);
+	const size_t vbytes = allVertices.size() * sizeof(VertexInput);
 	const size_t ibytes = allIndices.size() * sizeof(uint32_t);
 
 	if (vbytes > 0)
@@ -756,7 +746,7 @@ bool Scene::LoadScene()
 	ProcessCameras(data, *this);
 	ProcessLights(data, *this);
 
-	std::vector<Vertex> allVertices;
+	std::vector<VertexInput> allVertices;
 	std::vector<uint32_t> allIndices;
 	ProcessMeshes(data, *this, allVertices, allIndices);
 
