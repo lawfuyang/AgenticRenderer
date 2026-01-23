@@ -23,9 +23,9 @@ public:
     struct Mesh
     {
         std::vector<Primitive> m_Primitives;
-        // local AABB
-        Vector3 m_AabbMin{};
-        Vector3 m_AabbMax{};
+        // local sphere
+        Vector3 m_Center{};
+        float m_Radius{};
     };
 
     struct Node
@@ -38,9 +38,9 @@ public:
         Matrix m_LocalTransform{};
         // world transform (computed)
         Matrix m_WorldTransform{};
-        // world AABB
-        Vector3 m_AabbMin{};
-        Vector3 m_AabbMax{};
+        // world sphere
+        Vector3 m_Center{};
+        float m_Radius{};
         // Camera/Light indices
         int m_CameraIndex = -1;
         int m_LightIndex = -1;

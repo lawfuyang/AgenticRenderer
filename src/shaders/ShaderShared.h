@@ -73,11 +73,9 @@ struct PerInstanceData
   Matrix m_World;
   uint32_t m_MaterialIndex;
   uint32_t m_MeshDataIndex;
-  Vector2U padding0;
-  Vector3 m_Min;
-  uint32_t padding1;
-  Vector3 m_Max;
-  uint32_t padding2;
+  float m_Radius;
+  uint32_t padding0;
+  Vector3 m_Center;
 };
 
 struct DrawIndexedIndirectArguments
@@ -107,6 +105,8 @@ struct CullingConstants
   uint32_t m_HZBWidth;
   uint32_t m_HZBHeight;
   uint32_t m_Phase; // 0 = Phase 1 (test all against HZB), 1 = Phase 2 (test occluded against new HZB)
+  float m_P00;
+  float m_P11;
 };
 
 struct HZBFromDepthConstants

@@ -71,8 +71,10 @@ RWTexture2D<float> g_OutMip11 : register(u10);
 RWTexture2D<float> g_OutMip12 : register(u11);
 RWStructuredBuffer<uint> g_AtomicCounter : register(u12);
 
-// LDS for SPD
-groupshared float spd_Intermediate[16][16];
+groupshared FfxFloat32 spdIntermediateR[16][16];
+groupshared FfxFloat32 spdIntermediateG[16][16];
+groupshared FfxFloat32 spdIntermediateB[16][16];
+groupshared FfxFloat32 spdIntermediateA[16][16];
 
 // SPD Callbacks implementations
 FfxFloat32x4 SpdLoadSourceImage(FfxInt32x2 tex, FfxUInt32 slice)
@@ -105,12 +107,15 @@ void SpdStore(FfxInt32x2 pix, FfxFloat32x4 v, FfxUInt32 mip, FfxUInt32 slice)
 
 FfxFloat32x4 SpdLoadIntermediate(FfxUInt32 x, FfxUInt32 y)
 {
-    return spd_Intermediate[x][y].xxxx;
+    return FfxFloat32x4(spdIntermediateR[x][y], spdIntermediateG[x][y], spdIntermediateB[x][y], spdIntermediateA[x][y]);
 }
 
-void SpdStoreIntermediate(FfxUInt32 x, FfxUInt32 y, FfxFloat32x4 v)
+void SpdStoreIntermediate(FfxUInt32 x, FfxUInt32 y, FfxFloat32x4 value)
 {
-    spd_Intermediate[x][y] = v.x;
+    spdIntermediateR[x][y] = value.x;
+    spdIntermediateG[x][y] = value.y;
+    spdIntermediateB[x][y] = value.z;
+    spdIntermediateA[x][y] = value.w;
 }
 
 FfxFloat32x4 SpdReduce4(FfxFloat32x4 v0, FfxFloat32x4 v1, FfxFloat32x4 v2, FfxFloat32x4 v3)
@@ -136,6 +141,11 @@ void SpdResetAtomicCounter(FfxUInt32 slice)
 
 #define FFX_GPU
 #define FFX_GROUP_MEMORY_BARRIER GroupMemoryBarrierWithGroupSync()
+
+// Disable wave operations as it does not produce correct results for some reason
+// the depth mip results slowly shift "bottom right" and some mips will reduce to "max" instead of "min", despite SpdReduce4
+// can't be bothered to debug
+#define FFX_SPD_NO_WAVE_OPERATIONS
 #include "ffx_spd.h"
 
 [numthreads(256, 1, 1)]

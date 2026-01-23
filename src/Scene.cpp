@@ -100,17 +100,6 @@ static cgltf_result decompressMeshopt(cgltf_data* data)
 	return cgltf_result_success;
 }
 
-// Helpers for AABB
-static void ExtendAABB(Vector3& minOut, Vector3& maxOut, const Vector3& v)
-{
-	if (v.x < minOut.x) minOut.x = v.x;
-	if (v.y < minOut.y) minOut.y = v.y;
-	if (v.z < minOut.z) minOut.z = v.z;
-	if (v.x > maxOut.x) maxOut.x = v.x;
-	if (v.y > maxOut.y) maxOut.y = v.y;
-	if (v.z > maxOut.z) maxOut.z = v.z;
-}
-
 // Recursively compute world transforms for a Scene instance
 static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent)
 {
@@ -386,8 +375,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 	{
 		cgltf_mesh& cgMesh = data->meshes[mi];
 		Scene::Mesh mesh;
-		mesh.m_AabbMin = Vector3{ FLT_MAX, FLT_MAX, FLT_MAX };
-		mesh.m_AabbMax = Vector3{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
+		const size_t meshVertexStart = outVertices.size();
 
 		for (cgltf_size pi = 0; pi < cgMesh.primitives_count; ++pi)
 		{
@@ -413,12 +401,6 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 			{
 				SDL_LOG_ASSERT_FAIL("Primitive missing POSITION attribute", "[Scene] Primitive missing POSITION attribute. Is this normal?");
 				continue;
-			}
-
-			bool useAccessorBounds = posAcc->has_min && posAcc->has_max;
-			if (useAccessorBounds) {
-				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, Vector3{posAcc->min[0], posAcc->min[1], posAcc->min[2]});
-				ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, Vector3{posAcc->max[0], posAcc->max[1], posAcc->max[2]});
 			}
 
 			const cgltf_size vertCount = posAcc->count;
@@ -449,7 +431,6 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				}
 				vx.m_Uv.x = uv[0]; vx.m_Uv.y = uv[1];
 
-				if (!useAccessorBounds) ExtendAABB(mesh.m_AabbMin, mesh.m_AabbMax, vx.m_Pos);
 				outVertices.push_back(vx);
 			}
 
@@ -471,13 +452,26 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 
 			// Extract MeshData
 			p.m_MeshDataIndex = (uint32_t)scene.m_MeshData.size();
+			mesh.m_Primitives.push_back(p);
+
 			MeshData md;
 			md.m_IndexOffset = p.m_IndexOffset;
 			md.m_IndexCount = p.m_IndexCount;
 			scene.m_MeshData.push_back(md);
-
-			mesh.m_Primitives.push_back(p);
 		}
+
+		Sphere s;
+		if (outVertices.size() > meshVertexStart)
+		{
+			Sphere::CreateFromPoints(s, outVertices.size() - meshVertexStart, &outVertices[meshVertexStart].m_Pos, sizeof(Vertex));
+		}
+		else
+		{
+			s.Center = { 0,0,0 };
+			s.Radius = 0;
+		}
+		mesh.m_Center = s.Center;
+		mesh.m_Radius = s.Radius;
 
 		scene.m_Meshes.push_back(std::move(mesh));
 	}
@@ -570,7 +564,7 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 		}
 	}
 
-	// Compute per-node AABB by transforming mesh AABB into world space
+	// Compute per-node bounding spheres by transforming mesh spheres into world space
 	for (size_t ni = 0; ni < scene.m_Nodes.size(); ++ni)
 	{
 		Scene::Node& node = scene.m_Nodes[ni];
@@ -578,34 +572,12 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 		{
 			Scene::Mesh& mesh = scene.m_Meshes[node.m_MeshIndex];
 
-			// Create local bounding box
-			DirectX::BoundingBox localBox;
-			localBox.Center = DirectX::XMFLOAT3(
-				(mesh.m_AabbMin.x + mesh.m_AabbMax.x) * 0.5f,
-				(mesh.m_AabbMin.y + mesh.m_AabbMax.y) * 0.5f,
-				(mesh.m_AabbMin.z + mesh.m_AabbMax.z) * 0.5f
-			);
-			localBox.Extents = DirectX::XMFLOAT3(
-				(mesh.m_AabbMax.x - mesh.m_AabbMin.x) * 0.5f,
-				(mesh.m_AabbMax.y - mesh.m_AabbMin.y) * 0.5f,
-				(mesh.m_AabbMax.z - mesh.m_AabbMin.z) * 0.5f
-			);
-
-			// Transform to world space
-			DirectX::BoundingBox worldBox;
-			localBox.Transform(worldBox, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
-
-			// Set node AABB
-			node.m_AabbMin = Vector3{
-				worldBox.Center.x - worldBox.Extents.x,
-				worldBox.Center.y - worldBox.Extents.y,
-				worldBox.Center.z - worldBox.Extents.z
-			};
-			node.m_AabbMax = Vector3{
-				worldBox.Center.x + worldBox.Extents.x,
-				worldBox.Center.y + worldBox.Extents.y,
-				worldBox.Center.z + worldBox.Extents.z
-			};
+			// Transform sphere to world space
+			Sphere localSphere(mesh.m_Center, mesh.m_Radius);
+			Sphere worldSphere;
+			localSphere.Transform(worldSphere, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
+			node.m_Center = worldSphere.Center;
+			node.m_Radius = worldSphere.Radius;
 		}
 	}
 }
@@ -778,19 +750,18 @@ bool Scene::LoadScene()
 
 	// Fill instance data
 	m_InstanceData.clear();
-	for (const auto& node : m_Nodes)
+	for (const Scene::Node& node : m_Nodes)
 	{
 		if (node.m_MeshIndex < 0) continue;
 		const auto& mesh = m_Meshes[node.m_MeshIndex];
-		for (const auto& prim : mesh.m_Primitives)
+		for (const Scene::Primitive& prim : mesh.m_Primitives)
 		{
 			PerInstanceData inst{};
 			inst.m_World = node.m_WorldTransform;
 			inst.m_MaterialIndex = prim.m_MaterialIndex;
 			inst.m_MeshDataIndex = prim.m_MeshDataIndex;
-			// Use precomputed bounding AABB
-			inst.m_Min = node.m_AabbMin;
-			inst.m_Max = node.m_AabbMax;
+			inst.m_Center = node.m_Center;
+			inst.m_Radius = node.m_Radius;
 			m_InstanceData.push_back(inst);
 		}
 	}

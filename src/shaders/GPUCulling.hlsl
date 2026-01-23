@@ -30,136 +30,86 @@ RWStructuredBuffer<uint> g_OccludedCount : register(u3);
 RWStructuredBuffer<DispatchIndirectArguments> g_DispatchIndirectArgs : register(u4);
 SamplerState g_MinReductionSampler : register(s0);
 
-bool FrustumAABBTest(float3 min, float3 max, float4 planes[5], float4x4 view)
+bool FrustumSphereTest(
+    float3 centerVS,
+    float radius,
+    float4 planes[5],   // view-space frustum planes
+    float4x4 view
+)
 {
-    // Compute all 8 corners of the AABB in world space
-    float3 corners[8];
-    corners[0] = float3(min.x, min.y, min.z);
-    corners[1] = float3(max.x, min.y, min.z);
-    corners[2] = float3(min.x, max.y, min.z);
-    corners[3] = float3(max.x, max.y, min.z);
-    corners[4] = float3(min.x, min.y, max.z);
-    corners[5] = float3(max.x, min.y, max.z);
-    corners[6] = float3(min.x, max.y, max.z);
-    corners[7] = float3(max.x, max.y, max.z);
-
-    // Transform to view space and find AABB in view space
-    float3 viewMin = float3(1e30, 1e30, 1e30);
-    float3 viewMax = float3(-1e30, -1e30, -1e30);
-    for (int i = 0; i < 8; i++)
-    {
-        float4 worldPos = float4(corners[i], 1.0);
-        float3 viewPos = mul(worldPos, view).xyz;
-        viewMin.x = viewPos.x < viewMin.x ? viewPos.x : viewMin.x;
-        viewMin.y = viewPos.y < viewMin.y ? viewPos.y : viewMin.y;
-        viewMin.z = viewPos.z < viewMin.z ? viewPos.z : viewMin.z;
-        viewMax.x = viewPos.x > viewMax.x ? viewPos.x : viewMax.x;
-        viewMax.y = viewPos.y > viewMax.y ? viewPos.y : viewMax.y;
-        viewMax.z = viewPos.z > viewMax.z ? viewPos.z : viewMax.z;
-    }
-
-    // Check against view-space frustum planes
+    // Test against each frustum plane
+    [unroll]
     for (int i = 0; i < 5; i++)
     {
         float3 n = planes[i].xyz;
-        float d = planes[i].w;
-        // Find the p-vertex (farthest in the negative normal direction)
-        float3 p = float3(
-            n.x > 0 ? viewMax.x : viewMin.x,
-            n.y > 0 ? viewMax.y : viewMin.y,
-            n.z > 0 ? viewMax.z : viewMin.z
-        );
-        float dist = dot(n, p) + d;
-        if (dist < 0)
-            return false; // AABB is outside this plane
+        float d  = planes[i].w;
+
+        // Signed distance from sphere center to plane
+        float dist = dot(n, centerVS) + d;
+
+        // If sphere is completely outside this plane
+        if (dist < -radius)
+            return false;
     }
+
     return true;
 }
 
-float Min8(float a, float b, float c, float d, float e, float f, float g, float h)
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+void ProjectSphereView(
+    float3 c,          // sphere center in view space
+    float  r,          // sphere radius
+    float  zNear,      // near plane distance (> 0)
+    float  P00,        // projection matrix [0][0]
+    float  P11,        // projection matrix [1][1]
+    out float4 aabb    // xy = min, zw = max (UV space)
+)
 {
-    return min(min(min(a, b), min(c, d)), min(min(e, f), min(g, h)));
-}
+    float3 cr = c * r;
+    float  czr2 = c.z * c.z - r * r;
 
-float Max8(float a, float b, float c, float d, float e, float f, float g, float h)
-{
-    return max(max(max(a, b), max(c, d)), max(max(e, f), max(g, h)));
-}
+    // X bounds
+    float vx = sqrt(c.x * c.x + czr2);
+    float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+    float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
 
-float2 Min8(float2 a, float2 b, float2 c, float2 d, float2 e, float2 f, float2 g, float2 h)
-{
-    return min(min(min(a, b), min(c, d)), min(min(e, f), min(g, h)));
-}
+    // Y bounds
+    float vy = sqrt(c.y * c.y + czr2);
+    float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+    float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
 
-float2 Max8(float2 a, float2 b, float2 c, float2 d, float2 e, float2 f, float2 g, float2 h)
-{
-    return max(max(max(a, b), max(c, d)), max(max(e, f), max(g, h)));
-}
+    // NDC → clip-scaled
+    aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
 
- // https://zeux.io/2023/01/12/approximate-projected-bounds/
-void ProjectBox(float3 bmin, float3 bmax, float4x4 viewProj, out float4 aabb, out float nearZ)
-{
-    nearZ = 0.0f;
-    
-    float4 SX = mul(float4(bmax.x - bmin.x, 0.0, 0.0, 0.0), viewProj);
-    float4 SY = mul(float4(0.0, bmax.y - bmin.y, 0.0, 0.0), viewProj);
-    float4 SZ = mul(float4(0.0, 0.0, bmax.z - bmin.z, 0.0), viewProj);
+    aabb.xy = clamp(aabb.xy, -1, 1);
+    aabb.zw = clamp(aabb.zw, -1, 1);
 
-    float4 P0 = mul(float4(bmin.x, bmin.y, bmin.z, 1.0), viewProj);
-    float4 P1 = P0 + SZ;
-    float4 P2 = P0 + SY;
-    float4 P3 = P2 + SZ;
-    float4 P4 = P0 + SX;
-    float4 P5 = P4 + SZ;
-    float4 P6 = P4 + SY;
-    float4 P7 = P6 + SZ;
-
-    aabb.xy = Min8(
-        P0.xy / P0.w, P1.xy / P1.w, P2.xy / P2.w, P3.xy / P3.w,
-        P4.xy / P4.w, P5.xy / P5.w, P6.xy / P6.w, P7.xy / P7.w);
-    aabb.zw = Max8(
-        P0.xy / P0.w, P1.xy / P1.w, P2.xy / P2.w, P3.xy / P3.w,
-        P4.xy / P4.w, P5.xy / P5.w, P6.xy / P6.w, P7.xy / P7.w);
-
-    // clip space -> uv space (note the lack of y flip due to Vulkan inverted viewport)
+    // Clip space [-1,1] → UV space [0,1]
+    // note the lack of y flip due to Vulkan inverted viewport
     aabb = aabb.xwzy * float4(0.5f, 0.5f, 0.5f, 0.5f) + float4(0.5f, 0.5f, 0.5f, 0.5f);
-
-    nearZ = Max8(P0.z / P0.w, P1.z / P1.w, P2.z / P2.w, P3.z / P3.w, P4.z / P4.w, P5.z / P5.w, P6.z / P6.w, P7.z / P7.w);
 }
 
-bool OcclusionAABBTest(float3 aabbMin, float3 aabbMax, float4x4 viewProj, uint2 HZBDims)
+bool OcclusionSphereTest(float3 center, float radius, uint2 HZBDims, float P00, float P11)
 {
-    // Project AABB to UV space [0, 1]
-    float4 screenAABB;
-    float nearZ;
-    ProjectBox(aabbMin, aabbMax, viewProj, screenAABB, nearZ);
-
-    // Clamp UVs to [0, 1] to stay within HZB bounds
-    float4 uvAABB = saturate(screenAABB);
-
-    float2 pixelDims = (uvAABB.zw - uvAABB.xy) * (float2)HZBDims;
-    float maxDim = max(pixelDims.x, pixelDims.y);
-
-    // auto accept overly large AABBs
-    if (maxDim > 0.5f * min(HZBDims.x, HZBDims.y))
-    {
+    // trivially accept if sphere intersects camera near plane
+    if ((center.z - 0.1f) < radius)
         return true;
-    }
+        
+    float4 aabb;
+    ProjectSphereView(center, radius, 0.1f, P00, P11, aabb);
     
-    // Choose mip level where the AABB covers at most a 2x2 area.
-    float mipLevel = ceil(log2(max(maxDim, 1.0f)));
+	float width = (aabb.z - aabb.x) * HZBDims.x;
+	float height = (aabb.w - aabb.y) * HZBDims.y;
 
-    float4 h;
-    h.x = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.x, uvAABB.y), mipLevel).r; // Top-left
-    h.y = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.z, uvAABB.y), mipLevel).r; // Top-right
-    h.z = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.x, uvAABB.w), mipLevel).r; // Bottom-left
-    h.w = g_HZB.SampleLevel(g_MinReductionSampler, float2(uvAABB.z, uvAABB.w), mipLevel).r; // Bottom-right
+	float level = floor(log2(max(width, height)));
 
-    // Farthest depth in the 2x2 footprint
-    float hzbDepth = min(min(h.x, h.y), min(h.z, h.w));
+    // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
+    float depthHZB = g_HZB.SampleLevel(g_MinReductionSampler, (aabb.xy + aabb.zw) * 0.5, level).r;
 
-    // Visibility test: Object is visible if its closest point (nearZ)  is closer than (>=) the farthest point in the HZB footprint.
-    return nearZ >= hzbDepth;
+    float depthSphere = 0.1f / (center.z - radius); // reversed-Z, infinite far
+
+    // visible if sphere is closer than occluder
+    return depthSphere > depthHZB;
 }
 
 [numthreads(64, 1, 1)]
@@ -181,18 +131,24 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 	PerInstanceData inst = g_InstanceData[actualInstanceIndex];
     MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
-    // Frustum culling
-    if (g_Culling.m_EnableFrustumCulling && !FrustumAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_FrustumPlanes, g_Culling.m_View))
-        return;
+    float3 sphereViewCenter = mul(float4(inst.m_Center, 1.0), g_Culling.m_View).xyz;
 
-    // Occlusion culling
     bool isVisible = true;
-    if (g_Culling.m_EnableOcclusionCulling)
+
+    // Frustum culling
+    if (g_Culling.m_EnableFrustumCulling)
     {
-        isVisible = OcclusionAABBTest(inst.m_Min, inst.m_Max, g_Culling.m_ViewProj, uint2(g_Culling.m_HZBWidth, g_Culling.m_HZBHeight));
+        isVisible &= FrustumSphereTest(sphereViewCenter, inst.m_Radius, g_Culling.m_FrustumPlanes, g_Culling.m_View);
     }
 
-    // Phase 1: Store visible instances for rendering, occluded indices for Phase 2
+    // Occlusion culling
+    if (g_Culling.m_EnableOcclusionCulling)
+    {
+        isVisible &= OcclusionSphereTest(sphereViewCenter, inst.m_Radius, uint2(g_Culling.m_HZBWidth, g_Culling.m_HZBHeight), g_Culling.m_P00, g_Culling.m_P11);
+    }
+
+    // Phase 1: Store visible instances for rendering occluded indices for Phase 2
+    // Phase 2: Store visible instances for rendering newly tested visible instances against Phase 1 HZB
     if (isVisible)
     {
         uint visibleIndex;
@@ -210,7 +166,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     if (g_Culling.m_Phase == 0)
     {
-        // Phase 1: Store visible instances for rendering, occluded indices for Phase 2
+        // Phase 1: Store visible instances for rendering occluded indices for Phase 2
         if (!isVisible)
         {
             uint occludedIndex;
