@@ -104,7 +104,7 @@ static cgltf_result decompressMeshopt(cgltf_data* data)
 static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent)
 {
 	Scene::Node& node = scene.m_Nodes[nodeIndex];
-	DirectX::XMMATRIX localM = DirectX::XMLoadFloat4x4(&node.m_LocalTransform);
+	const DirectX::XMMATRIX localM = DirectX::XMLoadFloat4x4(&node.m_LocalTransform);
 	DirectX::XMMATRIX parentM = DirectX::XMLoadFloat4x4(&parent);
 	DirectX::XMMATRIX worldM = DirectX::XMMatrixMultiply(localM, parentM);
 	Matrix worldOut{};
@@ -120,7 +120,7 @@ static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, st
 {
     if (tex && tex->image)
     {
-        cgltf_size imgIndex = cgltf_image_index(data, tex->image);
+        const cgltf_size imgIndex = cgltf_image_index(data, tex->image);
         if (!Config::Get().m_SkipTextures)
         {
             textureIndex = static_cast<int>(imgIndex);
@@ -128,13 +128,13 @@ static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, st
         if (tex->sampler)
         {
             cgltf_sampler* s = tex->sampler;
-            bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
+            const bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
             samplerForImageIsWrap[imgIndex] = isWrap;
         }
     }
 }
 
-static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
+static void ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Materials+Images");
 
@@ -192,7 +192,7 @@ static void ProcessMaterialsAndImages(cgltf_data* data, Scene& scene)
 	}
 }
 
-static void LoadTexturesFromImages(Scene& scene, cgltf_data* data, const std::filesystem::path& sceneDir, Renderer* renderer)
+static void LoadTexturesFromImages(Scene& scene, const cgltf_data* data, const std::filesystem::path& sceneDir, Renderer* renderer)
 {
 	if (Config::Get().m_SkipTextures)
 	{
@@ -314,7 +314,7 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 	}
 }
 
-static void ProcessCameras(cgltf_data* data, Scene& scene)
+static void ProcessCameras(const cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Cameras");
 	for (cgltf_size i = 0; i < data->cameras_count; ++i)
@@ -341,7 +341,7 @@ static void ProcessCameras(cgltf_data* data, Scene& scene)
 	}
 }
 
-static void ProcessLights(cgltf_data* data, Scene& scene)
+static void ProcessLights(const cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Lights");
 	for (cgltf_size i = 0; i < data->lights_count; ++i)
@@ -364,7 +364,7 @@ static void ProcessLights(cgltf_data* data, Scene& scene)
 	}
 }
 
-static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices)
+static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices)
 {
 	SCOPED_TIMER("[Scene] Meshes");
 	outVertices.clear();
@@ -376,13 +376,13 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 
 	for (cgltf_size mi = 0; mi < data->meshes_count; ++mi)
 	{
-		cgltf_mesh& cgMesh = data->meshes[mi];
+		const cgltf_mesh& cgMesh = data->meshes[mi];
 		Scene::Mesh mesh;
 		const size_t meshVertexStart = outVertices.size();
 
 		for (cgltf_size pi = 0; pi < cgMesh.primitives_count; ++pi)
 		{
-			cgltf_primitive& prim = cgMesh.primitives[pi];
+			const cgltf_primitive& prim = cgMesh.primitives[pi];
 			Scene::Primitive p;
 
 			const cgltf_accessor* posAcc = nullptr;
@@ -391,7 +391,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 
 			for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai)
 			{
-				cgltf_attribute& attr = prim.attributes[ai];
+				const cgltf_attribute& attr = prim.attributes[ai];
 				if (attr.type == cgltf_attribute_type_position)
 					posAcc = attr.data;
 				else if (attr.type == cgltf_attribute_type_normal)
@@ -445,8 +445,8 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				p.m_IndexCount = static_cast<uint32_t>(idxCount);
 				for (cgltf_size k = 0; k < idxCount; ++k)
 				{
-					cgltf_size rawIdx = cgltf_accessor_read_index(prim.indices, k);
-					uint32_t idx = static_cast<uint32_t>(rawIdx);
+					const cgltf_size rawIdx = cgltf_accessor_read_index(prim.indices, k);
+					const uint32_t idx = static_cast<uint32_t>(rawIdx);
 					outIndices.push_back(static_cast<uint32_t>(p.m_VertexOffset) + idx);
 				}
 			}
@@ -470,7 +470,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 				std::vector<unsigned int> meshlet_vertices(max_meshlets * max_vertices);
 				std::vector<unsigned char> meshlet_triangles(max_meshlets * max_triangles * 3);
 
-				size_t meshlet_count = meshopt_buildMeshlets(localMeshlets.data(), meshlet_vertices.data(), meshlet_triangles.data(),
+				const size_t meshlet_count = meshopt_buildMeshlets(localMeshlets.data(), meshlet_vertices.data(), meshlet_triangles.data(),
 					localIndices.data(), p.m_IndexCount, &outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex),
 					max_vertices, max_triangles, cone_weight);
 
@@ -558,7 +558,8 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 		mesh.m_Center = s.Center;
 		mesh.m_Radius = s.Radius;
 
-		SDL_Log("[Scene] Mesh %zu [%s]: %zu primitives", mi, cgMesh.name ? cgMesh.name : "unnamed", cgMesh.primitives_count);
+		const size_t primitives_count = cgMesh.primitives_count;
+		SDL_Log("[Scene] Mesh %zu [%s]: %zu primitives", mi, cgMesh.name ? cgMesh.name : "unnamed", primitives_count);
 		scene.m_Meshes.push_back(std::move(mesh));
 	}
 
@@ -572,7 +573,7 @@ static void ProcessMeshes(cgltf_data* data, Scene& scene, std::vector<Vertex>& o
 		scene.m_MeshletVertices.size(), scene.m_MeshletTriangles.size() / 3);
 }
 
-static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
+static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Nodes+Hierarchy");
 	std::unordered_map<cgltf_size, int> nodeMap;
@@ -603,7 +604,7 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 			if (cn.has_rotation)
 				rot = DirectX::XMVectorSet(cn.rotation[0], cn.rotation[1], cn.rotation[2], cn.rotation[3]);
 
-			DirectX::XMMATRIX localM = DirectX::XMMatrixScalingFromVector(scale) * DirectX::XMMatrixRotationQuaternion(rot) * DirectX::XMMatrixTranslationFromVector(trans);
+			const DirectX::XMMATRIX localM = DirectX::XMMatrixScalingFromVector(scale) * DirectX::XMMatrixRotationQuaternion(rot) * DirectX::XMMatrixTranslationFromVector(trans);
 			DirectX::XMStoreFloat4x4(&localOut, localM);
 		}
 
@@ -665,10 +666,10 @@ static void ProcessNodesAndHierarchy(cgltf_data* data, Scene& scene)
 		Scene::Node& node = scene.m_Nodes[ni];
 		if (node.m_MeshIndex >= 0 && node.m_MeshIndex < static_cast<int>(scene.m_Meshes.size()))
 		{
-			Scene::Mesh& mesh = scene.m_Meshes[node.m_MeshIndex];
+			const Scene::Mesh& mesh = scene.m_Meshes[node.m_MeshIndex];
 
 			// Transform sphere to world space
-			Sphere localSphere(mesh.m_Center, mesh.m_Radius);
+			const Sphere localSphere(mesh.m_Center, mesh.m_Radius);
 			Sphere worldSphere;
 			localSphere.Transform(worldSphere, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
 			node.m_Center = worldSphere.Center;
@@ -685,13 +686,13 @@ static void SetupDirectionalLightAndCamera(Scene& scene, Renderer* renderer)
 		if (light.m_Type == Scene::Light::Directional && light.m_NodeIndex >= 0 && light.m_NodeIndex < static_cast<int>(scene.m_Nodes.size()))
 		{
 			const Matrix& worldTransform = scene.m_Nodes[light.m_NodeIndex].m_WorldTransform;
-			DirectX::XMMATRIX m = DirectX::XMLoadFloat4x4(&worldTransform);
-			DirectX::XMVECTOR localDir = DirectX::XMVectorSet(0, 0, -1, 0);
-			DirectX::XMVECTOR worldDir = DirectX::XMVector3TransformNormal(localDir, m);
+			const DirectX::XMMATRIX m = DirectX::XMLoadFloat4x4(&worldTransform);
+			const DirectX::XMVECTOR localDir = DirectX::XMVectorSet(0, 0, -1, 0);
+			const DirectX::XMVECTOR worldDir = DirectX::XMVector3TransformNormal(localDir, m);
 			DirectX::XMFLOAT3 dir;
 			DirectX::XMStoreFloat3(&dir, DirectX::XMVector3Normalize(worldDir));
-			float yaw = atan2f(dir.x, dir.z);
-			float pitch = asinf(dir.y);
+			const float yaw = atan2f(dir.x, dir.z);
+			const float pitch = asinf(dir.y);
 			scene.m_DirectionalLight.yaw = yaw;
 			scene.m_DirectionalLight.pitch = pitch;
 			scene.m_DirectionalLight.intensity = light.m_Intensity;
@@ -837,7 +838,7 @@ bool Scene::LoadScene()
 
 	SCOPED_TIMER("[Scene] LoadScene Total");
 
-	cgltf_options options{};
+	const cgltf_options options{};
 	cgltf_data* data = nullptr;
 	cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
 	if (res != cgltf_result_success || !data)
@@ -871,7 +872,7 @@ bool Scene::LoadScene()
 	}
 
 	Renderer* renderer = Renderer::GetInstance();
-	std::filesystem::path sceneDir = std::filesystem::path(scenePath).parent_path();
+	const std::filesystem::path sceneDir = std::filesystem::path(scenePath).parent_path();
 
 	ProcessMaterialsAndImages(data, *this);
 	LoadTexturesFromImages(*this, data, sceneDir, renderer);
