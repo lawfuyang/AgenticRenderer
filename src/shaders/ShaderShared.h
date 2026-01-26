@@ -50,11 +50,13 @@ struct Vertex
 struct ForwardLightingPerFrameData
 {
   Matrix m_ViewProj;
+  Matrix m_View;
+  Vector4 m_FrustumPlanes[5];
   Vector4 m_CameraPos; // xyz: camera world-space position, w: unused
   Vector3 m_LightDirection;
   float m_LightIntensity;
   uint32_t m_DebugMode;
-  uint32_t pad0;
+  uint32_t m_EnableFrustumCulling;
   uint32_t pad1;
   uint32_t pad2;
 };

@@ -32,7 +32,7 @@ private:
                                  nvrhi::BufferHandle visibleIndirectBuffer, nvrhi::BufferHandle visibleCountBuffer,
                                  nvrhi::BufferHandle occludedIndicesBuffer, nvrhi::BufferHandle occludedCountBuffer, 
                                  nvrhi::BufferHandle occludedIndirectBuffer, int phase);
-    void RenderInstances(nvrhi::CommandListHandle commandList, int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Vector3& camPos);
+    void RenderInstances(nvrhi::CommandListHandle commandList, int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Matrix& view, const Vector4 frustumPlanes[5], const Vector3& camPos);
 };
 
 REGISTER_RENDERER(BasePassRenderer);
@@ -149,7 +149,7 @@ void BasePassRenderer::ComputeFrustumPlanes(const Matrix& proj, Vector4 frustumP
     }
 }
 
-void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, const int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Vector3& camPos)
+void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, const int phase, nvrhi::BufferHandle indirectBuffer, nvrhi::BufferHandle countBuffer, const Matrix& viewProj, const Matrix& view, const Vector4 frustumPlanes[5], const Vector3& camPos)
 {
     PROFILE_FUNCTION();
 
@@ -206,10 +206,13 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
 
     ForwardLightingPerFrameData cb{};
     cb.m_ViewProj = viewProj;
+    cb.m_View = view;
+    memcpy(cb.m_FrustumPlanes, frustumPlanes, sizeof(Vector4) * 5);
     cb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 0.0f };
     cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
     cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
     cb.m_DebugMode = (uint32_t)renderer->m_DebugMode;
+    cb.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     if (renderer->m_UseMeshletRendering)
@@ -409,14 +412,14 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera && !renderer->m_UseMeshletRendering) // TODO: meshlet
     {
         // ===== PHASE 1 RENDER: Full render for visible instances =====
-        RenderInstances(commandList, 0, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
+        RenderInstances(commandList, 0, visibleIndirectBuffer, visibleCountBuffer, viewProj, view, frustumPlanes, camPos);
 
         // ===== PHASE 2: Test occluded instances against new HZB =====
         PerformOcclusionCulling(commandList, frustumPlanes, view, viewProjForCulling, proj, numPrimitives, visibleIndirectBuffer, visibleCountBuffer, occludedIndicesBuffer, occludedCountBuffer, occludedIndirectBuffer, 1);
     }
 
     // ===== PHASE 2 RENDER: Full render for remaining visible instances =====
-    RenderInstances(commandList, 1, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
+    RenderInstances(commandList, 1, visibleIndirectBuffer, visibleCountBuffer, viewProj, view, frustumPlanes, camPos);
 
     // generate HZB mips for next frame
     GenerateHZBMips(commandList);

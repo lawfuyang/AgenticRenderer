@@ -1,5 +1,6 @@
 #define GPU_CULLING_DEFINE
 #include "ShaderShared.h"
+#include "Culling.h"
 
 /*
 	-- 2 Phase Occlusion Culling --
@@ -29,31 +30,6 @@ RWStructuredBuffer<uint> g_OccludedIndices : register(u2);
 RWStructuredBuffer<uint> g_OccludedCount : register(u3);
 RWStructuredBuffer<DispatchIndirectArguments> g_DispatchIndirectArgs : register(u4);
 SamplerState g_MinReductionSampler : register(s0);
-
-bool FrustumSphereTest(
-    float3 centerVS,
-    float radius,
-    float4 planes[5],   // view-space frustum planes
-    float4x4 view
-)
-{
-    // Test against each frustum plane
-    [unroll]
-    for (int i = 0; i < 5; i++)
-    {
-        float3 n = planes[i].xyz;
-        float d  = planes[i].w;
-
-        // Signed distance from sphere center to plane
-        float dist = dot(n, centerVS) + d;
-
-        // If sphere is completely outside this plane
-        if (dist < -radius)
-            return false;
-    }
-
-    return true;
-}
 
 // 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
 void ProjectSphereView(
@@ -138,7 +114,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Frustum culling
     if (g_Culling.m_EnableFrustumCulling)
     {
-        isVisible &= FrustumSphereTest(sphereViewCenter, inst.m_Radius, g_Culling.m_FrustumPlanes, g_Culling.m_View);
+        isVisible &= FrustumSphereTest(sphereViewCenter, inst.m_Radius, g_Culling.m_FrustumPlanes);
     }
 
     // Occlusion culling

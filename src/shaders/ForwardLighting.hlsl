@@ -1,4 +1,5 @@
 #include "ShaderShared.h"
+#include "Culling.h"
 
 cbuffer PerFrameCB : register(b1, space1)
 {
@@ -314,7 +315,30 @@ void ASMain(
     uint meshletIndex = dispatchThreadID.x;
     if (meshletIndex < g_PerDraw.m_MeshletCount)
     {
-        bVisible = true;
+        uint absoluteMeshletIndex = g_PerDraw.m_MeshletOffset + meshletIndex;
+        Meshlet m = g_Meshlets[absoluteMeshletIndex];
+        PerInstanceData inst = g_Instances[g_PerDraw.m_InstanceIndex];
+
+        // Transform meshlet sphere to world space, then to view space
+        float4 worldCenter = mul(float4(m.m_Center, 1.0f), inst.m_World);
+        float3 viewCenter = mul(worldCenter, g_PerFrame.m_View).xyz;
+
+        // Approximate world-space radius using max scale from world matrix
+        float3 scale;
+        scale.x = length(inst.m_World[0].xyz);
+        scale.y = length(inst.m_World[1].xyz);
+        scale.z = length(inst.m_World[2].xyz);
+        float maxScale = max(scale.x, max(scale.y, scale.z));
+        float worldRadius = m.m_Radius * maxScale;
+
+        if (g_PerFrame.m_EnableFrustumCulling)
+        {
+            bVisible = FrustumSphereTest(viewCenter, worldRadius, g_PerFrame.m_FrustumPlanes);
+        }
+        else
+        {
+            bVisible = true;
+        }
     }
 
     if (bVisible)
