@@ -72,6 +72,8 @@ void ImGuiLayer::UpdateFrame()
         // Target FPS control
         ImGui::DragInt("Target FPS", (int*)&renderer->m_TargetFPS, 1.0f, 10, 200);
 
+        ImGui::Checkbox("Enable Meshlet Rendering", &renderer->m_UseMeshletRendering);
+
         // Camera controls
         if (ImGui::TreeNode("Camera"))
         {
@@ -125,8 +127,8 @@ void ImGuiLayer::UpdateFrame()
         // Directional Light controls
         if (ImGui::TreeNode("Directional Light"))
         {
-            ImGui::DragFloat("Yaw", &renderer->m_Scene.m_DirectionalLight.yaw, 0.01f, -PI, PI);
-            ImGui::DragFloat("Pitch", &renderer->m_Scene.m_DirectionalLight.pitch, 0.01f, -PI * 0.5f, PI * 0.5f);
+            ImGui::DragFloat("Yaw", &renderer->m_Scene.m_DirectionalLight.yaw, 0.01f, -std::numbers::pi_v<float>, std::numbers::pi_v<float>);
+            ImGui::DragFloat("Pitch", &renderer->m_Scene.m_DirectionalLight.pitch, 0.01f, -std::numbers::pi_v<float> * 0.5f, std::numbers::pi_v<float> * 0.5f);
             ImGui::DragFloat("Lux", &renderer->m_Scene.m_DirectionalLight.intensity, 100.0f, 0.0f, 200000.0f);
 
             ImGui::TreePop();

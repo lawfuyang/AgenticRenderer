@@ -104,7 +104,7 @@ namespace
 
         if (!configFile.is_open())
         {
-            SDL_Log("[Shader] Failed to open config: %.*s", static_cast<int>(configPath.size()), configPath.data());
+            SDL_LOG_ASSERT_FAIL("Failed to open shader config", "[Shader] Failed to open shader config: %.*s", static_cast<int>(configPath.size()), configPath.data());
             return shaders;
         }
 
@@ -127,8 +127,6 @@ namespace
             std::istringstream iss{line};
             std::string token;
             ShaderMetadata metadata;
-            bool hasType = false;
-            bool hasEntry = false;
 
             iss >> token;
             metadata.sourcePath = std::filesystem::path{token};
@@ -138,35 +136,49 @@ namespace
                 if (token == "-T" || token == "--profile")
                 {
                     iss >> token;
-                    if (token == "vs")
+                    if (token.find("vs") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Vertex;
-                    else if (token == "ps")
+                    else if (token.find("ps") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Pixel;
-                    else if (token == "gs")
+                    else if (token.find("gs") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Geometry;
-                    else if (token == "cs")
+                    else if (token.find("cs") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Compute;
-                    else if (token == "hs")
+                    else if (token.find("hs") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Hull;
-                    else if (token == "ds")
+                    else if (token.find("ds") != std::string::npos)
                         metadata.shaderType = nvrhi::ShaderType::Domain;
-                    hasType = true;
+                    else if (token.find("as") != std::string::npos)
+                        metadata.shaderType = nvrhi::ShaderType::Amplification;
+                    else if (token.find("ms") != std::string::npos)
+                        metadata.shaderType = nvrhi::ShaderType::Mesh;
                 }
                 else if (token == "-E" || token == "--entryPoint")
                 {
                     iss >> metadata.entryPoint;
-                    hasEntry = true;
                 }
             }
 
-            if (hasType && hasEntry)
+            SDL_assert(metadata.shaderType != nvrhi::ShaderType::None && !metadata.entryPoint.empty() && "Failed to parse shader entry from config");
+
+            shaders.push_back(metadata);
+
+            const char* typeStr = "Unknown";
+            switch (metadata.shaderType)
             {
-                shaders.push_back(metadata);
-                SDL_Log("[Shader] Parsed: %s (%s) -> entry: %s", metadata.sourcePath.generic_string().c_str(), 
-                        metadata.shaderType == nvrhi::ShaderType::Vertex ? "VS" : 
-                        metadata.shaderType == nvrhi::ShaderType::Pixel ? "PS" : "?",
-                        metadata.entryPoint.c_str());
+            case nvrhi::ShaderType::Vertex:        typeStr = "VS"; break;
+            case nvrhi::ShaderType::Pixel:         typeStr = "PS"; break;
+            case nvrhi::ShaderType::Geometry:      typeStr = "GS"; break;
+            case nvrhi::ShaderType::Compute:       typeStr = "CS"; break;
+            case nvrhi::ShaderType::Hull:          typeStr = "HS"; break;
+            case nvrhi::ShaderType::Domain:        typeStr = "DS"; break;
+            case nvrhi::ShaderType::Amplification: typeStr = "AS"; break;
+            case nvrhi::ShaderType::Mesh:          typeStr = "MS"; break;
+            default: break;
             }
+
+            SDL_Log("[Shader] Parsed: %s (%s) -> entry: %s", metadata.sourcePath.generic_string().c_str(),
+                typeStr, metadata.entryPoint.c_str());
         }
 
         SDL_Log("[Shader] Parsed %zu shader entries from config", shaders.size());
@@ -620,6 +632,7 @@ void Renderer::Shutdown()
     m_BindingLayoutCache.clear();
     m_GraphicsPipelineCache.clear();
     m_ComputePipelineCache.clear();
+    m_MeshletPipelineCache.clear();
 
     UnloadShaders();
     DestroyHZBTextures();
@@ -889,6 +902,44 @@ nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi:
     if (pipeline)
     {
         m_GraphicsPipelineCache.emplace(h, pipeline);
+    }
+
+    return pipeline;
+}
+
+nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::MeshletPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo)
+{
+    // Hash relevant pipeline properties: AS/MS/PS shader handles,
+    // and framebuffer color formats (first format).
+    const nvrhi::ShaderHandle as = pipelineDesc.AS;
+    const nvrhi::ShaderHandle ms = pipelineDesc.MS;
+    const nvrhi::ShaderHandle ps = pipelineDesc.PS;
+
+    size_t h = 1469598103934665603ull;
+    h = h * 1099511628211u + std::hash<const void*>()(as.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(ms.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(ps.Get());
+
+    // Include first color format from fbInfo if present
+    const nvrhi::Format colorFormat = (!fbInfo.colorFormats.empty()) ? fbInfo.colorFormats[0] : nvrhi::Format::UNKNOWN;
+    h = h * 1099511628211u + std::hash<int>()(static_cast<int>(colorFormat));
+
+    // Include binding layouts handles in hash (pipeline layout depends on these)
+    for (const nvrhi::BindingLayoutHandle& bl : pipelineDesc.bindingLayouts)
+    {
+        h = h * 1099511628211u + std::hash<const void*>()(bl.Get());
+    }
+
+    auto it = m_MeshletPipelineCache.find(h);
+    if (it != m_MeshletPipelineCache.end())
+        return it->second;
+
+    // Create pipeline and cache it
+    nvrhi::MeshletPipelineHandle pipeline = m_NvrhiDevice->createMeshletPipeline(pipelineDesc, fbInfo);
+    SDL_assert(pipeline && "Failed to create meshlet pipeline");
+    if (pipeline)
+    {
+        m_MeshletPipelineCache.emplace(h, pipeline);
     }
 
     return pipeline;

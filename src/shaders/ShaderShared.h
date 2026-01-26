@@ -11,7 +11,7 @@
 
 #if !defined(__cplusplus)
   // HLSL path
-  typedef uint32_t uint;
+  typedef uint uint32_t;
   typedef uint2 Vector2U;
   typedef float2 Vector2;
   typedef float3 Vector3;
@@ -46,6 +46,15 @@ struct ForwardLightingPerFrameData
   float m_LightIntensity;
 };
 
+struct ForwardLightingPerDrawData
+{
+  uint32_t m_InstanceIndex;
+  uint32_t m_MeshletOffset;
+  uint32_t m_MeshletCount;
+  uint32_t m_MeshletVerticesOffset;
+  uint32_t m_MeshletTrianglesOffset;
+};
+
 // Material constants (persistent, per-material data)
 struct MaterialConstants
 {
@@ -78,8 +87,10 @@ struct Meshlet
   float m_Radius;
   uint32_t m_VertexOffset;
   uint32_t m_TriangleOffset;
+  uint32_t m_VertexCount;
+  uint32_t m_TriangleCount;
   uint32_t m_ConeAxisAndCutoff;
-  uint32_t pad0;
+  Vector3 pad0;
 };
 
 // Per-instance data for instanced rendering
@@ -144,11 +155,10 @@ struct SpdConstants
   Vector2U m_WorkGroupOffset;
 };
 
-#ifdef __cplusplus
-constexpr float PI = 3.14159265358979323846f;
-#else
 static const float PI = 3.14159265359f;
-#endif
+static const uint32_t kMaxMeshletVertices = 64;
+static const uint32_t kMaxMeshletTriangles = 96;
+static const uint32_t kAmplificationShaderThreadGroupSize = 32;
 
 #define TEXFLAG_ALBEDO (1u << 0)
 #define TEXFLAG_NORMAL (1u << 1)

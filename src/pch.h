@@ -8,6 +8,7 @@
 #include <cfloat>
 #include <functional>
 #include <memory>
+#include <numbers>
 #include <filesystem>
 #include <fstream>
 #include <limits>

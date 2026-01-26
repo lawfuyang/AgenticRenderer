@@ -1,13 +1,21 @@
 #include "ShaderShared.h"
 
-cbuffer PerFrameCB : register(b0, space1)
+cbuffer PerFrameCB : register(b1, space1)
 {
-    ForwardLightingPerFrameData perFrame;
+    ForwardLightingPerFrameData g_PerFrame;
+};
+
+cbuffer PerDrawCB : register(b0, space1)
+{
+    ForwardLightingPerDrawData g_PerDraw;
 };
 
 StructuredBuffer<PerInstanceData> g_Instances : register(t0, space1);
 StructuredBuffer<MaterialConstants> g_Materials : register(t1, space1);
 StructuredBuffer<Vertex> g_Vertices : register(t2, space1);
+StructuredBuffer<Meshlet> g_Meshlets : register(t3, space1);
+StructuredBuffer<uint> g_MeshletVertices : register(t4, space1);
+StructuredBuffer<uint> g_MeshletTriangles : register(t5, space1);
 
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
@@ -37,7 +45,7 @@ VSOut VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_StartInstanceLoca
     Vertex v = g_Vertices[vertexID];
     VSOut o;
     float4 worldPos = mul(float4(v.m_Pos, 1.0f), inst.m_World);
-    o.Position = mul(worldPos, perFrame.m_ViewProj);
+    o.Position = mul(worldPos, g_PerFrame.m_ViewProj);
 
     // Alien math to calculate the normal in world space, without inverse-transposing the world matrix
     float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(inst.m_World);
@@ -186,8 +194,8 @@ float4 PSMain(VSOut input) : SV_TARGET
     }
 
     // View / light directions
-    float3 V = normalize(perFrame.m_CameraPos.xyz - input.worldPos);
-    float3 L = perFrame.m_LightDirection;
+    float3 V = normalize(g_PerFrame.m_CameraPos.xyz - input.worldPos);
+    float3 L = g_PerFrame.m_LightDirection;
     float3 H = normalize(V + L);
 
     // Dot products
@@ -239,7 +247,7 @@ float4 PSMain(VSOut input) : SV_TARGET
     float3 spec = (D * Vis) * F;
 
     // Lighting and ambient
-    float3 radiance = float3(perFrame.m_LightIntensity, perFrame.m_LightIntensity, perFrame.m_LightIntensity);
+    float3 radiance = float3(g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity);
     float3 ambient = (1.0f - NdotL) * baseColor * 0.03f; // IBL fallback
     float3 color = ambient + (diffuse + spec) * radiance * NdotL;
 
@@ -252,4 +260,80 @@ float4 PSMain(VSOut input) : SV_TARGET
     color += emissive;
 
     return float4(color, alpha);
+}
+
+struct MeshPayload
+{
+    uint m_MeshletIndices[kAmplificationShaderThreadGroupSize];
+};
+
+groupshared MeshPayload s_Payload;
+
+[numthreads(kAmplificationShaderThreadGroupSize, 1, 1)]
+void ASMain(
+    uint3 dispatchThreadID : SV_DispatchThreadID,
+    uint3 groupThreadID : SV_GroupThreadID,
+    uint3 groupId : SV_GroupID,
+    uint groupIndex : SV_GroupIndex
+)
+{
+    bool bVisible = false;
+
+    uint meshletIndex = dispatchThreadID.x;
+    if (meshletIndex < g_PerDraw.m_MeshletCount)
+    {
+        bVisible = true;
+    }
+
+    if (bVisible)
+    {
+        uint payloadIdx = WavePrefixCountBits(bVisible);
+        s_Payload.m_MeshletIndices[payloadIdx] = g_PerDraw.m_MeshletOffset + meshletIndex;
+    }
+
+    uint numVisible = WaveActiveCountBits(bVisible);
+    DispatchMesh(numVisible, 1, 1, s_Payload);
+}
+
+[numthreads(kMaxMeshletTriangles, 1, 1)]
+[outputtopology("triangle")]
+void MSMain(
+    uint3 dispatchThreadID : SV_DispatchThreadID,
+    uint3 groupThreadID : SV_GroupThreadID,
+    uint3 groupId : SV_GroupID,
+    uint groupIndex : SV_GroupIndex,
+    in payload MeshPayload payload,
+    out vertices VSOut vout[kMaxMeshletVertices],
+    out indices uint3 triangles[kMaxMeshletTriangles]
+)
+{
+    uint meshletIndex = payload.m_MeshletIndices[groupId.x];
+    uint outputIdx = groupThreadID.x;
+
+    Meshlet m = g_Meshlets[meshletIndex];
+    
+    SetMeshOutputCounts(m.m_VertexCount, m.m_TriangleCount);
+    
+    if (outputIdx < m.m_VertexCount)
+    {
+        uint vertexIndex = g_MeshletVertices[m.m_VertexOffset + outputIdx];
+        Vertex v = g_Vertices[vertexIndex];
+        
+        PerInstanceData inst = g_Instances[g_PerDraw.m_InstanceIndex];
+        
+        float4 worldPos = mul(float4(v.m_Pos, 1.0f), inst.m_World);
+        vout[outputIdx].Position = mul(worldPos, g_PerFrame.m_ViewProj);
+
+        float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(inst.m_World);
+        vout[outputIdx].normal = normalize(mul(v.m_Normal, adjugateWorldMatrix));
+        vout[outputIdx].uv = v.m_Uv;
+        vout[outputIdx].worldPos = worldPos.xyz;
+        vout[outputIdx].instanceID = g_PerDraw.m_InstanceIndex;
+    }
+    
+    if (outputIdx < m.m_TriangleCount)
+    {
+        uint packedTri = g_MeshletTriangles[m.m_TriangleOffset + outputIdx];
+        triangles[outputIdx] = uint3(packedTri & 0xFF, (packedTri >> 8) & 0xFF, (packedTri >> 16) & 0xFF);
+    }
 }

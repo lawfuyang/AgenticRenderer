@@ -468,9 +468,9 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 			// Generate meshlets
 			if (p.m_IndexCount > 0)
 			{
-				const size_t max_vertices = 64;
-				const size_t max_triangles = 124;
-				const float cone_weight = 0.0f;
+				const size_t max_vertices = kMaxMeshletVertices;
+				const size_t max_triangles = kMaxMeshletTriangles;
+				const float cone_weight = 0.25f;
 
 				// We need indices relative to primitive's vertex start
 				std::vector<uint32_t> localIndices(p.m_IndexCount);
@@ -511,6 +511,8 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 					Meshlet gpuMeshlet;
 					gpuMeshlet.m_VertexOffset = (uint32_t)(scene.m_MeshletVertices.size());
 					gpuMeshlet.m_TriangleOffset = (uint32_t)(scene.m_MeshletTriangles.size());
+					gpuMeshlet.m_VertexCount = (uint32_t)m.vertex_count;
+					gpuMeshlet.m_TriangleCount = (uint32_t)m.triangle_count;
 
 					gpuMeshlet.m_Center = { bounds.center[0], bounds.center[1], bounds.center[2] };
 					gpuMeshlet.m_Radius = bounds.radius;
@@ -533,10 +535,13 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 						scene.m_MeshletVertices.push_back(meshlet_vertices[m.vertex_offset + v] + p.m_VertexOffset);
 					}
 
-					// Add triangles
-					for (uint32_t t = 0; t < m.triangle_count * 3; ++t)
+					// Add triangles (packed: 3 indices per uint32_t)
+					for (uint32_t t = 0; t < m.triangle_count; ++t)
 					{
-						scene.m_MeshletTriangles.push_back(meshlet_triangles[m.triangle_offset + t]);
+						uint32_t i0 = meshlet_triangles[m.triangle_offset + t * 3 + 0];
+						uint32_t i1 = meshlet_triangles[m.triangle_offset + t * 3 + 1];
+						uint32_t i2 = meshlet_triangles[m.triangle_offset + t * 3 + 2];
+						scene.m_MeshletTriangles.push_back(i0 | (i1 << 8) | (i2 << 16));
 					}
 
 					scene.m_Meshlets.push_back(gpuMeshlet);
@@ -783,6 +788,7 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.structStride = sizeof(Meshlet);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_MeshletBuffer";
 		scene.m_MeshletBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
 		renderer->m_RHI.SetDebugName(scene.m_MeshletBuffer, "Scene_MeshletBuffer");
 
@@ -797,6 +803,7 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.structStride = sizeof(uint32_t);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_MeshletVerticesBuffer";
 		scene.m_MeshletVerticesBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
 		renderer->m_RHI.SetDebugName(scene.m_MeshletVerticesBuffer, "Scene_MeshletVerticesBuffer");
 
@@ -807,15 +814,16 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 	if (!scene.m_MeshletTriangles.empty())
 	{
 		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_MeshletTriangles.size() * sizeof(uint8_t));
-		desc.structStride = sizeof(uint8_t);
+		desc.byteSize = (uint32_t)(scene.m_MeshletTriangles.size() * sizeof(uint32_t));
+		desc.structStride = sizeof(uint32_t);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_MeshletTrianglesBuffer";
 		scene.m_MeshletTrianglesBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
 		renderer->m_RHI.SetDebugName(scene.m_MeshletTrianglesBuffer, "Scene_MeshletTrianglesBuffer");
 
 		ScopedCommandList cmd{ "Upload Meshlet Triangles" };
-		cmd->writeBuffer(scene.m_MeshletTrianglesBuffer, scene.m_MeshletTriangles.data(), scene.m_MeshletTriangles.size() * sizeof(uint8_t), 0);
+		cmd->writeBuffer(scene.m_MeshletTrianglesBuffer, scene.m_MeshletTriangles.data(), scene.m_MeshletTriangles.size() * sizeof(uint32_t), 0);
 	}
 
 	// Create instance data buffer

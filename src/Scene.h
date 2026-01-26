@@ -134,7 +134,7 @@ public:
     std::vector<MeshData> m_MeshData;
     std::vector<Meshlet> m_Meshlets;
     std::vector<uint32_t> m_MeshletVertices;
-    std::vector<uint8_t> m_MeshletTriangles;
+    std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
 
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.

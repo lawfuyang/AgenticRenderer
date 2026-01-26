@@ -120,6 +120,12 @@ struct Renderer
         const nvrhi::GraphicsPipelineDesc& pipelineDesc,
         const nvrhi::FramebufferInfoEx& fbInfo);
 
+    // Get or create a meshlet pipeline given a full meshlet pipeline description and framebuffer info.
+    // The pipeline will be cached internally by the renderer.
+    nvrhi::MeshletPipelineHandle GetOrCreateMeshletPipeline(
+        const nvrhi::MeshletPipelineDesc& pipelineDesc,
+        const nvrhi::FramebufferInfoEx& fbInfo);
+
     // Get or create a compute pipeline given a shader and binding layout.
     nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(
         nvrhi::ShaderHandle shader,
@@ -210,6 +216,9 @@ struct Renderer
     // Hierarchical Z-Buffer (HZB) textures for occlusion culling
     nvrhi::TextureHandle m_HZBTexture;
 
+    // Use meshlet rendering path
+    bool m_UseMeshletRendering = false;
+
     // SPD Atomic Counter for HZB
     nvrhi::BufferHandle m_SPDAtomicCounter;
 
@@ -235,6 +244,7 @@ private:
     // Caches
     std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
     std::unordered_map<size_t, nvrhi::GraphicsPipelineHandle> m_GraphicsPipelineCache;
+    std::unordered_map<size_t, nvrhi::MeshletPipelineHandle> m_MeshletPipelineCache;
     std::unordered_map<size_t, nvrhi::ComputePipelineHandle> m_ComputePipelineCache;
 
     // Global bindless texture descriptor table

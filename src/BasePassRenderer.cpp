@@ -46,6 +46,11 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
 
     Renderer* const renderer = Renderer::GetInstance();
 
+    if (renderer->m_UseMeshletRendering)
+    {
+        return; // TODO
+    }
+
     nvrhi::utils::ScopedMarker commandListMarker{ commandList, phase == 0 ? "Occlusion Culling Phase 1" : "Occlusion Culling Phase 2" };
 
     if (phase == 0)
@@ -156,55 +161,48 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     const nvrhi::FramebufferHandle framebuffer = renderer->m_NvrhiDevice->createFramebuffer(
         nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
 
-    nvrhi::GraphicsState state;
-    nvrhi::GraphicsPipelineDesc pipelineDesc;
-    pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
-    pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
-    pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
-    pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
-    pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
-    pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
-
     nvrhi::FramebufferInfoEx fbInfo;
     fbInfo.colorFormats = { renderer->m_RHI.VkFormatToNvrhiFormat(renderer->m_RHI.m_SwapchainFormat) };
     fbInfo.setDepthFormat(nvrhi::Format::D32);
-    state.framebuffer = framebuffer;
-
-    state.indexBuffer = nvrhi::IndexBufferBinding{
-        renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
 
     const uint32_t w = renderer->m_RHI.m_SwapchainExtent.width;
     const uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
-    state.viewport.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
-    state.viewport.scissorRects.resize(1);
-    state.viewport.scissorRects[0].minX = 0;
-    state.viewport.scissorRects[0].minY = 0;
-    state.viewport.scissorRects[0].maxX = (int)w;
-    state.viewport.scissorRects[0].maxY = (int)h;
+
+    nvrhi::ViewportState viewportState;
+    viewportState.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
+    viewportState.scissorRects.resize(1);
+    viewportState.scissorRects[0].minX = 0;
+    viewportState.scissorRects[0].minY = 0;
+    viewportState.scissorRects[0].maxX = (int)w;
+    viewportState.scissorRects[0].maxY = (int)h;
 
     const nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(
         (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
     const nvrhi::BufferHandle perFrameCB = renderer->m_NvrhiDevice->createBuffer(cbd);
     renderer->m_RHI.SetDebugName(perFrameCB, "PerFrameCB_frame");
 
+    const nvrhi::BufferDesc perDrawCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(
+        (uint32_t)sizeof(ForwardLightingPerDrawData), "PerDrawCB", renderer->m_UseMeshletRendering ? (uint32_t)renderer->m_Scene.m_InstanceData.size() : 1);
+    const nvrhi::BufferHandle perDrawCB = renderer->m_NvrhiDevice->createBuffer(perDrawCBD);
+    renderer->m_RHI.SetDebugName(perDrawCB, "PerDrawCB_frame");
+
     nvrhi::BindingSetDesc bset;
     bset.bindings =
     {
-        nvrhi::BindingSetItem::ConstantBuffer(0, perFrameCB),
+        nvrhi::BindingSetItem::ConstantBuffer(0, perDrawCB),
+        nvrhi::BindingSetItem::ConstantBuffer(1, perFrameCB),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_Scene.m_MaterialConstantsBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(2, renderer->m_Scene.m_VertexBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(3, renderer->m_Scene.m_MeshletBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(4, renderer->m_Scene.m_MeshletVerticesBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_MeshletTrianglesBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
-        nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
+        nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
+        
     };
     const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
-    pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
-
     const nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
-    state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
-
-    const nvrhi::GraphicsPipelineHandle pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
-    state.pipeline = pipeline;
 
     ForwardLightingPerFrameData cb{};
     cb.m_ViewProj = viewProj;
@@ -213,11 +211,70 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
-    state.indirectParams = indirectBuffer;
-    state.indirectCountBuffer = countBuffer;
-    commandList->setGraphicsState(state);
+    if (renderer->m_UseMeshletRendering)
+    {
+        nvrhi::MeshletPipelineDesc meshPipelineDesc;
+        meshPipelineDesc.AS = renderer->GetShaderHandle("ForwardLighting_ASMain");
+        meshPipelineDesc.MS = renderer->GetShaderHandle("ForwardLighting_MSMain");
+        meshPipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
+        meshPipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
+        meshPipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
+        meshPipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
+        meshPipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
 
-    commandList->drawIndexedIndirectCount(0, 0, (uint32_t)renderer->m_Scene.m_InstanceData.size());
+        const nvrhi::MeshletPipelineHandle meshPipeline = renderer->GetOrCreateMeshletPipeline(meshPipelineDesc, fbInfo);
+
+        nvrhi::MeshletState meshState;
+        meshState.framebuffer = framebuffer;
+        meshState.pipeline = meshPipeline;
+        meshState.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
+        meshState.viewport = viewportState;
+
+        for (uint32_t i = 0; i < (uint32_t)renderer->m_Scene.m_InstanceData.size(); ++i)
+        {
+            const PerInstanceData& instance = renderer->m_Scene.m_InstanceData[i];
+            const MeshData& meshData = renderer->m_Scene.m_MeshData[instance.m_MeshDataIndex];
+
+            SDL_assert(meshData.m_MeshletCount > 0);
+
+            ForwardLightingPerDrawData drawCBData{};
+            drawCBData.m_InstanceIndex = i;
+            drawCBData.m_MeshletOffset = meshData.m_MeshletOffset;
+            drawCBData.m_MeshletCount = meshData.m_MeshletCount;
+            commandList->writeBuffer(perDrawCB, &drawCBData, sizeof(drawCBData));
+
+            commandList->setMeshletState(meshState);
+
+            commandList->dispatchMesh(DivideAndRoundUp(meshData.m_MeshletCount, kAmplificationShaderThreadGroupSize), 1, 1);
+        }
+    }
+    else
+    {
+        nvrhi::GraphicsPipelineDesc pipelineDesc;
+        pipelineDesc.VS = renderer->GetShaderHandle("ForwardLighting_VSMain");
+        pipelineDesc.PS = renderer->GetShaderHandle("ForwardLighting_PSMain");
+        pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+        pipelineDesc.renderState.rasterState = CommonResources::GetInstance().RasterCullBack;
+        pipelineDesc.renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetOpaque;
+        pipelineDesc.renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
+        pipelineDesc.bindingLayouts = { renderer->GetGlobalTextureBindingLayout(), layout };
+
+        // dummy constants until meshlet drawing is indirect
+        ForwardLightingPerDrawData drawCBData{};
+        commandList->writeBuffer(perDrawCB, &drawCBData, sizeof(drawCBData));
+
+        nvrhi::GraphicsState state;
+        state.framebuffer = framebuffer;
+        state.viewport = viewportState;
+        state.indexBuffer = nvrhi::IndexBufferBinding{ renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
+        state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
+        state.pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
+        state.indirectParams = indirectBuffer;
+        state.indirectCountBuffer = countBuffer;
+        commandList->setGraphicsState(state);
+
+        commandList->drawIndexedIndirectCount(0, 0, (uint32_t)renderer->m_Scene.m_InstanceData.size());
+    }
 }
 
 bool BasePassRenderer::Initialize()
@@ -348,7 +405,7 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     // ===== PHASE 1: Coarse culling against previous frame HZB =====
     PerformOcclusionCulling(commandList, frustumPlanes, view, viewProjForCulling, proj, numPrimitives, visibleIndirectBuffer, visibleCountBuffer, occludedIndicesBuffer, occludedCountBuffer, occludedIndirectBuffer, 0);
 
-    if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
+    if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera && !renderer->m_UseMeshletRendering) // TODO: meshlet
     {
         // ===== PHASE 1 RENDER: Full render for visible instances =====
         RenderInstances(commandList, 0, visibleIndirectBuffer, visibleCountBuffer, viewProj, camPos);
