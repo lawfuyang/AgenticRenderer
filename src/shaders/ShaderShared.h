@@ -59,7 +59,11 @@ struct ForwardLightingPerFrameData
   uint32_t m_DebugMode;
   uint32_t m_EnableFrustumCulling;
   uint32_t m_EnableConeCulling;
-  uint32_t pad2;
+  uint32_t m_EnableOcclusionCulling;
+  uint32_t m_HZBWidth;
+  uint32_t m_HZBHeight;
+  float m_P00;
+  float m_P11;
 };
 
 // Material constants (persistent, per-material data)

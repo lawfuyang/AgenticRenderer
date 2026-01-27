@@ -41,7 +41,7 @@ private:
     void GenerateHZBMips(nvrhi::CommandListHandle commandList);
     void ComputeFrustumPlanes(const Matrix& proj, Vector4 frustumPlanes[5]);
     void PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const Vector4 frustumPlanes[5], const Matrix& view, const Matrix& viewProj, const Matrix& proj, uint32_t numPrimitives, int phase);
-    void RenderInstances(nvrhi::CommandListHandle commandList, int phase, const Matrix& viewProj, const Matrix& view, const Vector4 frustumPlanes[5], const Vector3& camPos);
+    void RenderInstances(nvrhi::CommandListHandle commandList, int phase, const Matrix& viewProj, const Matrix& view, const Matrix& proj, const Vector4 frustumPlanes[5], const Vector3& camPos);
 };
 
 REGISTER_RENDERER(BasePassRenderer);
@@ -156,7 +156,7 @@ void BasePassRenderer::ComputeFrustumPlanes(const Matrix& proj, Vector4 frustumP
     }
 }
 
-void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, const int phase, const Matrix& viewProj, const Matrix& view, const Vector4 frustumPlanes[5], const Vector3& camPos)
+void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, const int phase, const Matrix& viewProj, const Matrix& view, const Matrix& proj, const Vector4 frustumPlanes[5], const Vector3& camPos)
 {
     PROFILE_FUNCTION();
 
@@ -199,8 +199,10 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
         nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_MeshletTrianglesBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(6, m_MeshletJobBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(7, renderer->m_Scene.m_MeshDataBuffer),
+        nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
+        nvrhi::BindingSetItem::Sampler(2, CommonResources::GetInstance().MinReductionClamp)
     };
     const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
     const nvrhi::BindingSetHandle bindingSet = renderer->m_NvrhiDevice->createBindingSet(bset, layout);
@@ -223,6 +225,11 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     cb.m_DebugMode = (uint32_t)renderer->m_DebugMode;
     cb.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
     cb.m_EnableConeCulling = renderer->m_EnableConeCulling ? 1 : 0;
+    cb.m_EnableOcclusionCulling = renderer->m_EnableOcclusionCulling ? 1 : 0;
+    cb.m_HZBWidth = (uint32_t)renderer->m_HZBTexture->getDesc().width;
+    cb.m_HZBHeight = (uint32_t)renderer->m_HZBTexture->getDesc().height;
+    cb.m_P00 = proj._11;
+    cb.m_P11 = proj._22;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     nvrhi::RenderState renderState;
@@ -548,14 +555,14 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
     if (renderer->m_EnableOcclusionCulling && !renderer->m_FreezeCullingCamera)
     {
         // ===== PHASE 1 RENDER: Full render for visible instances =====
-        RenderInstances(commandList, 0, viewProj, view, frustumPlanes, camPos);
+        RenderInstances(commandList, 0, viewProj, view, proj, frustumPlanes, camPos);
 
         // ===== PHASE 2: Test occluded instances against new HZB =====
         PerformOcclusionCulling(commandList, frustumPlanes, view, viewProjForCulling, proj, numPrimitives, 1);
     }
 
     // ===== PHASE 2 RENDER: Full render for remaining visible instances =====
-    RenderInstances(commandList, 1, viewProj, view, frustumPlanes, camPos);
+    RenderInstances(commandList, 1, viewProj, view, proj, frustumPlanes, camPos);
 
     commandList->endPipelineStatisticsQuery(m_PipelineQueries[writeIndex]);
 

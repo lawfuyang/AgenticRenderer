@@ -14,9 +14,11 @@ StructuredBuffer<uint> g_MeshletVertices : register(t4, space1);
 StructuredBuffer<uint> g_MeshletTriangles : register(t5, space1);
 StructuredBuffer<MeshletJob> g_MeshletJobs : register(t6, space1);
 StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
+Texture2D<float> g_HZB : register(t8, space1);
 
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
+SamplerState g_MinReductionSampler : register(s2, space1);
 
 float3x3 MakeAdjugateMatrix(float4x4 m)
 {
@@ -121,6 +123,11 @@ void ASMain(
         else
         {
             bVisible = true;
+        }
+
+        if (bVisible && g_PerFrame.m_EnableOcclusionCulling)
+        {
+            bVisible &= OcclusionSphereTest(viewCenter, worldRadius, uint2(g_PerFrame.m_HZBWidth, g_PerFrame.m_HZBHeight), g_PerFrame.m_P00, g_PerFrame.m_P11, g_HZB, g_MinReductionSampler);
         }
 
         if (bVisible && g_PerFrame.m_EnableConeCulling)
