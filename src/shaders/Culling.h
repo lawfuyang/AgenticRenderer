@@ -56,8 +56,7 @@ void ProjectSphereView(
     aabb.zw = clamp(aabb.zw, -1, 1);
 
     // Clip space [-1,1] → UV space [0,1]
-    // note the lack of y flip due to Vulkan inverted viewport
-    aabb = aabb.xwzy * float4(0.5f, 0.5f, 0.5f, 0.5f) + float4(0.5f, 0.5f, 0.5f, 0.5f);
+    aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f, 0.5f, 0.5f, 0.5f);
 }
 
 bool OcclusionSphereTest(float3 center, float radius, uint2 HZBDims, float P00, float P11, Texture2D<float> hzb, SamplerState hzbSampler)

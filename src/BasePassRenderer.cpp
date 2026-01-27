@@ -176,7 +176,7 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     const uint32_t h = renderer->m_RHI.m_SwapchainExtent.height;
 
     nvrhi::ViewportState viewportState;
-    viewportState.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, (float)h, 0.0f, 0.0f, 1.0f));
+    viewportState.viewports.push_back(nvrhi::Viewport(0.0f, (float)w, 0.0f, (float)h, 0.0f, 1.0f));
     viewportState.scissorRects.resize(1);
     viewportState.scissorRects[0].minX = 0;
     viewportState.scissorRects[0].minY = 0;

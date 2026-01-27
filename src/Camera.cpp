@@ -152,10 +152,8 @@ Matrix Camera::GetProjMatrix() const
     float xScale = yScale / m_Proj.aspectRatio;
 
     Matrix m{};
-    m._11 = xScale;
-    // Negate X and Y scales for Vulkan to match DirectX Y-up convention and right-handed coordinates
-    m._11 = -xScale;
-    m._22 = -yScale;
+    m._11 = -xScale; // NOTE: i have no fucking idea why this needs to be negative, else the entire scene is mirrored on the x-axis
+    m._22 = yScale;
     m._33 = 0.0f;
     m._34 = 1.0f;
     m._43 = m_Proj.nearZ;

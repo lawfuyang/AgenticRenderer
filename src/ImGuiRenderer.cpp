@@ -178,9 +178,9 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     // ============================================================================
     // Viewport Setup
     // ============================================================================
-    // Set viewport (inverted Y for Vulkan)
+    // Set viewport
     state.viewport.viewports.push_back(
-        nvrhi::Viewport(0.0f, (float)fb_width, (float)fb_height, 0.0f, 0.0f, 1.0f));
+        nvrhi::Viewport(0.0f, (float)fb_width, 0.0f, (float)fb_height, 0.0f, 1.0f));
     state.viewport.scissorRects.resize(1);
 
     // Create graphics pipeline
@@ -201,9 +201,9 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     // Setup push constants for scale and translate
     ImGuiPushConstants pushConstants{};
     pushConstants.uScale.x = 2.0f / draw_data->DisplaySize.x;
-    pushConstants.uScale.y = 2.0f / draw_data->DisplaySize.y;
+    pushConstants.uScale.y = -2.0f / draw_data->DisplaySize.y;
     pushConstants.uTranslate.x = -1.0f - draw_data->DisplayPos.x * pushConstants.uScale.x;
-    pushConstants.uTranslate.y = -1.0f - draw_data->DisplayPos.y * pushConstants.uScale.y;
+    pushConstants.uTranslate.y = 1.0f - draw_data->DisplayPos.y * pushConstants.uScale.y;
 
     commandList->setPushConstants(&pushConstants, sizeof(pushConstants));
 
