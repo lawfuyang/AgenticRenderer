@@ -110,6 +110,12 @@ namespace
             return VK_FALSE;
         }
 
+        // vkCreateGraphicsPipelines(): pCreateInfos[0] The Mesh Shader has a TaskPayloadWorkgroupEXT variable, but the Task Shader never sets a TaskPayloadWorkgroupEXT variable in the call to OpEmitMeshTasksEXT.
+        if (pCallbackData->messageIdNumber == 1389982451)
+        {
+            return VK_FALSE;
+        }
+
         const char* severityStr = "";
         if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
             severityStr = "ERROR";
