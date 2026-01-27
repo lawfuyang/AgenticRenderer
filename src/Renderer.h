@@ -224,7 +224,7 @@ struct Renderer
     nvrhi::TextureHandle m_HZBTexture;
 
     // Use meshlet rendering path
-    bool m_UseMeshletRendering = false;
+    bool m_UseMeshletRendering = true;
 
     // Debug mode for forward lighting
     int m_DebugMode = 0;

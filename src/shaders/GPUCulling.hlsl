@@ -29,6 +29,9 @@ RWStructuredBuffer<uint> g_VisibleCount : register(u1);
 RWStructuredBuffer<uint> g_OccludedIndices : register(u2);
 RWStructuredBuffer<uint> g_OccludedCount : register(u3);
 RWStructuredBuffer<DispatchIndirectArguments> g_DispatchIndirectArgs : register(u4);
+RWStructuredBuffer<MeshletJob> g_MeshletJobs : register(u5);
+RWStructuredBuffer<uint> g_MeshletJobCount : register(u6);
+RWStructuredBuffer<DispatchIndirectArguments> g_MeshletIndirectArgs : register(u7);
 SamplerState g_MinReductionSampler : register(s0);
 
 // 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
@@ -88,7 +91,7 @@ bool OcclusionSphereTest(float3 center, float radius, uint2 HZBDims, float P00, 
     return depthSphere > depthHZB;
 }
 
-[numthreads(64, 1, 1)]
+[numthreads(kThreadsPerGroup, 1, 1)]
 void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
 	uint instanceIndex = dispatchThreadId.x;
@@ -127,17 +130,36 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Phase 2: Store visible instances for rendering newly tested visible instances against Phase 1 HZB
     if (isVisible)
     {
-        uint visibleIndex;
-        InterlockedAdd(g_VisibleCount[0], 1, visibleIndex);
+        if (g_Culling.m_UseMeshletRendering)
+        {
+            uint visibleIndex;
+            InterlockedAdd(g_MeshletJobCount[0], 1, visibleIndex);
 
-        DrawIndexedIndirectArguments args;
-        args.m_IndexCount = mesh.m_IndexCount;
-        args.m_InstanceCount = 1;
-        args.m_StartIndexLocation = mesh.m_IndexOffset;
-        args.m_BaseVertexLocation = 0;
-        args.m_StartInstanceLocation = actualInstanceIndex;
+            DispatchIndirectArguments args;
+            args.m_ThreadGroupCountX = DivideAndRoundUp(mesh.m_MeshletCount, kThreadsPerGroup);
+            args.m_ThreadGroupCountY = 1;
+            args.m_ThreadGroupCountZ = 1;
+            g_MeshletIndirectArgs[visibleIndex] = args;
 
-        g_VisibleArgs[visibleIndex] = args;
+            MeshletJob job;
+            job.m_InstanceIndex = actualInstanceIndex;
+            job.m_MeshletOffset = 0; // Not used in per-instance dispatch
+            g_MeshletJobs[visibleIndex] = job;
+        }
+        else
+        {
+            uint visibleIndex;
+            InterlockedAdd(g_VisibleCount[0], 1, visibleIndex);
+
+            DrawIndexedIndirectArguments args;
+            args.m_IndexCount = mesh.m_IndexCount;
+            args.m_InstanceCount = 1;
+            args.m_StartIndexLocation = mesh.m_IndexOffset;
+            args.m_BaseVertexLocation = 0;
+            args.m_StartInstanceLocation = actualInstanceIndex;
+
+            g_VisibleArgs[visibleIndex] = args;
+        }
     }
 
     if (g_Culling.m_Phase == 0)
@@ -155,7 +177,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 [numthreads(1, 1, 1)]
 void BuildIndirect_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    g_DispatchIndirectArgs[0].m_ThreadGroupCountX = (g_OccludedCount[0] + 63) / 64;
+    g_DispatchIndirectArgs[0].m_ThreadGroupCountX = DivideAndRoundUp(g_OccludedCount[0], kThreadsPerGroup);
     g_DispatchIndirectArgs[0].m_ThreadGroupCountY = 1;
     g_DispatchIndirectArgs[0].m_ThreadGroupCountZ = 1;
 }

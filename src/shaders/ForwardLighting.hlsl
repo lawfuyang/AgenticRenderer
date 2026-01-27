@@ -1,14 +1,9 @@
 #include "ShaderShared.h"
 #include "Culling.h"
 
-cbuffer PerFrameCB : register(b1, space1)
+cbuffer PerFrameCB : register(b0, space1)
 {
     ForwardLightingPerFrameData g_PerFrame;
-};
-
-cbuffer PerDrawCB : register(b0, space1)
-{
-    ForwardLightingPerDrawData g_PerDraw;
 };
 
 StructuredBuffer<PerInstanceData> g_Instances : register(t0, space1);
@@ -17,6 +12,8 @@ StructuredBuffer<Vertex> g_Vertices : register(t2, space1);
 StructuredBuffer<Meshlet> g_Meshlets : register(t3, space1);
 StructuredBuffer<uint> g_MeshletVertices : register(t4, space1);
 StructuredBuffer<uint> g_MeshletTriangles : register(t5, space1);
+StructuredBuffer<MeshletJob> g_MeshletJobs : register(t6, space1);
+StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
 
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
@@ -75,27 +72,40 @@ VSOut VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_StartInstanceLoca
 
 struct MeshPayload
 {
-    uint m_MeshletIndices[kAmplificationShaderThreadGroupSize];
+    uint m_InstanceIndex;
+    uint m_MeshletIndices[kThreadsPerGroup];
 };
 
 groupshared MeshPayload s_Payload;
 
-[numthreads(kAmplificationShaderThreadGroupSize, 1, 1)]
+[numthreads(kThreadsPerGroup, 1, 1)]
 void ASMain(
     uint3 dispatchThreadID : SV_DispatchThreadID,
     uint3 groupThreadID : SV_GroupThreadID,
     uint3 groupId : SV_GroupID,
-    uint groupIndex : SV_GroupIndex
+    uint groupIndex : SV_GroupIndex,
+    [[vk::builtin("DrawIndex")]] uint drawIndex : DRAW_INDEX
 )
 {
+    MeshletJob job = g_MeshletJobs[drawIndex];
+    uint instanceIndex = job.m_InstanceIndex;
+    uint meshletOffset = groupId.x * kThreadsPerGroup;
+
+    if (groupThreadID.x == 0)
+    {
+        s_Payload.m_InstanceIndex = instanceIndex;
+    }
+
     bool bVisible = false;
 
-    uint meshletIndex = dispatchThreadID.x;
-    if (meshletIndex < g_PerDraw.m_MeshletCount)
+    uint meshletIndex = meshletOffset + groupThreadID.x;
+    PerInstanceData inst = g_Instances[instanceIndex];
+    MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
+
+    if (meshletIndex < mesh.m_MeshletCount)
     {
-        uint absoluteMeshletIndex = g_PerDraw.m_MeshletOffset + meshletIndex;
+        uint absoluteMeshletIndex = mesh.m_MeshletOffset + meshletIndex;
         Meshlet m = g_Meshlets[absoluteMeshletIndex];
-        PerInstanceData inst = g_Instances[g_PerDraw.m_InstanceIndex];
 
         // Transform meshlet sphere to world space, then to view space
         float4 worldCenter = mul(float4(m.m_Center, 1.0f), inst.m_World);
@@ -131,12 +141,12 @@ void ASMain(
                 bVisible = false;
             }
         }
-    }
 
-    if (bVisible)
-    {
-        uint payloadIdx = WavePrefixCountBits(bVisible);
-        s_Payload.m_MeshletIndices[payloadIdx] = g_PerDraw.m_MeshletOffset + meshletIndex;
+        if (bVisible)
+        {
+            uint payloadIdx = WavePrefixCountBits(bVisible);
+            s_Payload.m_MeshletIndices[payloadIdx] = absoluteMeshletIndex;
+        }
     }
 
     uint numVisible = WaveActiveCountBits(bVisible);
@@ -156,6 +166,7 @@ void MSMain(
 )
 {
     uint meshletIndex = payload.m_MeshletIndices[groupId.x];
+    uint instanceIndex = payload.m_InstanceIndex;
     uint outputIdx = groupThreadID.x;
 
     Meshlet m = g_Meshlets[meshletIndex];
@@ -167,8 +178,8 @@ void MSMain(
         uint vertexIndex = g_MeshletVertices[m.m_VertexOffset + outputIdx];
         Vertex v = g_Vertices[vertexIndex];
         
-        PerInstanceData inst = g_Instances[g_PerDraw.m_InstanceIndex];
-        vout[outputIdx] = PrepareVSOut(v, inst, g_PerDraw.m_InstanceIndex, meshletIndex);
+        PerInstanceData inst = g_Instances[instanceIndex];
+        vout[outputIdx] = PrepareVSOut(v, inst, instanceIndex, meshletIndex);
     }
     
     if (outputIdx < m.m_TriangleCount)

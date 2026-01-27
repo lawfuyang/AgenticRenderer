@@ -119,6 +119,7 @@ public:
     std::vector<Light> m_Lights;
 
     DirectionalLight m_DirectionalLight;
+    uint32_t m_TotalMeshlets = 0;
 
     // GPU buffers created for the scene
     nvrhi::BufferHandle m_VertexBuffer;

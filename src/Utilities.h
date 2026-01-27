@@ -12,11 +12,6 @@ static constexpr uint32_t NextLowerPow2(uint32_t v)
     return v - (v >> 1);
 }
 
-static constexpr uint32_t DivideAndRoundUp(uint32_t dividend, uint32_t divisor)
-{
-    return (dividend + divisor - 1) / divisor;
-}
-
 struct SimpleTimer
 {
     uint64_t freq = SDL_GetPerformanceFrequency();

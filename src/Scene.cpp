@@ -319,9 +319,9 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 			.setByteSize(materialConstants.size() * sizeof(MaterialConstants))
 			.setStructStride(sizeof(MaterialConstants))
 			.setInitialState(nvrhi::ResourceStates::ShaderResource)
-			.setKeepInitialState(true);
+			.setKeepInitialState(true)
+			.setDebugName("MaterialConstantsBuffer");
 		scene.m_MaterialConstantsBuffer = renderer->m_NvrhiDevice->createBuffer(matBufDesc);
-		renderer->m_RHI.SetDebugName(scene.m_MaterialConstantsBuffer, "MaterialConstantsBuffer");
 
 		ScopedCommandList cmd{ "Upload MaterialConstants" };
 		cmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(MaterialConstants));
@@ -741,8 +741,8 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.structStride = sizeof(Vertex);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_VertexBuffer";
 		scene.m_VertexBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_VertexBuffer, "Scene_VertexBuffer");
 	}
 
 	if (ibytes > 0)
@@ -752,8 +752,8 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.isIndexBuffer = true;
 		desc.initialState = nvrhi::ResourceStates::IndexBuffer;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_IndexBuffer";
 		scene.m_IndexBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_IndexBuffer, "Scene_IndexBuffer");
 	}
 
 	if (scene.m_VertexBuffer || scene.m_IndexBuffer)
@@ -773,8 +773,8 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.structStride = sizeof(MeshData);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_MeshDataBuffer";
 		scene.m_MeshDataBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_MeshDataBuffer, "Scene_MeshDataBuffer");
 
 		ScopedCommandList cmd{ "Upload Mesh Data" };
 		cmd->writeBuffer(scene.m_MeshDataBuffer, scene.m_MeshData.data(), scene.m_MeshData.size() * sizeof(MeshData), 0);
@@ -790,7 +790,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_MeshletBuffer";
 		scene.m_MeshletBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_MeshletBuffer, "Scene_MeshletBuffer");
 
 		ScopedCommandList cmd{ "Upload Meshlets" };
 		cmd->writeBuffer(scene.m_MeshletBuffer, scene.m_Meshlets.data(), scene.m_Meshlets.size() * sizeof(Meshlet), 0);
@@ -805,7 +804,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_MeshletVerticesBuffer";
 		scene.m_MeshletVerticesBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_MeshletVerticesBuffer, "Scene_MeshletVerticesBuffer");
 
 		ScopedCommandList cmd{ "Upload Meshlet Vertices" };
 		cmd->writeBuffer(scene.m_MeshletVerticesBuffer, scene.m_MeshletVertices.data(), scene.m_MeshletVertices.size() * sizeof(uint32_t), 0);
@@ -820,7 +818,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_MeshletTrianglesBuffer";
 		scene.m_MeshletTrianglesBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_MeshletTrianglesBuffer, "Scene_MeshletTrianglesBuffer");
 
 		ScopedCommandList cmd{ "Upload Meshlet Triangles" };
 		cmd->writeBuffer(scene.m_MeshletTrianglesBuffer, scene.m_MeshletTriangles.data(), scene.m_MeshletTriangles.size() * sizeof(uint32_t), 0);
@@ -834,8 +831,8 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.structStride = sizeof(PerInstanceData);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
+		desc.debugName = "Scene_InstanceDataBuffer";
 		scene.m_InstanceDataBuffer = renderer->m_NvrhiDevice->createBuffer(desc);
-		renderer->m_RHI.SetDebugName(scene.m_InstanceDataBuffer, "Scene_InstanceDataBuffer");
 	}
 
 	// Upload instance data
@@ -911,6 +908,7 @@ bool Scene::LoadScene()
 
 	// Fill instance data
 	m_InstanceData.clear();
+	m_TotalMeshlets = 0;
 	for (const Scene::Node& node : m_Nodes)
 	{
 		if (node.m_MeshIndex < 0) continue;
@@ -924,6 +922,8 @@ bool Scene::LoadScene()
 			inst.m_Center = node.m_Center;
 			inst.m_Radius = node.m_Radius;
 			m_InstanceData.push_back(inst);
+
+			m_TotalMeshlets += m_MeshData[inst.m_MeshDataIndex].m_MeshletCount;
 		}
 	}
 

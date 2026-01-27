@@ -62,15 +62,6 @@ struct ForwardLightingPerFrameData
   uint32_t pad2;
 };
 
-struct ForwardLightingPerDrawData
-{
-  uint32_t m_InstanceIndex;
-  uint32_t m_MeshletOffset;
-  uint32_t m_MeshletCount;
-  uint32_t m_MeshletVerticesOffset;
-  uint32_t m_MeshletTrianglesOffset;
-};
-
 // Material constants (persistent, per-material data)
 struct MaterialConstants
 {
@@ -107,6 +98,12 @@ struct Meshlet
   uint32_t m_TriangleCount;
   uint32_t m_ConeAxisAndCutoff;
   Vector3 pad0;
+};
+
+struct MeshletJob
+{
+  uint32_t m_InstanceIndex;
+  uint32_t m_MeshletOffset;
 };
 
 // Per-instance data for instanced rendering
@@ -147,6 +144,7 @@ struct CullingConstants
   uint32_t m_HZBWidth;
   uint32_t m_HZBHeight;
   uint32_t m_Phase; // 0 = Phase 1 (test all against HZB), 1 = Phase 2 (test occluded against new HZB)
+  uint32_t m_UseMeshletRendering;
   float m_P00;
   float m_P11;
 };
@@ -171,10 +169,22 @@ struct SpdConstants
   Vector2U m_WorkGroupOffset;
 };
 
+#ifdef __cplusplus
+inline uint32_t DivideAndRoundUp(uint32_t dividend, uint32_t divisor)
+{
+    return (dividend + divisor - 1) / divisor;
+}
+#else
+uint32_t DivideAndRoundUp(uint32_t dividend, uint32_t divisor)
+{
+    return (dividend + divisor - 1) / divisor;
+}
+#endif
+
 static const float PI = 3.14159265359f;
+static const uint32_t kThreadsPerGroup = 32;
 static const uint32_t kMaxMeshletVertices = 64;
 static const uint32_t kMaxMeshletTriangles = 96;
-static const uint32_t kAmplificationShaderThreadGroupSize = 32;
 
 #define TEXFLAG_ALBEDO (1u << 0)
 #define TEXFLAG_NORMAL (1u << 1)

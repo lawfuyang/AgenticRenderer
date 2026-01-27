@@ -1054,8 +1054,6 @@ bool Renderer::CreateSwapchainTextures()
         }
 
         m_SwapchainTextures[i] = texture;
-        // Assign debug name to underlying Vulkan objects
-        m_RHI.SetDebugName(texture, textureDesc.debugName);
     }
 
     // Create a depth texture for the main framebuffer
@@ -1074,7 +1072,6 @@ bool Renderer::CreateSwapchainTextures()
         SDL_LOG_ASSERT_FAIL("Failed to create depth texture", "[Init] Failed to create depth texture");
         return false;
     }
-    m_RHI.SetDebugName(m_DepthTexture, depthDesc.debugName);
 
     SDL_Log("[Init] Created %u NVRHI swap chain texture handles", GraphicRHI::SwapchainImageCount);
     return true;
@@ -1127,7 +1124,6 @@ bool Renderer::CreateHZBTextures()
         SDL_LOG_ASSERT_FAIL("Failed to create HZB texture", "[Init] Failed to create HZB texture");
         return false;
     }
-    m_RHI.SetDebugName(m_HZBTexture, hzbDesc.debugName);
 
     // Create atomic counter buffer for SPD
     nvrhi::BufferDesc counterDesc;
