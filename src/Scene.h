@@ -36,14 +36,10 @@ public:
         int m_MeshIndex = -1;
         int m_Parent = -1;
         std::vector<int> m_Children;
-        // local transform
         Matrix m_LocalTransform{};
-        // world transform (computed)
         Matrix m_WorldTransform{};
-        // world sphere
         Vector3 m_Center{};
         float m_Radius{};
-        // Camera/Light indices
         int m_CameraIndex = -1;
         int m_LightIndex = -1;
     };
@@ -59,11 +55,10 @@ public:
         int m_EmissiveTexture = -1;
         float m_RoughnessFactor = 1.0f;
         float m_MetallicFactor = 0.0f;
-        // Bindless indices
-        uint32_t m_AlbedoTextureIndex = 1; // DEFAULT_TEXTURE_WHITE
-        uint32_t m_NormalTextureIndex = 3; // DEFAULT_TEXTURE_NORMAL
-        uint32_t m_RoughnessMetallicTextureIndex = 4; // DEFAULT_TEXTURE_PBR
-        uint32_t m_EmissiveTextureIndex = 0; // DEFAULT_TEXTURE_BLACK
+        uint32_t m_AlbedoTextureIndex = DEFAULT_TEXTURE_WHITE;
+        uint32_t m_NormalTextureIndex = DEFAULT_TEXTURE_NORMAL;
+        uint32_t m_RoughnessMetallicTextureIndex = DEFAULT_TEXTURE_PBR;
+        uint32_t m_EmissiveTextureIndex = DEFAULT_TEXTURE_BLACK;
     };
 
     struct Texture
@@ -71,7 +66,6 @@ public:
         std::string m_Uri;
         nvrhi::TextureHandle m_Handle;
         uint32_t m_BindlessIndex = UINT32_MAX;
-        // Sampler preference mapped from glTF: 0 = Clamp, 1 = Wrap
         enum SamplerType
         {
             Clamp = 0,
@@ -99,7 +93,6 @@ public:
         // Spot
         float m_SpotInnerConeAngle = 0.0f;
         float m_SpotOuterConeAngle = DirectX::XM_PIDIV4; // 45deg
-        // Associated node index for transform
         int m_NodeIndex = -1;
     };
 
