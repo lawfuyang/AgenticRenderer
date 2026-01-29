@@ -30,11 +30,6 @@ float3x3 MakeAdjugateMatrix(float4x4 m)
 	);
 }
 
-float GetMaxScale(float4x4 m)
-{
-    return max(length(m[0].xyz), max(length(m[1].xyz), length(m[2].xyz)));
-}
-
 float3 TransformNormal(float3 normal, float4x4 worldMatrix)
 {
     float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(worldMatrix);
@@ -49,9 +44,10 @@ struct VSOut
     float3 worldPos : TEXCOORD1;
     nointerpolation uint instanceID : TEXCOORD2;
     nointerpolation uint meshletID : TEXCOORD3;
+    nointerpolation uint lodIndex : TEXCOORD4;
 };
 
-VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshletID)
+VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshletID, uint lodIndex)
 {
     VSOut o;
     float4 worldPos = mul(float4(v.m_Pos, 1.0f), inst.m_World);
@@ -62,6 +58,7 @@ VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshlet
     o.worldPos = worldPos.xyz;
     o.instanceID = instanceID;
     o.meshletID = meshletID;
+    o.lodIndex = lodIndex;
     return o;
 }
 
@@ -69,12 +66,13 @@ VSOut VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_StartInstanceLoca
 {
     PerInstanceData inst = g_Instances[instanceID];
     Vertex v = g_Vertices[vertexID];
-    return PrepareVSOut(v, inst, instanceID, 0xFFFFFFFF);
+    return PrepareVSOut(v, inst, instanceID, 0xFFFFFFFF, 0);
 }
 
 struct MeshPayload
 {
     uint m_InstanceIndex;
+    uint m_LODIndex;
     uint m_MeshletIndices[kThreadsPerGroup];
 };
 
@@ -91,11 +89,13 @@ void ASMain(
 {
     MeshletJob job = g_MeshletJobs[drawIndex];
     uint instanceIndex = job.m_InstanceIndex;
+    uint lodIndex = job.m_LODIndex;
     uint meshletOffset = groupId.x * kThreadsPerGroup;
 
     if (groupThreadID.x == 0)
     {
         s_Payload.m_InstanceIndex = instanceIndex;
+        s_Payload.m_LODIndex = lodIndex;
     }
 
     bool bVisible = false;
@@ -104,9 +104,9 @@ void ASMain(
     PerInstanceData inst = g_Instances[instanceIndex];
     MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
-    if (meshletIndex < mesh.m_MeshletCount)
+    if (meshletIndex < mesh.m_MeshletCounts[lodIndex])
     {
-        uint absoluteMeshletIndex = mesh.m_MeshletOffset + meshletIndex;
+        uint absoluteMeshletIndex = mesh.m_MeshletOffsets[lodIndex] + meshletIndex;
         Meshlet m = g_Meshlets[absoluteMeshletIndex];
 
         // Transform meshlet sphere to world space, then to view space
@@ -186,7 +186,7 @@ void MSMain(
         Vertex v = g_Vertices[vertexIndex];
         
         PerInstanceData inst = g_Instances[instanceIndex];
-        vout[outputIdx] = PrepareVSOut(v, inst, instanceIndex, meshletIndex);
+        vout[outputIdx] = PrepareVSOut(v, inst, instanceIndex, meshletIndex, payload.m_LODIndex);
     }
     
     if (outputIdx < m.m_TriangleCount)
@@ -426,6 +426,20 @@ float4 PSMain(VSOut input) : SV_TARGET
             return float4(metallic.xxx, 1.0f);
         if (g_PerFrame.m_DebugMode == DEBUG_MODE_EMISSIVE)
             return float4(emissive, 1.0f);
+        if (g_PerFrame.m_DebugMode == DEBUG_MODE_LOD)
+        {
+            float3 lodColors[] = {
+                float3(0.0, 1.0, 0.0), // 0: Green
+                float3(1.0, 0.0, 0.0), // 1: Red
+                float3(0.0, 1.0, 1.0), // 2: Cyan
+                float3(1.0, 0.0, 1.0), // 3: Magenta
+                float3(1.0, 1.0, 0.0), // 4: Yellow
+                float3(0.0, 0.0, 1.0), // 5: Blue
+                float3(0.5, 0.0, 0.0), // 6: Dark Red
+                float3(0.0, 0.5, 0.0)  // 7: Dark Green
+            };
+            return float4(lodColors[min(input.lodIndex, 7)], 1.0f);
+        }
     }
 
     return float4(color, alpha);

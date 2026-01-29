@@ -73,20 +73,42 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Phase 2: Store visible instances for rendering newly tested visible instances against Phase 1 HZB
     if (isVisible)
     {
+        uint lodIndex = 0;
+        if (g_Culling.m_ForcedLOD != -1)
+        {
+            lodIndex = (uint)clamp(g_Culling.m_ForcedLOD, 0, (int)mesh.m_LODCount - 1);
+        }
+        else
+        {
+            float d = max(length(sphereViewCenter), 1e-5);
+            float targetPixelError = 2.0f;
+            float worldScale = GetMaxScale(inst.m_World);
+
+            for (uint i = 0; i < mesh.m_LODCount; ++i)
+            {
+                float error = mesh.m_LODErrors[i] * worldScale;
+                float projectedError = error * g_Culling.m_P11 * (float)g_Culling.m_HZBHeight / d;
+                if (projectedError <= targetPixelError)
+                {
+                    lodIndex = i;
+                }
+            }
+        }
+
         if (g_Culling.m_UseMeshletRendering)
         {
             uint visibleIndex;
             InterlockedAdd(g_MeshletJobCount[0], 1, visibleIndex);
 
             DispatchIndirectArguments args;
-            args.m_ThreadGroupCountX = DivideAndRoundUp(mesh.m_MeshletCount, kThreadsPerGroup);
+            args.m_ThreadGroupCountX = DivideAndRoundUp(mesh.m_MeshletCounts[lodIndex], kThreadsPerGroup);
             args.m_ThreadGroupCountY = 1;
             args.m_ThreadGroupCountZ = 1;
             g_MeshletIndirectArgs[visibleIndex] = args;
 
             MeshletJob job;
             job.m_InstanceIndex = actualInstanceIndex;
-            job.m_MeshletOffset = 0; // Not used in per-instance dispatch
+            job.m_LODIndex = lodIndex;
             g_MeshletJobs[visibleIndex] = job;
         }
         else
@@ -95,9 +117,9 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
             InterlockedAdd(g_VisibleCount[0], 1, visibleIndex);
 
             DrawIndexedIndirectArguments args;
-            args.m_IndexCount = mesh.m_IndexCount;
+            args.m_IndexCount = mesh.m_IndexCounts[lodIndex];
             args.m_InstanceCount = 1;
-            args.m_StartIndexLocation = mesh.m_IndexOffset;
+            args.m_StartIndexLocation = mesh.m_IndexOffsets[lodIndex];
             args.m_BaseVertexLocation = 0;
             args.m_StartInstanceLocation = actualInstanceIndex;
 

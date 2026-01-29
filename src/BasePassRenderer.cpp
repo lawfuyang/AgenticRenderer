@@ -88,6 +88,7 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
     cullData.m_UseMeshletRendering = renderer->m_UseMeshletRendering ? 1 : 0;
     cullData.m_P00 = proj.m[0][0];
     cullData.m_P11 = proj.m[1][1];
+    cullData.m_ForcedLOD = renderer->m_ForcedLOD;
     commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
 
     nvrhi::BindingSetDesc cullBset;

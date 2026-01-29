@@ -14,10 +14,12 @@ public:
     {
         uint32_t m_VertexOffset = 0;
         uint32_t m_VertexCount = 0;
-        uint32_t m_IndexOffset = 0;
-        uint32_t m_IndexCount = 0;
-        uint32_t m_MeshletOffset = 0;
-        uint32_t m_MeshletCount = 0;
+        uint32_t m_LODCount = 0;
+        uint32_t m_IndexOffsets[MAX_LOD_COUNT] = {0};
+        uint32_t m_IndexCounts[MAX_LOD_COUNT] = {0};
+        uint32_t m_MeshletOffsets[MAX_LOD_COUNT] = {0};
+        uint32_t m_MeshletCounts[MAX_LOD_COUNT] = {0};
+        float m_LODErrors[MAX_LOD_COUNT] = { 0.0f };
         int m_MaterialIndex = -1;
         uint32_t m_MeshDataIndex = 0;
     };
@@ -112,7 +114,6 @@ public:
     std::vector<Light> m_Lights;
 
     DirectionalLight m_DirectionalLight;
-    uint32_t m_TotalMeshlets = 0;
 
     // GPU buffers created for the scene
     nvrhi::BufferHandle m_VertexBuffer;

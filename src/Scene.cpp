@@ -424,6 +424,8 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 			p.m_VertexOffset = static_cast<uint32_t>(outVertices.size());
 			p.m_VertexCount = static_cast<uint32_t>(vertCount);
 
+			SDL_Log("[Scene] Processing Mesh %zu, Primitive %zu: %u vertices", mi, pi, p.m_VertexCount);
+
 			for (cgltf_size v = 0; v < vertCount; ++v)
 			{
 				Vertex vx{};
@@ -451,12 +453,12 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 				outVertices.push_back(vx);
 			}
 
-			p.m_IndexOffset = static_cast<uint32_t>(outIndices.size());
-			p.m_IndexCount = 0;
+			uint32_t baseIndexOffset = static_cast<uint32_t>(outIndices.size());
+			uint32_t baseIndexCount = 0;
 			if (prim.indices)
 			{
 				const cgltf_size idxCount = prim.indices->count;
-				p.m_IndexCount = static_cast<uint32_t>(idxCount);
+				baseIndexCount = static_cast<uint32_t>(idxCount);
 				for (cgltf_size k = 0; k < idxCount; ++k)
 				{
 					const cgltf_size rawIdx = cgltf_accessor_read_index(prim.indices, k);
@@ -465,86 +467,144 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 				}
 			}
 
-			// Generate meshlets
-			if (p.m_IndexCount > 0)
+			// Generate meshlets and LODs
+			if (baseIndexCount > 0)
 			{
 				const size_t max_vertices = kMaxMeshletVertices;
 				const size_t max_triangles = kMaxMeshletTriangles;
 				const float cone_weight = 0.25f;
+				
+				const uint32_t kIndexLimitForLODGeneration = 1024;
+				const float kIndexReductionPercentageForLODGeneration = 0.5f;
+				const size_t kMinimumIndicesForLODGeneration = 128;
+
+				const float target_error_hq = 0.01f;     // Conservative HQ error
+				const float kMaxErrorForLODGeneration = 0.10f; // Limit maximum allowed distortion
+				const float kMinReductionRatio = 0.85f;  // Require at least 15% reduction to keep the LOD
+				
+				const float attribute_weights[3] = { 1.0f, 1.0f, 1.0f }; // Normal weights
 
 				// We need indices relative to primitive's vertex start
-				std::vector<uint32_t> localIndices(p.m_IndexCount);
-				for (uint32_t i = 0; i < p.m_IndexCount; ++i)
+				std::vector<uint32_t> localIndices(baseIndexCount);
+				for (uint32_t i = 0; i < baseIndexCount; ++i)
 				{
-					localIndices[i] = outIndices[p.m_IndexOffset + i] - p.m_VertexOffset;
+					localIndices[i] = outIndices[baseIndexOffset + i] - p.m_VertexOffset;
 				}
 
-				size_t max_meshlets = meshopt_buildMeshletsBound(p.m_IndexCount, max_vertices, max_triangles);
-				std::vector<meshopt_Meshlet> localMeshlets(max_meshlets);
-				std::vector<unsigned int> meshlet_vertices(max_meshlets * max_vertices);
-				std::vector<unsigned char> meshlet_triangles(max_meshlets * max_triangles * 3);
+				const float simplifyScale = meshopt_simplifyScale(&outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex));
 
-				const size_t meshlet_count = meshopt_buildMeshlets(localMeshlets.data(), meshlet_vertices.data(), meshlet_triangles.data(),
-					localIndices.data(), p.m_IndexCount, &outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex),
-					max_vertices, max_triangles, cone_weight);
-
-				localMeshlets.resize(meshlet_count);
-
-				p.m_MeshletOffset = (uint32_t)scene.m_Meshlets.size();
-				p.m_MeshletCount = (uint32_t)meshlet_count;
-
-				for (size_t i = 0; i < meshlet_count; ++i)
+				for (uint32_t lod = 0; lod < MAX_LOD_COUNT; ++lod)
 				{
-					const meshopt_Meshlet& m = localMeshlets[i];
+					std::vector<uint32_t> lodIndices;
+					float lodError = 0.0f;
 
-					// Optimization
-					meshopt_optimizeMeshlet(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset], m.triangle_count, m.vertex_count);
-
-					// Bounds
-					meshopt_Bounds bounds = meshopt_computeMeshletBounds(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset],
-						m.triangle_count, &outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex));
-
-					SDL_assert(m.vertex_count <= UINT8_MAX);
-					SDL_assert(m.triangle_count <= UINT8_MAX);
-					SDL_assert(bounds.cone_cutoff_s8 <= (UINT8_MAX / 2));
-
-					Meshlet gpuMeshlet;
-					gpuMeshlet.m_VertexOffset = (uint32_t)(scene.m_MeshletVertices.size());
-					gpuMeshlet.m_TriangleOffset = (uint32_t)(scene.m_MeshletTriangles.size());
-					gpuMeshlet.m_VertexCount = (uint32_t)m.vertex_count;
-					gpuMeshlet.m_TriangleCount = (uint32_t)m.triangle_count;
-
-					gpuMeshlet.m_Center = { bounds.center[0], bounds.center[1], bounds.center[2] };
-					gpuMeshlet.m_Radius = bounds.radius;
-
-					const uint32_t packedAxisX = (uint32_t)((bounds.cone_axis[0] + 1.0f) * 0.5f * UINT8_MAX);
-					const uint32_t packedAxisY = (uint32_t)((bounds.cone_axis[1] + 1.0f) * 0.5f * UINT8_MAX);
-					const uint32_t packedAxisZ = (uint32_t)((bounds.cone_axis[2] + 1.0f) * 0.5f * UINT8_MAX);
-					const uint32_t packedCutoff = (uint32_t)(bounds.cone_cutoff_s8 * 2);
-
-					SDL_assert(packedAxisX <= UINT8_MAX);
-					SDL_assert(packedAxisY <= UINT8_MAX);
-					SDL_assert(packedAxisZ <= UINT8_MAX);
-					SDL_assert(packedCutoff <= UINT8_MAX);
-
-					gpuMeshlet.m_ConeAxisAndCutoff = packedAxisX | (packedAxisY << 8) | (packedAxisZ << 16) | (packedCutoff << 24);
-
-					// Add vertices (adjust to global offset)
-					for (uint32_t v = 0; v < m.vertex_count; ++v)
+					if (lod == 0)
 					{
-						scene.m_MeshletVertices.push_back(meshlet_vertices[m.vertex_offset + v] + p.m_VertexOffset);
+						lodIndices = localIndices;
+						lodError = 0.0f;
+					}
+					else
+					{
+						// Skip LOD generation for simple/low-poly meshes
+						if (baseIndexCount < kIndexLimitForLODGeneration)
+							break;
+
+						size_t target_index_count = size_t(baseIndexCount * pow(kIndexReductionPercentageForLODGeneration, (float)lod));
+						target_index_count = std::max(target_index_count, kMinimumIndicesForLODGeneration);
+
+						if (target_index_count >= p.m_IndexCounts[lod - 1])
+							break;
+
+						lodIndices.resize(baseIndexCount);
+						size_t new_index_count = meshopt_simplifyWithAttributes(
+							lodIndices.data(),
+							localIndices.data(), baseIndexCount,
+							&outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex),
+							&outVertices[p.m_VertexOffset].m_Normal.x, sizeof(Vertex),
+							attribute_weights, 3,
+							nullptr, target_index_count, target_error_hq, 0, &lodError);
+						lodIndices.resize(new_index_count);
+
+						// Stop if we reached the target index count
+						if (new_index_count < kIndexLimitForLODGeneration)
+							break;
+
+						// Stop if simplification didn't reduce the mesh significantly or reached a high error
+						if (new_index_count >= p.m_IndexCounts[lod - 1] * kMinReductionRatio || lodError > kMaxErrorForLODGeneration)
+							break;
 					}
 
-					// Add triangles (packed: 3 indices per uint32_t)
-					for (uint32_t t = 0; t < m.triangle_count; ++t)
+					p.m_IndexOffsets[lod] = (uint32_t)outIndices.size();
+					p.m_IndexCounts[lod] = (uint32_t)lodIndices.size();
+					p.m_LODErrors[lod] = lodError * simplifyScale;
+
+					for (uint32_t idx : lodIndices)
 					{
-						uint32_t i0 = meshlet_triangles[m.triangle_offset + t * 3 + 0];
-						uint32_t i1 = meshlet_triangles[m.triangle_offset + t * 3 + 1];
-						uint32_t i2 = meshlet_triangles[m.triangle_offset + t * 3 + 2];
-						scene.m_MeshletTriangles.push_back(i0 | (i1 << 8) | (i2 << 16));
+						outIndices.push_back(idx + p.m_VertexOffset);
 					}
 
-					scene.m_Meshlets.push_back(gpuMeshlet);
+					size_t max_meshlets = meshopt_buildMeshletsBound(lodIndices.size(), max_vertices, max_triangles);
+					std::vector<meshopt_Meshlet> localMeshlets(max_meshlets);
+					std::vector<unsigned int> meshlet_vertices(max_meshlets * max_vertices);
+					std::vector<unsigned char> meshlet_triangles(max_meshlets * max_triangles * 3);
+
+					const size_t meshlet_count = meshopt_buildMeshlets(localMeshlets.data(), meshlet_vertices.data(), meshlet_triangles.data(),
+						lodIndices.data(), lodIndices.size(), &outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex),
+						max_vertices, max_triangles, cone_weight);
+
+					localMeshlets.resize(meshlet_count);
+
+					p.m_MeshletOffsets[lod] = (uint32_t)scene.m_Meshlets.size();
+					p.m_MeshletCounts[lod] = (uint32_t)meshlet_count;
+					p.m_LODCount = lod + 1;
+
+					SDL_Log("[Scene]   LOD %u: Indices %u, Meshlets %zu, Error %.6f (Abs: %.6f)",
+						lod, p.m_IndexCounts[lod], meshlet_count, lodError, p.m_LODErrors[lod]);
+
+					for (size_t i = 0; i < meshlet_count; ++i)
+					{
+						const meshopt_Meshlet& m = localMeshlets[i];
+
+						// Optimization
+						meshopt_optimizeMeshlet(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset], m.triangle_count, m.vertex_count);
+
+						// Bounds
+						meshopt_Bounds bounds = meshopt_computeMeshletBounds(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset],
+							m.triangle_count, &outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex));
+
+						Meshlet gpuMeshlet;
+						gpuMeshlet.m_VertexOffset = (uint32_t)(scene.m_MeshletVertices.size());
+						gpuMeshlet.m_TriangleOffset = (uint32_t)(scene.m_MeshletTriangles.size());
+						gpuMeshlet.m_VertexCount = (uint32_t)m.vertex_count;
+						gpuMeshlet.m_TriangleCount = (uint32_t)m.triangle_count;
+
+						gpuMeshlet.m_Center = { bounds.center[0], bounds.center[1], bounds.center[2] };
+						gpuMeshlet.m_Radius = bounds.radius;
+
+						const uint32_t packedAxisX = (uint32_t)((bounds.cone_axis[0] + 1.0f) * 0.5f * UINT8_MAX);
+						const uint32_t packedAxisY = (uint32_t)((bounds.cone_axis[1] + 1.0f) * 0.5f * UINT8_MAX);
+						const uint32_t packedAxisZ = (uint32_t)((bounds.cone_axis[2] + 1.0f) * 0.5f * UINT8_MAX);
+						const uint32_t packedCutoff = (uint32_t)(bounds.cone_cutoff_s8 * 2);
+
+						gpuMeshlet.m_ConeAxisAndCutoff = packedAxisX | (packedAxisY << 8) | (packedAxisZ << 16) | (packedCutoff << 24);
+
+						// Add vertices (adjust to global offset)
+						for (uint32_t v = 0; v < m.vertex_count; ++v)
+						{
+							scene.m_MeshletVertices.push_back(meshlet_vertices[m.vertex_offset + v] + p.m_VertexOffset);
+						}
+
+						// Add triangles (packed: 3 indices per uint32_t)
+						for (uint32_t t = 0; t < m.triangle_count; ++t)
+						{
+							uint32_t i0 = meshlet_triangles[m.triangle_offset + t * 3 + 0];
+							uint32_t i1 = meshlet_triangles[m.triangle_offset + t * 3 + 1];
+							uint32_t i2 = meshlet_triangles[m.triangle_offset + t * 3 + 2];
+							scene.m_MeshletTriangles.push_back(i0 | (i1 << 8) | (i2 << 16));
+						}
+
+						scene.m_Meshlets.push_back(gpuMeshlet);
+					}
 				}
 			}
 
@@ -554,14 +614,19 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 			p.m_MeshDataIndex = (uint32_t)scene.m_MeshData.size();
 			mesh.m_Primitives.push_back(p);
 
-			MeshData md;
-			md.m_IndexOffset = p.m_IndexOffset;
-			md.m_IndexCount = p.m_IndexCount;
-			md.m_MeshletOffset = p.m_MeshletOffset;
-			md.m_MeshletCount = p.m_MeshletCount;
+			MeshData md{};
+			md.m_LODCount = p.m_LODCount;
+			for (uint32_t lod = 0; lod < p.m_LODCount; ++lod)
+			{
+				md.m_IndexOffsets[lod] = p.m_IndexOffsets[lod];
+				md.m_IndexCounts[lod] = p.m_IndexCounts[lod];
+				md.m_MeshletOffsets[lod] = p.m_MeshletOffsets[lod];
+				md.m_MeshletCounts[lod] = p.m_MeshletCounts[lod];
+				md.m_LODErrors[lod] = p.m_LODErrors[lod];
+			}
 			scene.m_MeshData.push_back(md);
 
-			SDL_Log("  Primitive %zu: %u verts, %u indices -> %u meshlets", pi, p.m_VertexCount, p.m_IndexCount, p.m_MeshletCount);
+			SDL_Log("  Primitive %zu: %u verts, %u indices -> %u LODs", pi, p.m_VertexCount, p.m_IndexCounts[0], p.m_LODCount);
 		}
 
 		Sphere s;
@@ -908,7 +973,6 @@ bool Scene::LoadScene()
 
 	// Fill instance data
 	m_InstanceData.clear();
-	m_TotalMeshlets = 0;
 	for (const Scene::Node& node : m_Nodes)
 	{
 		if (node.m_MeshIndex < 0) continue;
@@ -922,8 +986,6 @@ bool Scene::LoadScene()
 			inst.m_Center = node.m_Center;
 			inst.m_Radius = node.m_Radius;
 			m_InstanceData.push_back(inst);
-
-			m_TotalMeshlets += m_MeshData[inst.m_MeshDataIndex].m_MeshletCount;
 		}
 	}
 

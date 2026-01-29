@@ -36,6 +36,9 @@ struct ImGuiPushConstants
 #define DEBUG_MODE_ROUGHNESS 5
 #define DEBUG_MODE_METALLIC 6
 #define DEBUG_MODE_EMISSIVE 7
+#define DEBUG_MODE_LOD 8
+
+#define MAX_LOD_COUNT 8
 
 // Forward-lighting specific shared types.
 // Vertex input: provide simple C++ and HLSL variants
@@ -86,10 +89,13 @@ struct MaterialConstants
 
 struct MeshData
 {
-  uint32_t m_IndexOffset;
-  uint32_t m_IndexCount;
-  uint32_t m_MeshletOffset;
-  uint32_t m_MeshletCount;
+  uint32_t m_LODCount;
+  uint32_t pad0[3];
+  uint32_t m_IndexOffsets[MAX_LOD_COUNT];
+  uint32_t m_IndexCounts[MAX_LOD_COUNT];
+  uint32_t m_MeshletOffsets[MAX_LOD_COUNT];
+  uint32_t m_MeshletCounts[MAX_LOD_COUNT];
+  float m_LODErrors[MAX_LOD_COUNT];
 };
 
 struct Meshlet
@@ -107,7 +113,7 @@ struct Meshlet
 struct MeshletJob
 {
   uint32_t m_InstanceIndex;
-  uint32_t m_MeshletOffset;
+  uint32_t m_LODIndex;
 };
 
 // Per-instance data for instanced rendering
@@ -151,6 +157,8 @@ struct CullingConstants
   uint32_t m_UseMeshletRendering;
   float m_P00;
   float m_P11;
+  int m_ForcedLOD; // -1 for auto, 0+ for forced
+  uint32_t pad0[3];
 };
 
 struct HZBFromDepthConstants
@@ -206,6 +214,11 @@ static const uint32_t kMaxMeshletTriangles = 96;
 #define SAMPLER_WRAP_INDEX 1
 
 #ifndef __cplusplus
+float GetMaxScale(Matrix m)
+{
+    return max(length(m[0].xyz), max(length(m[1].xyz), length(m[2].xyz)));
+}
+
 #define DEPTH_NEAR 1.0f
 #define DEPTH_FAR 0.0f
 #endif

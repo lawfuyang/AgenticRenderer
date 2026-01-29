@@ -223,6 +223,9 @@ struct Renderer
     // Use meshlet rendering path
     bool m_UseMeshletRendering = true;
 
+    // Forced LOD index (-1 for auto, 0+ for forced)
+    int m_ForcedLOD = -1;
+
     // Debug mode for forward lighting
     int m_DebugMode = 0;
 

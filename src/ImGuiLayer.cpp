@@ -84,9 +84,29 @@ void ImGuiLayer::UpdateFrame()
             "Albedo",
             "Roughness",
             "Metallic",
-            "Emissive"
+            "Emissive",
+            "LOD"
         };
         ImGui::Combo("Debug Mode", &renderer->m_DebugMode, debugModes, IM_ARRAYSIZE(debugModes));
+
+        const char* lodNames[] = {
+            "Auto",
+            "LOD 0",
+            "LOD 1",
+            "LOD 2",
+            "LOD 3",
+            "LOD 4",
+            "LOD 5",
+            "LOD 6",
+            "LOD 7"
+        };
+        int forcedLODIdx = renderer->m_ForcedLOD + 1;
+        if (ImGui::SliderInt("Forced LOD", &forcedLODIdx, 0, MAX_LOD_COUNT))
+        {
+            renderer->m_ForcedLOD = forcedLODIdx - 1;
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", lodNames[forcedLODIdx]);
 
         // Camera controls
         if (ImGui::TreeNode("Camera"))
