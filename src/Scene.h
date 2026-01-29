@@ -138,6 +138,10 @@ public:
     // Release GPU resources and clear scene data
     void Shutdown();
 
+    // Binary Scene Cache
+    bool LoadFromCache(const std::string& cachePath, std::vector<Vertex>& allVertices, std::vector<uint32_t>& allIndices);
+    bool SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices);
+
     // Get directional light direction in world space
     Vector3 GetDirectionalLightDirection() const;
 };

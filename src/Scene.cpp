@@ -100,6 +100,53 @@ static cgltf_result decompressMeshopt(cgltf_data* data)
 	return cgltf_result_success;
 }
 
+// --- Binary Serialization Helpers ---
+template<typename T>
+static void WritePOD(std::ostream& os, const T& value)
+{
+	os.write(reinterpret_cast<const char*>(&value), sizeof(T));
+}
+
+template<typename T>
+static void ReadPOD(std::istream& is, T& value)
+{
+	is.read(reinterpret_cast<char*>(&value), sizeof(T));
+}
+
+static void WriteString(std::ostream& os, const std::string& str)
+{
+	size_t size = str.size();
+	WritePOD(os, size);
+	os.write(str.data(), size);
+}
+
+static void ReadString(std::istream& is, std::string& str)
+{
+	size_t size;
+	ReadPOD(is, size);
+	str.resize(size);
+	is.read(&str[0], size);
+}
+
+template<typename T>
+static void WriteVector(std::ostream& os, const std::vector<T>& vec)
+{
+	size_t size = vec.size();
+	WritePOD(os, size);
+	if (size > 0)
+		os.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(T));
+}
+
+template<typename T>
+static void ReadVector(std::istream& is, std::vector<T>& vec)
+{
+	size_t size;
+	ReadPOD(is, size);
+	vec.resize(size);
+	if (size > 0)
+		is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
+}
+
 // Recursively compute world transforms for a Scene instance
 static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent)
 {
@@ -196,7 +243,7 @@ static void ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 	}
 }
 
-static void LoadTexturesFromImages(Scene& scene, const cgltf_data* data, const std::filesystem::path& sceneDir, Renderer* renderer)
+static void LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sceneDir, Renderer* renderer)
 {
 	if (Config::Get().m_SkipTextures)
 	{
@@ -207,7 +254,7 @@ static void LoadTexturesFromImages(Scene& scene, const cgltf_data* data, const s
 
 	for (size_t ti = 0; ti < scene.m_Textures.size(); ++ti)
 	{
-		auto& tex = scene.m_Textures[ti];
+		Scene::Texture& tex = scene.m_Textures[ti];
 		if (tex.m_Uri.empty())
 		{
 			SDL_Log("[Scene] Texture %zu has no URI, skipping (embedded images not yet supported)", ti);
@@ -261,7 +308,7 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 {
 	SCOPED_TIMER("[Scene] MaterialConstants");
 
-	for (auto& mat : scene.m_Materials)
+	for (Scene::Material& mat : scene.m_Materials)
 	{
 		if (mat.m_BaseColorTexture != -1)
 			mat.m_AlbedoTextureIndex = scene.m_Textures[mat.m_BaseColorTexture].m_BindlessIndex;
@@ -275,7 +322,7 @@ static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer)
 
 	std::vector<MaterialConstants> materialConstants;
 	materialConstants.reserve(scene.m_Materials.size());
-	for (const auto& mat : scene.m_Materials)
+	for (const Scene::Material& mat : scene.m_Materials)
 	{
 		MaterialConstants mc{};
 		mc.m_BaseColor = mat.m_BaseColorFactor;
@@ -338,7 +385,7 @@ static void ProcessCameras(const cgltf_data* data, Scene& scene)
 		cam.m_Name = cgCam.name ? cgCam.name : std::string();
 		if (cgCam.type == cgltf_camera_type_perspective)
 		{
-			const auto& p = cgCam.data.perspective;
+			const cgltf_camera_perspective& p = cgCam.data.perspective;
 			cam.m_Projection.aspectRatio = p.has_aspect_ratio ? p.aspect_ratio : (16.0f / 9.0f);
 			cam.m_Projection.fovY = p.yfov;
 			cam.m_Projection.nearZ = p.znear;
@@ -765,7 +812,7 @@ static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene)
 static void SetupDirectionalLightAndCamera(Scene& scene, Renderer* renderer)
 {
 	SCOPED_TIMER("[Scene] Setup Lights+Camera");
-	for (const auto& light : scene.m_Lights)
+	for (const Scene::Light& light : scene.m_Lights)
 	{
 		if (light.m_Type == Scene::Light::Directional && light.m_NodeIndex >= 0 && light.m_NodeIndex < static_cast<int>(scene.m_Nodes.size()))
 		{
@@ -918,82 +965,107 @@ bool Scene::LoadScene()
 		return true;
 	}
 
-	SDL_Log("[Scene] Loading glTF scene: %s", scenePath.c_str());
+	const std::filesystem::path gltfPath(scenePath);
+	const std::filesystem::path cachePath = gltfPath.parent_path() / (gltfPath.stem().string() + "_cooked.bin");
+	const std::filesystem::path sceneDir = gltfPath.parent_path();
+
+	Renderer* renderer = Renderer::GetInstance();
+	std::vector<Vertex> allVertices;
+	std::vector<uint32_t> allIndices;
 
 	SCOPED_TIMER("[Scene] LoadScene Total");
 
-	const cgltf_options options{};
-	cgltf_data* data = nullptr;
-	cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
-	if (res != cgltf_result_success || !data)
+	bool loadedFromCache = false;
+	if (std::filesystem::exists(cachePath))
 	{
-		SDL_LOG_ASSERT_FAIL("glTF parse failed", "[Scene] Failed to parse glTF file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
-		return false;
-	}
-
-	res = cgltf_validate(data);
-	if (res != cgltf_result_success)
-	{
-		SDL_LOG_ASSERT_FAIL("glTF validation failed", "[Scene] glTF validation failed for file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
-		cgltf_free(data);
-		return false;
-	}
-
-	res = cgltf_load_buffers(&options, data, scenePath.c_str());
-	if (res != cgltf_result_success)
-	{
-		SDL_LOG_ASSERT_FAIL("glTF buffer load failed", "[Scene] Failed to load glTF buffers (result: %s)", cgltf_result_tostring(res));
-		cgltf_free(data);
-		return false;
-	}
-
-	res = decompressMeshopt(data);
-	if (res != cgltf_result_success)
-	{
-		SDL_LOG_ASSERT_FAIL("glTF meshopt decompression failed", "[Scene] Failed to decompress meshopt-compressed data (result: %s)", cgltf_result_tostring(res));
-		cgltf_free(data);
-		return false;
-	}
-
-	Renderer* renderer = Renderer::GetInstance();
-	const std::filesystem::path sceneDir = std::filesystem::path(scenePath).parent_path();
-
-	ProcessMaterialsAndImages(data, *this);
-	LoadTexturesFromImages(*this, data, sceneDir, renderer);
-	UpdateMaterialsAndCreateConstants(*this, renderer);
-
-	ProcessCameras(data, *this);
-	ProcessLights(data, *this);
-
-	std::vector<Vertex> allVertices;
-	std::vector<uint32_t> allIndices;
-	ProcessMeshes(data, *this, allVertices, allIndices);
-
-	ProcessNodesAndHierarchy(data, *this);
-
-	// Fill instance data
-	m_InstanceData.clear();
-	for (const Scene::Node& node : m_Nodes)
-	{
-		if (node.m_MeshIndex < 0) continue;
-		const auto& mesh = m_Meshes[node.m_MeshIndex];
-		for (const Scene::Primitive& prim : mesh.m_Primitives)
+		const std::filesystem::file_time_type gltfTime = std::filesystem::last_write_time(gltfPath);
+		const std::filesystem::file_time_type cacheTime = std::filesystem::last_write_time(cachePath);
+		if (cacheTime > gltfTime)
 		{
-			PerInstanceData inst{};
-			inst.m_World = node.m_WorldTransform;
-			inst.m_MaterialIndex = prim.m_MaterialIndex;
-			inst.m_MeshDataIndex = prim.m_MeshDataIndex;
-			inst.m_Center = node.m_Center;
-			inst.m_Radius = node.m_Radius;
-			m_InstanceData.push_back(inst);
+			SDL_Log("[Scene] Loading from binary cache: %s", cachePath.string().c_str());
+			if (LoadFromCache(cachePath.string(), allVertices, allIndices))
+			{
+				loadedFromCache = true;
+			}
+			else
+			{
+				SDL_Log("[Scene] Cache load failed, falling back to glTF");
+			}
 		}
 	}
 
-	SetupDirectionalLightAndCamera(*this, renderer);
+	if (!loadedFromCache)
+	{
+		SDL_Log("[Scene] Loading glTF scene: %s", scenePath.c_str());
 
+		const cgltf_options options{};
+		cgltf_data* data = nullptr;
+		cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
+		if (res != cgltf_result_success || !data)
+		{
+			SDL_LOG_ASSERT_FAIL("glTF parse failed", "[Scene] Failed to parse glTF file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
+			return false;
+		}
+
+		res = cgltf_validate(data);
+		if (res != cgltf_result_success)
+		{
+			SDL_LOG_ASSERT_FAIL("glTF validation failed", "[Scene] glTF validation failed for file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
+			cgltf_free(data);
+			return false;
+		}
+
+		res = cgltf_load_buffers(&options, data, scenePath.c_str());
+		if (res != cgltf_result_success)
+		{
+			SDL_LOG_ASSERT_FAIL("glTF buffer load failed", "[Scene] Failed to load glTF buffers (result: %s)", cgltf_result_tostring(res));
+			cgltf_free(data);
+			return false;
+		}
+
+		res = decompressMeshopt(data);
+		if (res != cgltf_result_success)
+		{
+			SDL_LOG_ASSERT_FAIL("glTF meshopt decompression failed", "[Scene] Failed to decompress meshopt-compressed data (result: %s)", cgltf_result_tostring(res));
+			cgltf_free(data);
+			return false;
+		}
+
+		ProcessMaterialsAndImages(data, *this);
+		ProcessCameras(data, *this);
+		ProcessLights(data, *this);
+		ProcessMeshes(data, *this, allVertices, allIndices);
+		ProcessNodesAndHierarchy(data, *this);
+
+		// Fill instance data
+		m_InstanceData.clear();
+		for (const Scene::Node& node : m_Nodes)
+		{
+			if (node.m_MeshIndex < 0) continue;
+			const Scene::Mesh& mesh = m_Meshes[node.m_MeshIndex];
+			for (const Scene::Primitive& prim : mesh.m_Primitives)
+			{
+				PerInstanceData inst{};
+				inst.m_World = node.m_WorldTransform;
+				inst.m_MaterialIndex = prim.m_MaterialIndex;
+				inst.m_MeshDataIndex = prim.m_MeshDataIndex;
+				inst.m_Center = node.m_Center;
+				inst.m_Radius = node.m_Radius;
+				m_InstanceData.push_back(inst);
+			}
+		}
+
+		SDL_Log("[Scene] Saving binary cache: %s", cachePath.string().c_str());
+		SaveToCache(cachePath.string(), allVertices, allIndices);
+
+		cgltf_free(data);
+	}
+
+	LoadTexturesFromImages(*this, sceneDir, renderer);
+	UpdateMaterialsAndCreateConstants(*this, renderer);
+	SetupDirectionalLightAndCamera(*this, renderer);
 	CreateAndUploadGpuBuffers(*this, renderer, allVertices, allIndices);
 
-	cgltf_free(data);
 	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
 
 	return true;
@@ -1019,7 +1091,7 @@ void Scene::Shutdown()
 	m_Meshlets.clear();
 	m_MeshletVertices.clear();
 	m_MeshletTriangles.clear();
-	for (auto& tex : m_Textures)
+	for (Scene::Texture& tex : m_Textures)
 	{
 		tex.m_Handle = nullptr;
 	}
@@ -1027,6 +1099,221 @@ void Scene::Shutdown()
 	m_Cameras.clear();
 	m_Lights.clear();
 	m_InstanceData.clear();
+}
+
+static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
+static constexpr uint32_t kSceneCacheVersion = 1;
+
+bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
+{
+	std::ofstream os(cachePath, std::ios::binary);
+	if (!os.is_open()) return false;
+
+	WritePOD(os, kSceneCacheMagic);
+	WritePOD(os, kSceneCacheVersion);
+
+	// Meshes
+	WritePOD(os, m_Meshes.size());
+	for (const Scene::Mesh& mesh : m_Meshes)
+	{
+		WriteVector(os, mesh.m_Primitives);
+		WritePOD(os, mesh.m_Center);
+		WritePOD(os, mesh.m_Radius);
+	}
+
+	// Nodes
+	WritePOD(os, m_Nodes.size());
+	for (const Scene::Node& node : m_Nodes)
+	{
+		WriteString(os, node.m_Name);
+		WritePOD(os, node.m_MeshIndex);
+		WritePOD(os, node.m_Parent);
+		WriteVector(os, node.m_Children);
+		WritePOD(os, node.m_LocalTransform);
+		WritePOD(os, node.m_WorldTransform);
+		WritePOD(os, node.m_Center);
+		WritePOD(os, node.m_Radius);
+		WritePOD(os, node.m_CameraIndex);
+		WritePOD(os, node.m_LightIndex);
+	}
+
+	// Materials
+	WritePOD(os, m_Materials.size());
+	for (const Scene::Material& mat : m_Materials)
+	{
+		WriteString(os, mat.m_Name);
+		WritePOD(os, mat.m_BaseColorFactor);
+		WritePOD(os, mat.m_EmissiveFactor);
+		WritePOD(os, mat.m_BaseColorTexture);
+		WritePOD(os, mat.m_NormalTexture);
+		WritePOD(os, mat.m_MetallicRoughnessTexture);
+		WritePOD(os, mat.m_EmissiveTexture);
+		WritePOD(os, mat.m_RoughnessFactor);
+		WritePOD(os, mat.m_MetallicFactor);
+		WritePOD(os, mat.m_AlbedoTextureIndex);
+		WritePOD(os, mat.m_NormalTextureIndex);
+		WritePOD(os, mat.m_RoughnessMetallicTextureIndex);
+		WritePOD(os, mat.m_EmissiveTextureIndex);
+	}
+
+	// Textures
+	WritePOD(os, m_Textures.size());
+	for (const Scene::Texture& tex : m_Textures)
+	{
+		WriteString(os, tex.m_Uri);
+		WritePOD(os, tex.m_Sampler);
+	}
+
+	// Cameras
+	WritePOD(os, m_Cameras.size());
+	for (const Scene::Camera& cam : m_Cameras)
+	{
+		WriteString(os, cam.m_Name);
+		WritePOD(os, cam.m_Projection);
+		WritePOD(os, cam.m_NodeIndex);
+	}
+
+	// Lights
+	WritePOD(os, m_Lights.size());
+	for (const Scene::Light& light : m_Lights)
+	{
+		WriteString(os, light.m_Name);
+		WritePOD(os, light.m_Type);
+		WritePOD(os, light.m_Color);
+		WritePOD(os, light.m_Intensity);
+		WritePOD(os, light.m_Range);
+		WritePOD(os, light.m_SpotInnerConeAngle);
+		WritePOD(os, light.m_SpotOuterConeAngle);
+		WritePOD(os, light.m_NodeIndex);
+	}
+
+	WritePOD(os, m_DirectionalLight);
+
+	WriteVector(os, m_InstanceData);
+	WriteVector(os, m_MeshData);
+	WriteVector(os, m_Meshlets);
+	WriteVector(os, m_MeshletVertices);
+	WriteVector(os, m_MeshletTriangles);
+	WriteVector(os, allVertices);
+	WriteVector(os, allIndices);
+
+	return true;
+}
+
+bool Scene::LoadFromCache(const std::string& cachePath, std::vector<Vertex>& allVertices, std::vector<uint32_t>& allIndices)
+{
+	std::ifstream is(cachePath, std::ios::binary);
+	if (!is.is_open()) return false;
+
+	uint32_t magic;
+	uint32_t version;
+	ReadPOD(is, magic);
+	ReadPOD(is, version);
+
+	if (magic != kSceneCacheMagic || version != kSceneCacheVersion) 
+	{
+		SDL_Log("[Scene] Cache magic or version mismatch");
+		return false;
+	}
+
+	// Meshes
+	size_t meshCount;
+	ReadPOD(is, meshCount);
+	m_Meshes.resize(meshCount);
+	for (Scene::Mesh& mesh : m_Meshes)
+	{
+		ReadVector(is, mesh.m_Primitives);
+		ReadPOD(is, mesh.m_Center);
+		ReadPOD(is, mesh.m_Radius);
+	}
+
+	// Nodes
+	size_t nodeCount;
+	ReadPOD(is, nodeCount);
+	m_Nodes.resize(nodeCount);
+	for (Scene::Node& node : m_Nodes)
+	{
+		ReadString(is, node.m_Name);
+		ReadPOD(is, node.m_MeshIndex);
+		ReadPOD(is, node.m_Parent);
+		ReadVector(is, node.m_Children);
+		ReadPOD(is, node.m_LocalTransform);
+		ReadPOD(is, node.m_WorldTransform);
+		ReadPOD(is, node.m_Center);
+		ReadPOD(is, node.m_Radius);
+		ReadPOD(is, node.m_CameraIndex);
+		ReadPOD(is, node.m_LightIndex);
+	}
+
+	// Materials
+	size_t matCount;
+	ReadPOD(is, matCount);
+	m_Materials.resize(matCount);
+	for (Scene::Material& mat : m_Materials)
+	{
+		ReadString(is, mat.m_Name);
+		ReadPOD(is, mat.m_BaseColorFactor);
+		ReadPOD(is, mat.m_EmissiveFactor);
+		ReadPOD(is, mat.m_BaseColorTexture);
+		ReadPOD(is, mat.m_NormalTexture);
+		ReadPOD(is, mat.m_MetallicRoughnessTexture);
+		ReadPOD(is, mat.m_EmissiveTexture);
+		ReadPOD(is, mat.m_RoughnessFactor);
+		ReadPOD(is, mat.m_MetallicFactor);
+		ReadPOD(is, mat.m_AlbedoTextureIndex);
+		ReadPOD(is, mat.m_NormalTextureIndex);
+		ReadPOD(is, mat.m_RoughnessMetallicTextureIndex);
+		ReadPOD(is, mat.m_EmissiveTextureIndex);
+	}
+
+	// Textures
+	size_t texCount;
+	ReadPOD(is, texCount);
+	m_Textures.resize(texCount);
+	for (Scene::Texture& tex : m_Textures)
+	{
+		ReadString(is, tex.m_Uri);
+		ReadPOD(is, tex.m_Sampler);
+	}
+
+	// Cameras
+	size_t camCount;
+	ReadPOD(is, camCount);
+	m_Cameras.resize(camCount);
+	for (Scene::Camera& cam : m_Cameras)
+	{
+		ReadString(is, cam.m_Name);
+		ReadPOD(is, cam.m_Projection);
+		ReadPOD(is, cam.m_NodeIndex);
+	}
+
+	// Lights
+	size_t lightCount;
+	ReadPOD(is, lightCount);
+	m_Lights.resize(lightCount);
+	for (Scene::Light& light : m_Lights)
+	{
+		ReadString(is, light.m_Name);
+		ReadPOD(is, light.m_Type);
+		ReadPOD(is, light.m_Color);
+		ReadPOD(is, light.m_Intensity);
+		ReadPOD(is, light.m_Range);
+		ReadPOD(is, light.m_SpotInnerConeAngle);
+		ReadPOD(is, light.m_SpotOuterConeAngle);
+		ReadPOD(is, light.m_NodeIndex);
+	}
+
+	ReadPOD(is, m_DirectionalLight);
+
+	ReadVector(is, m_InstanceData);
+	ReadVector(is, m_MeshData);
+	ReadVector(is, m_Meshlets);
+	ReadVector(is, m_MeshletVertices);
+	ReadVector(is, m_MeshletTriangles);
+	ReadVector(is, allVertices);
+	ReadVector(is, allIndices);
+
+	return true;
 }
 
 Vector3 Scene::GetDirectionalLightDirection() const
