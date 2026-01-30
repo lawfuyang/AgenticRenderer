@@ -38,12 +38,61 @@ public:
         int m_MeshIndex = -1;
         int m_Parent = -1;
         std::vector<int> m_Children;
+
         Matrix m_LocalTransform{};
         Matrix m_WorldTransform{};
+
+        Vector3 m_Translation = Vector3{ 0.0f, 0.0f, 0.0f };
+        Quaternion m_Rotation = Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f };
+        Vector3 m_Scale = Vector3{ 1.0f, 1.0f, 1.0f };
+        bool m_HasTRS = false;
+        bool m_IsAnimated = false; // Directly targeted by an animation channel
+        bool m_IsDynamic = false;  // Animated or child of dynamic
+        bool m_IsDirty = false;    // Transform changed this frame
+
         Vector3 m_Center{};
         float m_Radius{};
         int m_CameraIndex = -1;
         int m_LightIndex = -1;
+
+        // Indices into m_InstanceData for all instances using this node
+        std::vector<uint32_t> m_InstanceIndices;
+    };
+
+    struct AnimationSampler
+    {
+        enum class Interpolation
+        {
+            Linear,
+            Step,
+            CubicSpline
+        };
+        Interpolation m_Interpolation = Interpolation::Linear;
+        std::vector<float> m_Inputs; // Time points
+        std::vector<Vector4> m_Outputs; // Keyframe values
+    };
+
+    struct AnimationChannel
+    {
+        enum class Path
+        {
+            Translation,
+            Rotation,
+            Scale,
+            Weights
+        };
+        Path m_Path;
+        int m_NodeIndex = -1;
+        int m_SamplerIndex = -1;
+    };
+
+    struct Animation
+    {
+        std::string m_Name;
+        std::vector<AnimationChannel> m_Channels;
+        std::vector<AnimationSampler> m_Samplers;
+        float m_Duration = 0.0f;
+        float m_CurrentTime = 0.0f;
     };
 
     struct Material
@@ -114,8 +163,12 @@ public:
     std::vector<Texture> m_Textures;
     std::vector<Camera> m_Cameras;
     std::vector<Light> m_Lights;
+    std::vector<Animation> m_Animations;
+    std::vector<int> m_DynamicNodeIndices; // Topologically sorted
 
     DirectionalLight m_DirectionalLight;
+
+    std::pair<uint32_t, uint32_t> m_InstanceDirtyRange = { UINT32_MAX, 0 };
 
     struct BucketInfo
     {
@@ -146,6 +199,10 @@ public:
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.
     bool LoadScene();
+
+    // Per-frame update for animations
+    void Update(float deltaTime);
+
     // Release GPU resources and clear scene data
     void Shutdown();
 
@@ -155,4 +212,6 @@ public:
 
     // Get directional light direction in world space
     Vector3 GetDirectionalLightDirection() const;
+
+    void UpdateNodeBoundingSphere(int nodeIndex);
 };

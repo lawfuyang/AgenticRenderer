@@ -108,6 +108,8 @@ void ImGuiLayer::UpdateFrame()
         ImGui::SameLine();
         ImGui::Text("%s", lodNames[forcedLODIdx]);
 
+        ImGui::Checkbox("Enable Animations", &renderer->m_EnableAnimations);
+
         // Camera controls
         if (ImGui::TreeNode("Camera"))
         {

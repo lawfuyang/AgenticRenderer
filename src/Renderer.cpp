@@ -531,6 +531,24 @@ void Renderer::Run()
             m_RHI->m_NvrhiDevice->runGarbageCollection();
         }
 
+        // Update animations
+        if (m_EnableAnimations)
+        {
+            PROFILE_SCOPED("Update Animations");
+
+            m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
+            if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
+            {
+                ScopedCommandList cmd{ "Upload Animated Instances" };
+                uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
+                uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
+                cmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
+                    &m_Scene.m_InstanceData[startIdx],
+                    count * sizeof(PerInstanceData),
+                    startIdx * sizeof(PerInstanceData));
+            }
+        }
+
         // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
         m_ImGuiLayer.UpdateFrame();
 

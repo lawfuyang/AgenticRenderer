@@ -495,6 +495,81 @@ static void ProcessLights(const cgltf_data* data, Scene& scene)
 	}
 }
 
+static void ProcessAnimations(const cgltf_data* data, Scene& scene)
+{
+	SCOPED_TIMER("[Scene] Animations");
+	for (cgltf_size i = 0; i < data->animations_count; ++i)
+	{
+		const cgltf_animation& cgAnim = data->animations[i];
+		Scene::Animation anim;
+		anim.m_Name = cgAnim.name ? cgAnim.name : "Animation_" + std::to_string(i);
+
+		for (cgltf_size si = 0; si < cgAnim.samplers_count; ++si)
+		{
+			const cgltf_animation_sampler& cgSampler = cgAnim.samplers[si];
+			Scene::AnimationSampler sampler;
+
+			switch (cgSampler.interpolation)
+			{
+			case cgltf_interpolation_type_linear: sampler.m_Interpolation = Scene::AnimationSampler::Interpolation::Linear; break;
+			case cgltf_interpolation_type_step: sampler.m_Interpolation = Scene::AnimationSampler::Interpolation::Step; break;
+			case cgltf_interpolation_type_cubic_spline: sampler.m_Interpolation = Scene::AnimationSampler::Interpolation::CubicSpline; break;
+			default: sampler.m_Interpolation = Scene::AnimationSampler::Interpolation::Linear; break;
+			}
+
+			// Extract inputs (time)
+			{
+				size_t count = cgSampler.input->count;
+				sampler.m_Inputs.resize(count);
+				for (size_t k = 0; k < count; ++k)
+					cgltf_accessor_read_float(cgSampler.input, k, &sampler.m_Inputs[k], 1);
+
+				if (count > 0 && sampler.m_Inputs.back() > anim.m_Duration)
+					anim.m_Duration = sampler.m_Inputs.back();
+			}
+
+			// Extract outputs (values)
+			{
+				size_t count = cgSampler.output->count;
+				sampler.m_Outputs.resize(count);
+				for (size_t k = 0; k < count; ++k)
+				{
+					float val[4] = { 0, 0, 0, 1 };
+					cgltf_accessor_read_float(cgSampler.output, k, val, 4);
+					sampler.m_Outputs[k] = Vector4{ val[0], val[1], val[2], val[3] };
+				}
+			}
+
+			anim.m_Samplers.push_back(std::move(sampler));
+		}
+
+		for (cgltf_size ci = 0; ci < cgAnim.channels_count; ++ci)
+		{
+			const cgltf_animation_channel& cgChannel = cgAnim.channels[ci];
+			if (!cgChannel.target_node) continue;
+			if (cgChannel.target_path == cgltf_animation_path_type_weights) continue;
+
+			Scene::AnimationChannel channel;
+			channel.m_SamplerIndex = (int)cgltf_animation_sampler_index(&cgAnim, cgChannel.sampler);
+			int nodeIdx = (int)cgltf_node_index(data, cgChannel.target_node);
+			channel.m_NodeIndex = nodeIdx;
+			scene.m_Nodes[nodeIdx].m_IsAnimated = true;
+
+			switch (cgChannel.target_path)
+			{
+			case cgltf_animation_path_type_translation: channel.m_Path = Scene::AnimationChannel::Path::Translation; break;
+			case cgltf_animation_path_type_rotation: channel.m_Path = Scene::AnimationChannel::Path::Rotation; break;
+			case cgltf_animation_path_type_scale: channel.m_Path = Scene::AnimationChannel::Path::Scale; break;
+			default: continue;
+			}
+
+			anim.m_Channels.push_back(std::move(channel));
+		}
+
+		scene.m_Animations.push_back(std::move(anim));
+	}
+}
+
 static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices)
 {
 	SCOPED_TIMER("[Scene] Meshes");
@@ -781,7 +856,7 @@ static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene)
 	for (cgltf_size ni = 0; ni < data->nodes_count; ++ni)
 	{
 		const cgltf_node& cn = data->nodes[ni];
-		Scene::Node node;
+		Scene::Node& node = scene.m_Nodes[ni];
 		node.m_Name = cn.name ? cn.name : std::string();
 		node.m_MeshIndex = cn.mesh ? static_cast<int>(cgltf_mesh_index(data, cn.mesh)) : -1;
 		node.m_CameraIndex = cn.camera ? static_cast<int>(cgltf_camera_index(data, cn.camera)) : -1;
@@ -792,29 +867,34 @@ static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene)
 		{
 			for (int i = 0; i < 16; ++i)
 				reinterpret_cast<float*>(&localOut)[i] = cn.matrix[i];
+
+			// Decompose matrix to TRS in case it's animated later
+			DirectX::XMVECTOR scale, rot, trans;
+			DirectX::XMMatrixDecompose(&scale, &rot, &trans, DirectX::XMLoadFloat4x4(&localOut));
+			DirectX::XMStoreFloat3(&node.m_Translation, trans);
+			DirectX::XMStoreFloat4(&node.m_Rotation, rot);
+			DirectX::XMStoreFloat3(&node.m_Scale, scale);
 		}
 		else
 		{
-			Vector trans = DirectX::XMVectorSet(0, 0, 0, 0);
-			Vector scale = DirectX::XMVectorSet(1, 1, 1, 0);
-			Vector rot = DirectX::XMQuaternionIdentity();
 			if (cn.has_translation)
-				trans = DirectX::XMVectorSet(cn.translation[0], cn.translation[1], cn.translation[2], 0);
+				node.m_Translation = Vector3{ cn.translation[0], cn.translation[1], cn.translation[2] };
 			if (cn.has_scale)
-				scale = DirectX::XMVectorSet(cn.scale[0], cn.scale[1], cn.scale[2], 0);
+				node.m_Scale = Vector3{ cn.scale[0], cn.scale[1], cn.scale[2] };
 			if (cn.has_rotation)
-				rot = DirectX::XMVectorSet(cn.rotation[0], cn.rotation[1], cn.rotation[2], cn.rotation[3]);
+				node.m_Rotation = Quaternion{ cn.rotation[0], cn.rotation[1], cn.rotation[2], cn.rotation[3] };
 
-			const DirectX::XMMATRIX localM = DirectX::XMMatrixScalingFromVector(scale) * DirectX::XMMatrixRotationQuaternion(rot) * DirectX::XMMatrixTranslationFromVector(trans);
+			const DirectX::XMMATRIX localM = DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&node.m_Scale)) *
+				DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&node.m_Rotation)) *
+				DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&node.m_Translation));
 			DirectX::XMStoreFloat4x4(&localOut, localM);
 		}
 
 		node.m_LocalTransform = localOut;
 		node.m_WorldTransform = node.m_LocalTransform;
 
-		scene.m_Nodes.push_back(std::move(node));
 		cgltf_size nodeIndex = cgltf_node_index(data, &cn);
-		nodeMap[nodeIndex] = static_cast<int>(scene.m_Nodes.size()) - 1;
+		nodeMap[nodeIndex] = static_cast<int>(ni);
 	}
 
 	// Build parent/children links
@@ -864,18 +944,7 @@ static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene)
 	// Compute per-node bounding spheres by transforming mesh spheres into world space
 	for (size_t ni = 0; ni < scene.m_Nodes.size(); ++ni)
 	{
-		Scene::Node& node = scene.m_Nodes[ni];
-		if (node.m_MeshIndex >= 0 && node.m_MeshIndex < static_cast<int>(scene.m_Meshes.size()))
-		{
-			const Scene::Mesh& mesh = scene.m_Meshes[node.m_MeshIndex];
-
-			// Transform sphere to world space
-			const Sphere localSphere(mesh.m_Center, mesh.m_Radius);
-			Sphere worldSphere;
-			localSphere.Transform(worldSphere, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
-			node.m_Center = worldSphere.Center;
-			node.m_Radius = worldSphere.Radius;
-		}
+		scene.UpdateNodeBoundingSphere(static_cast<int>(ni));
 	}
 }
 
@@ -1101,20 +1170,47 @@ bool Scene::LoadScene()
 			return false;
 		}
 
+		m_Nodes.resize(data->nodes_count);
 		ProcessMaterialsAndImages(data, *this);
 		ProcessCameras(data, *this);
 		ProcessLights(data, *this);
+		ProcessAnimations(data, *this);
 		ProcessMeshes(data, *this, allVertices, allIndices);
 		ProcessNodesAndHierarchy(data, *this);
 
+		// Identify dynamic nodes and sort them topologically
+		std::function<void(int, bool)> IdentifyDynamic = [&](int idx, bool parentDynamic)
+		{
+			Scene::Node& node = m_Nodes[idx];
+			node.m_IsDynamic = node.m_IsAnimated || parentDynamic;
+			if (node.m_IsDynamic)
+			{
+				m_DynamicNodeIndices.push_back(idx);
+			}
+			for (int childIdx : node.m_Children)
+			{
+				IdentifyDynamic(childIdx, node.m_IsDynamic);
+			}
+		};
+
+		for (int i = 0; i < (int)m_Nodes.size(); ++i)
+		{
+			if (m_Nodes[i].m_Parent == -1)
+			{
+				IdentifyDynamic(i, false);
+			}
+		}
+
 		// Bucketize and fill instance data
 		m_InstanceData.clear();
-		std::vector<PerInstanceData> opaqueInstances;
-		std::vector<PerInstanceData> maskedInstances;
-		std::vector<PerInstanceData> transparentInstances;
+		struct InstInfo { PerInstanceData data; int nodeIdx; };
+		std::vector<InstInfo> opaqueStatic, opaqueDynamic;
+		std::vector<InstInfo> maskedStatic, maskedDynamic;
+		std::vector<InstInfo> transparentStatic, transparentDynamic;
 
-		for (const Scene::Node& node : m_Nodes)
+		for (int ni = 0; ni < (int)m_Nodes.size(); ++ni)
 		{
+			const Scene::Node& node = m_Nodes[ni];
 			if (node.m_MeshIndex < 0) continue;
 			const Scene::Mesh& mesh = m_Meshes[node.m_MeshIndex];
 			for (const Scene::Primitive& prim : mesh.m_Primitives)
@@ -1127,22 +1223,42 @@ bool Scene::LoadScene()
 				inst.m_Radius = node.m_Radius;
 
 				uint32_t alphaMode = m_Materials[prim.m_MaterialIndex].m_AlphaMode;
-				if (alphaMode == ALPHA_MODE_OPAQUE)
-					opaqueInstances.push_back(inst);
-				else if (alphaMode == ALPHA_MODE_MASK)
-					maskedInstances.push_back(inst);
-				else
-					transparentInstances.push_back(inst);
+				bool isDynamic = node.m_IsDynamic;
+
+				if (alphaMode == ALPHA_MODE_OPAQUE) {
+					if (isDynamic) opaqueDynamic.push_back({ inst, ni });
+					else opaqueStatic.push_back({ inst, ni });
+				}
+				else if (alphaMode == ALPHA_MODE_MASK) {
+					if (isDynamic) maskedDynamic.push_back({ inst, ni });
+					else maskedStatic.push_back({ inst, ni });
+				}
+				else {
+					if (isDynamic) transparentDynamic.push_back({ inst, ni });
+					else transparentStatic.push_back({ inst, ni });
+				}
 			}
 		}
 
-		m_OpaqueBucket = { 0, (uint32_t)opaqueInstances.size() };
-		m_MaskedBucket = { (uint32_t)opaqueInstances.size(), (uint32_t)maskedInstances.size() };
-		m_TransparentBucket = { (uint32_t)(opaqueInstances.size() + maskedInstances.size()), (uint32_t)transparentInstances.size() };
+		m_OpaqueBucket = { 0, (uint32_t)(opaqueStatic.size() + opaqueDynamic.size()) };
+		m_MaskedBucket = { m_OpaqueBucket.m_BaseIndex + m_OpaqueBucket.m_Count, (uint32_t)(maskedStatic.size() + maskedDynamic.size()) };
+		m_TransparentBucket = { m_MaskedBucket.m_BaseIndex + m_MaskedBucket.m_Count, (uint32_t)(transparentStatic.size() + transparentDynamic.size()) };
 
-		m_InstanceData.insert(m_InstanceData.end(), opaqueInstances.begin(), opaqueInstances.end());
-		m_InstanceData.insert(m_InstanceData.end(), maskedInstances.begin(), maskedInstances.end());
-		m_InstanceData.insert(m_InstanceData.end(), transparentInstances.begin(), transparentInstances.end());
+		auto PushInstances = [&](const std::vector<InstInfo>& infos)
+		{
+			for (const InstInfo& info : infos)
+			{
+				m_Nodes[info.nodeIdx].m_InstanceIndices.push_back((uint32_t)m_InstanceData.size());
+				m_InstanceData.push_back(info.data);
+			}
+		};
+
+		PushInstances(opaqueStatic);
+		PushInstances(opaqueDynamic);
+		PushInstances(maskedStatic);
+		PushInstances(maskedDynamic);
+		PushInstances(transparentStatic);
+		PushInstances(transparentDynamic);
 
 		SDL_Log("[Scene] Instances: Opaque: %u, Masked: %u, Transparent: %u", m_OpaqueBucket.m_Count, m_MaskedBucket.m_Count, m_TransparentBucket.m_Count);
 
@@ -1163,6 +1279,136 @@ bool Scene::LoadScene()
 	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
 
 	return true;
+}
+
+void Scene::Update(float deltaTime)
+{
+	if (m_Animations.empty()) return;
+	PROFILE_FUNCTION();
+
+	for (Animation& anim : m_Animations)
+	{
+		anim.m_CurrentTime += deltaTime;
+		if (anim.m_Duration > 0)
+			anim.m_CurrentTime = fmodf(anim.m_CurrentTime, anim.m_Duration);
+	}
+
+	m_InstanceDirtyRange = { UINT32_MAX, 0 };
+
+	for (const Animation& anim : m_Animations)
+	{
+		for (const Scene::AnimationChannel& channel : anim.m_Channels)
+		{
+			const AnimationSampler& sampler = anim.m_Samplers[channel.m_SamplerIndex];
+			if (sampler.m_Inputs.empty()) continue;
+
+			// GLTF spec: Animations are implicitly clamped to the range of their input values.
+			// This ensures shorter channels don't loop until the entire animation duration is reached.
+			float sampleTime = anim.m_CurrentTime;
+			if (sampleTime < sampler.m_Inputs.front()) sampleTime = sampler.m_Inputs.front();
+			if (sampleTime > sampler.m_Inputs.back()) sampleTime = sampler.m_Inputs.back();
+
+			// Find keyframes
+			uint32_t key0 = 0;
+			for (uint32_t i = 0; i < (uint32_t)sampler.m_Inputs.size() - 1; ++i)
+			{
+				if (sampleTime >= sampler.m_Inputs[i])
+					key0 = i;
+			}
+			uint32_t key1 = (key0 + 1 < (uint32_t)sampler.m_Inputs.size()) ? key0 + 1 : key0;
+
+			float t = 0.0f;
+			if (sampler.m_Interpolation == AnimationSampler::Interpolation::Step)
+			{
+				t = 0.0f;
+			}
+			else if (key0 != key1)
+			{
+				float dt = sampler.m_Inputs[key1] - sampler.m_Inputs[key0];
+				t = (sampleTime - sampler.m_Inputs[key0]) / dt;
+			}
+
+			Node& node = m_Nodes[channel.m_NodeIndex];
+			node.m_IsDirty = true; // Mark as dirty when TRS is changed by animation
+
+			using namespace DirectX;
+			if (channel.m_Path == AnimationChannel::Path::Translation)
+			{
+				Vector v0 = XMLoadFloat4(&sampler.m_Outputs[key0]);
+				Vector v1 = XMLoadFloat4(&sampler.m_Outputs[key1]);
+				XMStoreFloat3(&node.m_Translation, XMVectorLerp(v0, v1, t));
+			}
+			else if (channel.m_Path == AnimationChannel::Path::Rotation)
+			{
+				Vector q0 = XMLoadFloat4(&sampler.m_Outputs[key0]);
+				Vector q1 = XMLoadFloat4(&sampler.m_Outputs[key1]);
+				// For rotation, we should always use Slerp when not Step
+				if (sampler.m_Interpolation == AnimationSampler::Interpolation::Step)
+					XMStoreFloat4(&node.m_Rotation, q0);
+				else
+					XMStoreFloat4(&node.m_Rotation, XMQuaternionSlerp(q0, q1, t));
+			}
+			else if (channel.m_Path == AnimationChannel::Path::Scale)
+			{
+				Vector v0 = XMLoadFloat4(&sampler.m_Outputs[key0]);
+				Vector v1 = XMLoadFloat4(&sampler.m_Outputs[key1]);
+				XMStoreFloat3(&node.m_Scale, XMVectorLerp(v0, v1, t));
+			}
+		}
+	}
+
+	// Update only dynamic nodes in topological order
+	for (int idx : m_DynamicNodeIndices)
+	{
+		Node& node = m_Nodes[idx];
+		bool parentDirty = (node.m_Parent != -1 && m_Nodes[node.m_Parent].m_IsDirty);
+
+		if (node.m_IsDirty || parentDirty)
+		{
+			using namespace DirectX;
+			
+			// Update local transform from TRS
+			XMMATRIX localM = XMMatrixScalingFromVector(XMLoadFloat3(&node.m_Scale)) *
+				XMMatrixRotationQuaternion(XMLoadFloat4(&node.m_Rotation)) *
+				XMMatrixTranslationFromVector(XMLoadFloat3(&node.m_Translation));
+			XMStoreFloat4x4(&node.m_LocalTransform, localM);
+
+			// Update world transform
+			XMMATRIX worldM;
+			if (node.m_Parent != -1) {
+				worldM = XMMatrixMultiply(localM, XMLoadFloat4x4(&m_Nodes[node.m_Parent].m_WorldTransform));
+			} else {
+				worldM = localM;
+			}
+			XMStoreFloat4x4(&node.m_WorldTransform, worldM);
+
+			node.m_IsDirty = true; // Pass dirty state to children
+
+			// Update bounding sphere
+			UpdateNodeBoundingSphere(idx);
+
+			// Sync instances
+			for (uint32_t instIdx : node.m_InstanceIndices)
+			{
+				m_InstanceData[instIdx].m_World = node.m_WorldTransform;
+				m_InstanceData[instIdx].m_Center = node.m_Center;
+				m_InstanceData[instIdx].m_Radius = node.m_Radius;
+
+				m_InstanceDirtyRange.first = std::min(m_InstanceDirtyRange.first, instIdx);
+				m_InstanceDirtyRange.second = std::max(m_InstanceDirtyRange.second, instIdx);
+			}
+		}
+		else
+		{
+			node.m_IsDirty = false;
+		}
+	}
+
+	// Reset dirty flags for next frame (only for those that could have been set)
+	for (int idx : m_DynamicNodeIndices)
+	{
+		m_Nodes[idx].m_IsDirty = false;
+	}
 }
 
 void Scene::Shutdown()
@@ -1195,8 +1441,22 @@ void Scene::Shutdown()
 	m_InstanceData.clear();
 }
 
+void Scene::UpdateNodeBoundingSphere(int nodeIndex)
+{
+    Node& node = m_Nodes[nodeIndex];
+    if (node.m_MeshIndex >= 0 && node.m_MeshIndex < (int)m_Meshes.size())
+    {
+        const Mesh& mesh = m_Meshes[node.m_MeshIndex];
+        const DirectX::BoundingSphere localSphere(mesh.m_Center, mesh.m_Radius);
+        DirectX::BoundingSphere worldSphere;
+        localSphere.Transform(worldSphere, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
+        node.m_Center = worldSphere.Center;
+        node.m_Radius = worldSphere.Radius;
+    }
+}
+
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 2;
+static constexpr uint32_t kSceneCacheVersion = 3;
 
 bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
 {
@@ -1234,6 +1494,12 @@ bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>&
 		WritePOD(os, node.m_Radius);
 		WritePOD(os, node.m_CameraIndex);
 		WritePOD(os, node.m_LightIndex);
+		WritePOD(os, node.m_Translation);
+		WritePOD(os, node.m_Rotation);
+		WritePOD(os, node.m_Scale);
+		WritePOD(os, node.m_IsAnimated);
+		WritePOD(os, node.m_IsDynamic);
+		WriteVector(os, node.m_InstanceIndices);
 	}
 
 	// Materials
@@ -1298,6 +1564,25 @@ bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>&
 	WriteVector(os, allVertices);
 	WriteVector(os, allIndices);
 
+	// animations
+	WriteVector(os, m_DynamicNodeIndices);
+	WritePOD(os, m_Animations.size());
+	for (const Animation& anim : m_Animations)
+	{
+		WriteString(os, anim.m_Name);
+		WritePOD(os, anim.m_Duration);
+		WritePOD(os, anim.m_CurrentTime);
+		
+		WritePOD(os, anim.m_Samplers.size());
+		for (const AnimationSampler& sampler : anim.m_Samplers)
+		{
+			WritePOD(os, sampler.m_Interpolation);
+			WriteVector(os, sampler.m_Inputs);
+			WriteVector(os, sampler.m_Outputs);
+		}
+		WriteVector(os, anim.m_Channels);
+	}
+
 	return true;
 }
 
@@ -1349,6 +1634,12 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<Vertex>& all
 		ReadPOD(is, node.m_Radius);
 		ReadPOD(is, node.m_CameraIndex);
 		ReadPOD(is, node.m_LightIndex);
+		ReadPOD(is, node.m_Translation);
+		ReadPOD(is, node.m_Rotation);
+		ReadPOD(is, node.m_Scale);
+		ReadPOD(is, node.m_IsAnimated);
+		ReadPOD(is, node.m_IsDynamic);
+		ReadVector(is, node.m_InstanceIndices);
 	}
 
 	// Materials
@@ -1420,6 +1711,29 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<Vertex>& all
 	ReadVector(is, m_MeshletTriangles);
 	ReadVector(is, allVertices);
 	ReadVector(is, allIndices);
+
+	// animations
+	ReadVector(is, m_DynamicNodeIndices);
+	size_t animCount;
+	ReadPOD(is, animCount);
+	m_Animations.resize(animCount);
+	for (Animation& anim : m_Animations)
+	{
+		ReadString(is, anim.m_Name);
+		ReadPOD(is, anim.m_Duration);
+		ReadPOD(is, anim.m_CurrentTime);
+
+		size_t samplerCount;
+		ReadPOD(is, samplerCount);
+		anim.m_Samplers.resize(samplerCount);
+		for (AnimationSampler& sampler : anim.m_Samplers)
+		{
+			ReadPOD(is, sampler.m_Interpolation);
+			ReadVector(is, sampler.m_Inputs);
+			ReadVector(is, sampler.m_Outputs);
+		}
+		ReadVector(is, anim.m_Channels);
+	}
 
 	return true;
 }

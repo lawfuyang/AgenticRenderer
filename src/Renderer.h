@@ -226,6 +226,9 @@ struct Renderer
     // Forced LOD index (-1 for auto, 0+ for forced)
     int m_ForcedLOD = -1;
 
+    // Enable GLTF animations
+    bool m_EnableAnimations = true;
+
     // Debug mode for forward lighting
     int m_DebugMode = 0;
 
