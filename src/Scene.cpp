@@ -210,7 +210,7 @@ static void ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 			SetTextureAndSampler(sg.diffuse_texture.texture, scene.m_Materials.back().m_BaseColorTexture, samplerForImageIsWrap, data);
 			SetTextureAndSampler(sg.specular_glossiness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
 		}
-		else
+		else if (data->materials[i].has_pbr_metallic_roughness)
 		{
 			scene.m_Materials.back().m_BaseColorFactor.x = pbr.base_color_factor[0];
 			scene.m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
@@ -225,6 +225,13 @@ static void ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 			scene.m_Materials.back().m_MetallicFactor = metallic;
 
 			SetTextureAndSampler(pbr.metallic_roughness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
+		}
+		else
+		{
+			// Default values
+			scene.m_Materials.back().m_BaseColorFactor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+			scene.m_Materials.back().m_MetallicFactor = 0.0f;
+			scene.m_Materials.back().m_RoughnessFactor = 1.0f;
 		}
 
 		SetTextureAndSampler(data->materials[i].normal_texture.texture, scene.m_Materials.back().m_NormalTexture, samplerForImageIsWrap, data);
@@ -245,6 +252,17 @@ static void ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 		else
 		{
 			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_OPAQUE;
+		}
+
+		if (data->materials[i].has_transmission)
+		{
+			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_BLEND;
+			scene.m_Materials.back().m_BaseColorFactor.w = 1.0f - data->materials[i].transmission.transmission_factor;
+		}
+
+		if (data->materials[i].double_sided)
+		{
+			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_MASK;
 		}
 	}
 

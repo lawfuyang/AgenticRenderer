@@ -267,6 +267,11 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
         renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
     }
 
+    if (args.m_AlphaMode != ALPHA_MODE_OPAQUE)
+    {
+        renderState.rasterState = CommonResources::GetInstance().RasterCullNone;
+    }
+
     const bool bUseAlphaTest = (args.m_AlphaMode == ALPHA_MODE_MASK);
     const char* psName = bUseAlphaTest ? "ForwardLighting_PSMain_AlphaTest" : "ForwardLighting_PSMain";
 
