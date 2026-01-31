@@ -97,6 +97,17 @@ if(WIN32)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${SDL3_DLL_PATH}" "${SDL3_DLL_LINK}")
 endif()
 
+# Agility SDK Configuration
+set(AGILITY_SDK_VERSION "1.618.1")
+set(AGILITY_SDK_URL "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/${AGILITY_SDK_VERSION}")
+download_library("AgilitySDK" "${AGILITY_SDK_VERSION}" "${AGILITY_SDK_URL}" "AgilitySDK-*")
+set(AGILITY_SDK_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/AgilitySDK")
+set(D3D12MA_AGILITY_SDK_DIRECTORY "${AGILITY_SDK_INSTALL_DIR}")
+if(WIN32)
+    file(CREATE_LINK "${AGILITY_SDK_INSTALL_DIR}/build/native/bin/x64/D3D12Core.dll" "${CMAKE_SOURCE_DIR}/bin/D3D12Core.dll" SYMBOLIC)
+    file(CREATE_LINK "${AGILITY_SDK_INSTALL_DIR}/build/native/bin/x64/d3d12SDKLayers.dll" "${CMAKE_SOURCE_DIR}/bin/d3d12SDKLayers.dll" SYMBOLIC)
+endif()
+
 # ---------------------------------------------------------------------------
 # cgltf (glTF loader) - downloaded into external/cgltf and compiled
 # ---------------------------------------------------------------------------
@@ -163,6 +174,7 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_include_directories(${PROJECT_NAME} PUBLIC "${AGILITY_SDK_INSTALL_DIR}/build/native/include")
 
 # ImGui Include
 target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCE_DIR})

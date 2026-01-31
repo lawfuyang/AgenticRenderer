@@ -427,16 +427,16 @@ bool Renderer::Initialize()
         return false;
     }
 
-    if (!CommonResources::GetInstance().Initialize())
+    if (!InitializeGlobalBindlessTextures())
     {
-        SDL_Log("[Init] Failed to initialize common resources");
+        SDL_Log("[Init] Failed to initialize global bindless textures");
         Shutdown();
         return false;
     }
 
-    if (!InitializeGlobalBindlessTextures())
+    if (!CommonResources::GetInstance().Initialize())
     {
-        SDL_Log("[Init] Failed to initialize global bindless textures");
+        SDL_Log("[Init] Failed to initialize common resources");
         Shutdown();
         return false;
     }
@@ -828,10 +828,12 @@ nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindlessLayout(const nvrhi::Bind
 
 bool Renderer::InitializeGlobalBindlessTextures()
 {
+    static const uint32_t kInitialTextureCapacity = 1024;
+
     // Create bindless layout for global textures
     nvrhi::BindlessLayoutDesc bindlessDesc;
     bindlessDesc.visibility = nvrhi::ShaderType::All;
-    bindlessDesc.maxCapacity = 1024; // Large capacity for many textures
+    bindlessDesc.maxCapacity = kInitialTextureCapacity; // Large capacity for many textures
     bindlessDesc.layoutType = nvrhi::BindlessLayoutDesc::LayoutType::MutableSrvUavCbv;
 
     m_GlobalTextureBindingLayout = GetOrCreateBindlessLayout(bindlessDesc);
@@ -848,6 +850,8 @@ bool Renderer::InitializeGlobalBindlessTextures()
         SDL_LOG_ASSERT_FAIL("Failed to create global texture descriptor table", "[Renderer] Failed to create global texture descriptor table");
         return false;
     }
+
+    m_RHI->m_NvrhiDevice->resizeDescriptorTable(m_GlobalTextureDescriptorTable, bindlessDesc.maxCapacity, false);
     
     SDL_Log("[Renderer] Global bindless texture system initialized");
     return true;

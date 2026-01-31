@@ -1,14 +1,234 @@
 #include "pch.h"
+
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include <wrl/client.h>
+#include <directx/d3dx12_check_feature_support.h>
+#include <nvrhi/d3d12.h>
+
 #include "GraphicRHI.h"
+#include "Config.h"
+
+extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12_SDK_VERSION; }
+extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\"; }
+
+using Microsoft::WRL::ComPtr;
+
+IDXGIAdapter1* g_DXGIAdapter = nullptr;
 
 class D3D12GraphicRHI : public GraphicRHI
 {
 public:
-    bool Initialize(SDL_Window* window) override { nvrhi::utils::NotImplemented(); return false; }
-    void Shutdown() override { nvrhi::utils::NotImplemented(); }
-    bool CreateSwapchain(uint32_t width, uint32_t height) override { nvrhi::utils::NotImplemented(); return false; }
-    bool AcquireNextSwapchainImage(uint32_t* outImageIndex) override { nvrhi::utils::NotImplemented(); return false; }
-    bool PresentSwapchain(uint32_t imageIndex) override { nvrhi::utils::NotImplemented(); return false; }
+    SDL_Window* m_Window = nullptr;
+    ComPtr<IDXGIAdapter1> m_Adapter;
+    ComPtr<IDXGIFactory4> m_Factory;
+    ComPtr<ID3D12Device> m_Device;
+    ComPtr<ID3D12CommandQueue> m_CommandQueue;
+    ComPtr<IDXGISwapChain3> m_SwapChain;
+
+    ~D3D12GraphicRHI() override { Shutdown(); }
+
+    bool Initialize(SDL_Window* window) override
+    {
+        m_Window = window;
+
+        if (Config::Get().m_EnableValidation)
+        {
+            ComPtr<ID3D12Debug> debugController;
+            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+            {
+                debugController->EnableDebugLayer();
+            }
+        }
+
+        HRESULT hr = CreateDXGIFactory2(Config::Get().m_EnableValidation ? DXGI_CREATE_FACTORY_DEBUG : 0, IID_PPV_ARGS(&m_Factory));
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("CreateDXGIFactory2 failed", "CreateDXGIFactory2 failed: 0x%08X", hr);
+            return false;
+        }
+
+        for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != m_Factory->EnumAdapters1(adapterIndex, &m_Adapter); ++adapterIndex)
+        {
+            DXGI_ADAPTER_DESC1 desc;
+            m_Adapter->GetDesc1(&desc);
+
+            if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
+
+            if (SUCCEEDED(D3D12CreateDevice(m_Adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
+            {
+                break;
+            }
+        }
+
+        if (m_Adapter == nullptr)
+        {
+            SDL_LOG_ASSERT_FAIL("No suitable DXGI adapter found", "No suitable DXGI adapter found");
+            return false;
+        }
+
+        g_DXGIAdapter = m_Adapter.Get();
+
+        // Try creating with a baseline level first to get a device to query features from
+        hr = D3D12CreateDevice(m_Adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_Device));
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("D3D12CreateDevice failed", "D3D12CreateDevice (baseline) failed: 0x%08X", hr);
+            return false;
+        }
+
+        CD3DX12FeatureSupport featureSupport;
+        if (SUCCEEDED(featureSupport.Init(m_Device.Get())))
+        {
+            D3D_FEATURE_LEVEL maxLevel = featureSupport.MaxSupportedFeatureLevel();
+            if (maxLevel > D3D_FEATURE_LEVEL_11_0)
+            {
+                // Re-create with highest supported feature level
+                m_Device.Reset();
+                hr = D3D12CreateDevice(m_Adapter.Get(), maxLevel, IID_PPV_ARGS(&m_Device));
+                if (FAILED(hr))
+                {
+                    SDL_LOG_ASSERT_FAIL("D3D12CreateDevice failed", "D3D12CreateDevice (max level) failed: 0x%08X", hr);
+                    return false;
+                }
+            }
+        }
+
+        D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+        hr = m_Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue));
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("CreateCommandQueue failed", "CreateCommandQueue failed: 0x%08X", hr);
+            return false;
+        }
+
+        nvrhi::d3d12::DeviceDesc nvrhiDesc;
+        nvrhiDesc.pDevice = m_Device.Get();
+        nvrhiDesc.pGraphicsCommandQueue = m_CommandQueue.Get();
+        nvrhiDesc.errorCB = &ms_NvrhiCallback;
+        nvrhiDesc.enableHeapDirectlyIndexed = true;
+
+        m_NvrhiDevice = nvrhi::d3d12::createDevice(nvrhiDesc);
+
+        if (Config::Get().m_EnableValidation)
+        {
+            m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
+        }
+
+        return true;
+    }
+
+    void Shutdown() override
+    {
+        m_NvrhiDevice = nullptr;
+        for (uint32_t i = 0; i < GraphicRHI::SwapchainImageCount; i++)
+        {
+            m_NvrhiSwapchainTextures[i] = nullptr;
+        }
+        m_SwapChain.Reset();
+        m_CommandQueue.Reset();
+        m_Device.Reset();
+        m_Factory.Reset();
+        m_Adapter.Reset();
+    }
+
+    bool CreateSwapchain(uint32_t width, uint32_t height) override
+    {
+        if (m_Window == nullptr)
+        {
+            SDL_LOG_ASSERT_FAIL("SDL Window is null", "SDL Window is null during swapchain creation");
+            return false;
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+        swapChainDesc.Width = width;
+        swapChainDesc.Height = height;
+        swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        swapChainDesc.SampleDesc.Count = 1;
+        swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        swapChainDesc.BufferCount = GraphicRHI::SwapchainImageCount;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+
+        HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(m_Window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+
+        ComPtr<IDXGISwapChain1> swapChain1;
+        HRESULT hr = m_Factory->CreateSwapChainForHwnd(m_CommandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1);
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("CreateSwapChainForHwnd failed", "CreateSwapChainForHwnd failed: 0x%08X", hr);
+            return false;
+        }
+
+        hr = swapChain1.As(&m_SwapChain);
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("IDXGISwapChain1::As(IDXGISwapChain3) failed", "Failed to cast swapchain to IDXGISwapChain3: 0x%08X", hr);
+            return false;
+        }
+
+        m_SwapchainFormat = nvrhi::Format::RGBA8_UNORM;
+        m_SwapchainExtent = { width, height };
+
+        for (uint32_t i = 0; i < GraphicRHI::SwapchainImageCount; i++)
+        {
+            ComPtr<ID3D12Resource> backBuffer;
+            hr = m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&backBuffer));
+            if (FAILED(hr))
+            {
+                SDL_LOG_ASSERT_FAIL("IDXGISwapChain3::GetBuffer failed", "Failed to get swapchain buffer %u: 0x%08X", i, hr);
+                return false;
+            }
+
+            nvrhi::TextureDesc textureDesc;
+            textureDesc.width = width;
+            textureDesc.height = height;
+            textureDesc.format = m_SwapchainFormat;
+            textureDesc.debugName = "Swapchain Buffer";
+            textureDesc.initialState = nvrhi::ResourceStates::Present;
+            textureDesc.keepInitialState = true;
+            textureDesc.isRenderTarget = true;
+
+            m_NvrhiSwapchainTextures[i] = m_NvrhiDevice->createHandleForNativeTexture(nvrhi::ObjectTypes::D3D12_Resource, nvrhi::Object(backBuffer.Get()), textureDesc);
+            if (!m_NvrhiSwapchainTextures[i])
+            {
+                SDL_LOG_ASSERT_FAIL("NVRHI createHandleForNativeTexture failed", "Failed to wrap back buffer %u into NVRHI handle", i);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool AcquireNextSwapchainImage(uint32_t* outImageIndex) override
+    {
+        if (!m_SwapChain)
+        {
+            SDL_LOG_ASSERT_FAIL("Swapchain is null", "AcquireNextSwapchainImage called with null swapchain");
+            return false;
+        }
+        *outImageIndex = m_SwapChain->GetCurrentBackBufferIndex();
+        return true;
+    }
+
+    bool PresentSwapchain(uint32_t imageIndex) override
+    {
+        if (!m_SwapChain)
+        {
+            SDL_LOG_ASSERT_FAIL("Swapchain is null", "PresentSwapchain called with null swapchain");
+            return false;
+        }
+        HRESULT hr = m_SwapChain->Present(0, 0);
+        if (FAILED(hr))
+        {
+            SDL_LOG_ASSERT_FAIL("IDXGISwapChain3::Present failed", "Swapchain Presentation failed: 0x%08X", hr);
+            return false;
+        }
+        return true;
+    }
+
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
 };
 

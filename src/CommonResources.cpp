@@ -199,7 +199,7 @@ bool CommonResources::Initialize()
             desc.width = 1;
             desc.height = 1;
             desc.format = format;
-            desc.isShaderResource = !isUAV;
+            desc.isShaderResource = true;
             desc.isUAV = isUAV;
             desc.initialState = isUAV ? nvrhi::ResourceStates::UnorderedAccess : nvrhi::ResourceStates::ShaderResource;
             desc.keepInitialState = true;

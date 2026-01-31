@@ -49,6 +49,7 @@ external/sdl3
 external/cgltf
 external/dxc
 external/stb_image.h
+external/agilitysdk
 Debug/
 Release/
 RelWithDebInfo/
