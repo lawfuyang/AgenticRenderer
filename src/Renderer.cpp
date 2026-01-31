@@ -16,7 +16,7 @@ public:
         // Clear color
         commandList->clearTextureFloat(renderer->GetCurrentBackBufferTexture(), nvrhi::AllSubresources, nvrhi::Color(0.14f, 0.23f, 0.33f, 1.0f));
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
-        commandList->clearDepthStencilTexture(renderer->m_DepthTexture, nvrhi::AllSubresources, true, 0.0f, false, 0);
+        commandList->clearDepthStencilTexture(renderer->m_DepthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
     }
     const char* GetName() const override { return "Clear"; }
 };
@@ -1051,6 +1051,7 @@ bool Renderer::CreateDepthTextures()
     depthDesc.isRenderTarget = true;
     depthDesc.isUAV = false;
     depthDesc.initialState = nvrhi::ResourceStates::DepthWrite;
+    depthDesc.setClearValue(nvrhi::Color{ DEPTH_FAR, 0.0f, 0.0f, 0.0f });
 
     m_DepthTexture = m_RHI->m_NvrhiDevice->createTexture(depthDesc);
     if (!m_DepthTexture)
@@ -1088,7 +1089,7 @@ bool Renderer::CreateDepthTextures()
     hzbDesc.isUAV = true;
     hzbDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     hzbDesc.dimension = nvrhi::TextureDimension::Texture2D;
-
+    
     m_HZBTexture = m_RHI->m_NvrhiDevice->createTexture(hzbDesc);
     if (!m_HZBTexture)
     {
