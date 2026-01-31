@@ -6,15 +6,15 @@ void Config::ParseCommandLine(int argc, char* argv[])
     {
         const char* arg = argv[i];
 
-        if (std::strcmp(arg, "--vulkandebug") == 0)
+        if (std::strcmp(arg, "--rhidebug") == 0)
         {
             s_Instance.m_EnableValidation = true;
-            SDL_Log("[Config] Vulkan validation enabled via command line");
+            SDL_Log("[Config] Validation enabled via command line");
         }
-        else if (std::strcmp(arg, "--vulkandebug-gpu-assisted") == 0)
+        else if (std::strcmp(arg, "--rhidebug-gpu") == 0)
         {
             s_Instance.m_EnableGPUAssistedValidation = true;
-            SDL_Log("[Config] GPU-assisted Vulkan validation enabled via command line");
+            SDL_Log("[Config] GPU-assisted validation enabled via command line");
         }
         else if (std::strcmp(arg, "--d3d12") == 0)
         {
@@ -46,8 +46,8 @@ void Config::ParseCommandLine(int argc, char* argv[])
         else if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0)
         {
             SDL_Log("Agentic Renderer - Command Line Options:");
-            SDL_Log("  --vulkandebug                 Enable Vulkan validation layers");
-            SDL_Log("  --vulkandebug-gpu-assisted    Enable GPU-assisted Vulkan validation (requires --vulkandebug)");
+            SDL_Log("  --rhidebug                    Enable graphics API validation layers");
+            SDL_Log("  --rhidebug-gpu                Enable GPU-assisted validation (requires --rhidebug)");
             SDL_Log("  --d3d12                       Use D3D12 graphics API");
             SDL_Log("  --gltf <path>                 Load the specified glTF scene file");
             SDL_Log("  --skip-textures               Skip loading textures from glTF scene");
