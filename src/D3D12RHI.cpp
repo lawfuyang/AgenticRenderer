@@ -40,6 +40,19 @@ public:
             if (SUCCEEDED(hr))
             {
                 debugController->EnableDebugLayer();
+
+                if (Config::Get().m_EnableGPUAssistedValidation)
+                {
+                    ComPtr<ID3D12Debug1> debugController1;
+                    if (SUCCEEDED(debugController->QueryInterface(IID_PPV_ARGS(&debugController1))))
+                    {
+                        debugController1->SetEnableGPUBasedValidation(TRUE);
+                    }
+                    else
+                    {
+                        SDL_LOG_ASSERT_FAIL("debugController->QueryInterface(ID3D12Debug1) failed", "debugController->QueryInterface(ID3D12Debug1) failed: 0x%08X", hr);
+                    }
+                }
             }
             else
             {
