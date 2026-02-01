@@ -314,7 +314,7 @@ static void LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sc
 		}
 
 		nvrhi::TextureDesc desc;
-		std::vector<uint8_t> imgData;
+		std::unique_ptr<ITextureDataReader> imgData;
 		if (!LoadTexture(fullPath.string(), desc, imgData))
 		{
 			SDL_LOG_ASSERT_FAIL("Texture loading failed", "[Scene] Texture loading failed for %s", fullPath.string().c_str());
@@ -350,13 +350,13 @@ static void LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sc
 				size_t slicePitch = (size_t)heightInBlocks * rowPitch;
 				size_t subresourceSize = slicePitch * mipDepth;
 
-				if (offset + subresourceSize > imgData.size())
+				if (offset + subresourceSize > imgData->GetSize())
 				{
 					SDL_Log("[Scene] Data overflow for texture %s at mip %u", fullPath.string().c_str(), mipLevel);
 					break;
 				}
 
-				cmd->writeTexture(tex.m_Handle, arraySlice, mipLevel, imgData.data() + offset, rowPitch, slicePitch);
+				cmd->writeTexture(tex.m_Handle, arraySlice, mipLevel, static_cast<const uint8_t*>(imgData->GetData()) + offset, rowPitch, slicePitch);
 				offset += subresourceSize;
 			}
 		}
