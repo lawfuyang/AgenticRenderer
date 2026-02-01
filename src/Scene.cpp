@@ -1456,7 +1456,7 @@ void Scene::UpdateNodeBoundingSphere(int nodeIndex)
 }
 
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 3;
+static constexpr uint32_t kSceneCacheVersion = 4;
 
 bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
 {

@@ -86,11 +86,10 @@ public:
             return false;
         }
 
-        // Prefer SRGB format if available
         vk::SurfaceFormatKHR selectedFormat = surfaceFormats[0];
         for (const vk::SurfaceFormatKHR& format : surfaceFormats)
         {
-            if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+            if (format.format == vk::Format::eB8G8R8A8Unorm && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
             {
                 selectedFormat = format;
                 break;

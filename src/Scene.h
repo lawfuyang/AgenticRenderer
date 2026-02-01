@@ -153,7 +153,7 @@ public:
     {
         float yaw       = 0.0f;
         float pitch     = -DirectX::XM_PI / 3.0f; // -60 degrees, like Unreal Engine default sunlight
-        float intensity = 10000.0f;  // Default to 10,000 lux (bright daylight)
+        float intensity = 20000.0f;  // Default to 20,000 lux (bright daylight)
     };
 
     // Public scene storage (instance members)
