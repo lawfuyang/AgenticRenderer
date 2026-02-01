@@ -94,6 +94,17 @@ public:
             }
         }
 
+        if (Config::Get().m_EnableValidation)
+        {
+            ComPtr<ID3D12InfoQueue> infoQueue;
+            if (SUCCEEDED(m_Device.As(&infoQueue)))
+            {
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+            }
+        }
+
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
