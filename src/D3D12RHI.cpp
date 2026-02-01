@@ -153,11 +153,39 @@ public:
 
     void Shutdown() override
     {
-        m_NvrhiDevice = nullptr;
+        if (m_Device && m_CommandQueue)
+        {
+            ComPtr<ID3D12Fence> fence;
+            if (SUCCEEDED(m_Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence))))
+            {
+                HANDLE event = CreateEventEx(nullptr, nullptr, 0, EVENT_ALL_ACCESS);
+                if (event)
+                {
+                    m_CommandQueue->Signal(fence.Get(), 1);
+                    if (fence->GetCompletedValue() < 1)
+                    {
+                        fence->SetEventOnCompletion(1, event);
+                        WaitForSingleObject(event, INFINITE);
+                    }
+                    CloseHandle(event);
+                }
+                else
+                {
+                    SDL_LOG_ASSERT_FAIL("CreateEventEx failed", "Failed to create event for GPU sync during shutdown");
+                }
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("CreateFence failed", "Failed to create fence for GPU sync during shutdown");
+            }
+        }
+
         for (uint32_t i = 0; i < GraphicRHI::SwapchainImageCount; i++)
         {
             m_NvrhiSwapchainTextures[i] = nullptr;
         }
+        m_NvrhiDevice = nullptr;
+
         m_SwapChain.Reset();
         m_CommandQueue.Reset();
         m_Device.Reset();
