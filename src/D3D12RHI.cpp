@@ -1,7 +1,7 @@
 #include "pch.h"
 
 #include <d3d12.h>
-#include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <directx/d3dx12_check_feature_support.h>
 #include <nvrhi/d3d12.h>
@@ -21,10 +21,11 @@ class D3D12GraphicRHI : public GraphicRHI
 public:
     SDL_Window* m_Window = nullptr;
     ComPtr<IDXGIAdapter1> m_Adapter;
-    ComPtr<IDXGIFactory4> m_Factory;
+    ComPtr<IDXGIFactory6> m_Factory;
     ComPtr<ID3D12Device> m_Device;
     ComPtr<ID3D12CommandQueue> m_CommandQueue;
     ComPtr<IDXGISwapChain3> m_SwapChain;
+    bool m_bTearingSupported = false;
 
     ~D3D12GraphicRHI() override { Shutdown(); }
 
@@ -35,9 +36,14 @@ public:
         if (Config::Get().m_EnableValidation)
         {
             ComPtr<ID3D12Debug> debugController;
-            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+            const HRESULT hr = D3D12GetDebugInterface(IID_PPV_ARGS(&debugController));
+            if (SUCCEEDED(hr))
             {
                 debugController->EnableDebugLayer();
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("D3D12GetDebugInterface failed", "D3D12GetDebugInterface failed: 0x%08X", hr);
             }
         }
 
@@ -78,7 +84,8 @@ public:
         }
 
         CD3DX12FeatureSupport featureSupport;
-        if (SUCCEEDED(featureSupport.Init(m_Device.Get())))
+        hr = featureSupport.Init(m_Device.Get());
+        if (SUCCEEDED(hr))
         {
             D3D_FEATURE_LEVEL maxLevel = featureSupport.MaxSupportedFeatureLevel();
             if (maxLevel > D3D_FEATURE_LEVEL_11_0)
@@ -92,16 +99,29 @@ public:
                     return false;
                 }
             }
+
+            BOOL tearingSupported{};
+            m_Factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearingSupported, sizeof(tearingSupported));
+            m_bTearingSupported = tearingSupported;
+        }
+        else
+        {
+            SDL_LOG_ASSERT_FAIL("featureSupport.Init failed", "featureSupport.Init failed: 0x%08X", hr);
         }
 
         if (Config::Get().m_EnableValidation)
         {
             ComPtr<ID3D12InfoQueue> infoQueue;
-            if (SUCCEEDED(m_Device.As(&infoQueue)))
+            hr = m_Device.As(&infoQueue);
+            if (SUCCEEDED(hr))
             {
                 infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
                 infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
                 infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("m_Device.As(ID3D12InfoQueue) failed", "m_Device.As(ID3D12InfoQueue) failed: 0x%08X", hr);
             }
         }
 
@@ -162,6 +182,7 @@ public:
         swapChainDesc.BufferCount = GraphicRHI::SwapchainImageCount;
         swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+        swapChainDesc.Flags = m_bTearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
         HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(m_Window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
 
@@ -231,7 +252,13 @@ public:
             SDL_LOG_ASSERT_FAIL("Swapchain is null", "PresentSwapchain called with null swapchain");
             return false;
         }
-        HRESULT hr = m_SwapChain->Present(0, 0);
+
+        const UINT kSyncInterval = 0; // 0: no vsync, 1: vsync
+
+        // When using sync interval 0, it is recommended to always pass the tearing flag when it is supported.
+        const UINT kFlags = (kSyncInterval == 0 && m_bTearingSupported) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+
+        HRESULT hr = m_SwapChain->Present(kSyncInterval, kFlags);
         if (FAILED(hr))
         {
             SDL_LOG_ASSERT_FAIL("IDXGISwapChain3::Present failed", "Swapchain Presentation failed: 0x%08X", hr);

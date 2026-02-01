@@ -185,6 +185,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${SDL3_INSTALL_DIR}/SDL3-${S
 target_link_directories(${PROJECT_NAME} PRIVATE "${SDL3_INSTALL_DIR}/SDL3-${SDL3_VERSION}/lib/x64")
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3)
 
+target_link_libraries(${PROJECT_NAME} PRIVATE dxgi)
+
 # Link NVRHI
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
