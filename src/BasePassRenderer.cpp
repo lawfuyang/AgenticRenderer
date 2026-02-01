@@ -122,7 +122,7 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
         nvrhi::BindingSetItem::StructuredBuffer_UAV(7, m_MeshletIndirectBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
     };
-    const nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset, nvrhi::ShaderType::Compute);
+    const nvrhi::BindingLayoutHandle cullLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(cullBset);
     const nvrhi::BindingSetHandle cullBindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(cullBset, cullLayout);
 
     nvrhi::ComputeState cullState;
@@ -220,7 +220,11 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
         nvrhi::BindingSetItem::Sampler(2, CommonResources::GetInstance().MinReductionClamp)
     };
-    const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, nvrhi::ShaderType::All);
+
+    // in Vulkan, space 0 is reserved for bindless, so we use space 1 for other bindings
+    const uint32_t registerSpace = renderer->m_RHI->GetGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN ? 0 : 1;
+
+    const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset, registerSpace);
     const nvrhi::BindingSetHandle bindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(bset, layout);
 
     Vector3 camPos = renderer->m_Camera.GetPosition();
@@ -349,7 +353,7 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
             nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture,  nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
         };
-        const nvrhi::BindingLayoutHandle hzbFromDepthLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(hzbFromDepthBset, nvrhi::ShaderType::Compute);
+        const nvrhi::BindingLayoutHandle hzbFromDepthLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(hzbFromDepthBset);
         const nvrhi::BindingSetHandle hzbFromDepthBindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(hzbFromDepthBset, hzbFromDepthLayout);
 
         nvrhi::ComputeState hzbFromDepthState;
@@ -408,7 +412,7 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
     // Atomic counter always at slot 12
     spdBset.bindings.push_back(nvrhi::BindingSetItem::StructuredBuffer_UAV(12, renderer->m_SPDAtomicCounter));
 
-    const nvrhi::BindingLayoutHandle spdLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(spdBset, nvrhi::ShaderType::Compute);
+    const nvrhi::BindingLayoutHandle spdLayout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(spdBset);
     const nvrhi::BindingSetHandle spdBindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(spdBset, spdLayout);
 
     nvrhi::ComputeState spdState;

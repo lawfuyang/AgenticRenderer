@@ -160,8 +160,7 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     };
 
     // Get or create binding layout
-    nvrhi::BindingLayoutHandle layoutForSet = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(
-        bindingSetDesc, nvrhi::ShaderType::All);
+    nvrhi::BindingLayoutHandle layoutForSet = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bindingSetDesc);
     pipelineDesc.bindingLayouts = { layoutForSet };
 
     nvrhi::BindingSetHandle bindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(bindingSetDesc, layoutForSet);

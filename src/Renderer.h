@@ -109,7 +109,7 @@ struct Renderer
     // Create or retrieve a cached binding layout derived from a BindingSetDesc.
     nvrhi::BindingLayoutHandle GetOrCreateBindingLayoutFromBindingSetDesc(
         const nvrhi::BindingSetDesc& setDesc,
-        nvrhi::ShaderType visibility = nvrhi::ShaderType::All);
+        uint32_t registerSpace = 0);
 
     // Create or retrieve a cached bindless layout.
     nvrhi::BindingLayoutHandle GetOrCreateBindlessLayout(const nvrhi::BindlessLayoutDesc& desc);

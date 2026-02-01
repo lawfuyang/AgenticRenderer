@@ -761,10 +761,11 @@ static bool BindingLayoutDescEqual(const nvrhi::BindingLayoutDesc& a, const nvrh
     return true;
 }
 
-nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, nvrhi::ShaderType visibility)
+nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, uint32_t registerSpace)
 {
     nvrhi::BindingLayoutDesc layoutDesc;
-    layoutDesc.visibility = visibility;
+    layoutDesc.visibility = nvrhi::ShaderType::All;
+    layoutDesc.registerSpace = registerSpace;
     layoutDesc.bindingOffsets.shaderResource = SPIRV_TEXTURE_SHIFT;
     layoutDesc.bindingOffsets.sampler = SPIRV_SAMPLER_SHIFT;
     layoutDesc.bindingOffsets.constantBuffer = SPIRV_CBUFFER_SHIFT;
