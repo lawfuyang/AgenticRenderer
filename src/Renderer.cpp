@@ -9,14 +9,14 @@
 class ClearRenderer : public IRenderer
 {
 public:
-    bool Initialize() override { return true; }
+    void Initialize() override {}
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();
 
         // Clear color
         commandList->clearTextureFloat(renderer->m_HDRColorTexture, nvrhi::AllSubresources, Renderer::kHDROutputClearColor);
-        
+
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
         commandList->clearDepthStencilTexture(renderer->m_DepthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
     }
@@ -311,7 +311,7 @@ Renderer* Renderer::GetInstance()
     return s_Instance;
 }
 
-bool Renderer::LoadShaders()
+void Renderer::LoadShaders()
 {
     SDL_Log("[Init] Loading compiled shaders from config");
 
@@ -320,7 +320,7 @@ bool Renderer::LoadShaders()
     if (!basePathCStr)
     {
         SDL_Log("[Init] Failed to get base path");
-        return false;
+        return;
     }
     const std::filesystem::path exeDir = basePathCStr;
 
@@ -330,7 +330,7 @@ bool Renderer::LoadShaders()
     if (shaderMetadata.empty())
     {
         SDL_Log("[Init] No shaders to load from config");
-        return true; // Not an error, just no shaders defined yet
+        return; // Not an error, just no shaders defined yet
     }
 
     // Load each shader
@@ -344,7 +344,7 @@ bool Renderer::LoadShaders()
         if (binary.empty())
         {
             SDL_Log("[Init] Failed to load compiled shader: %s", outputPath.generic_string().c_str());
-            return false;
+            return;
         }
 
         // Create shader descriptor
@@ -358,7 +358,7 @@ bool Renderer::LoadShaders()
         if (!handle)
         {
             SDL_Log("[Init] Failed to create shader handle: %s", outputPath.generic_string().c_str());
-            return false;
+            return;
         }
 
         // Keyed by logical name (e.g., "ForwardLighting_PSMain_AlphaTest") for easy retrieval
@@ -368,7 +368,6 @@ bool Renderer::LoadShaders()
     }
 
     SDL_Log("[Init] All %zu shader(s) loaded successfully", shaderMetadata.size());
-    return true;
 }
 
 void Renderer::UnloadShaders()
@@ -393,7 +392,7 @@ nvrhi::TextureHandle Renderer::GetCurrentBackBufferTexture() const
     return m_RHI->m_NvrhiSwapchainTextures[m_CurrentSwapchainImageIdx];
 }
 
-bool Renderer::Initialize()
+void Renderer::Initialize()
 {
     ScopedTimerLog initScope{"[Timing] Init phase:"};
 
@@ -409,15 +408,11 @@ bool Renderer::Initialize()
     if (!m_Window)
     {
         SDL_Quit();
-        return false;
+        return;
     }
 
     m_RHI = CreateGraphicRHI(Config::Get().m_GraphicsAPI);
-    if (!m_RHI->Initialize(m_Window))
-    {
-        Shutdown();
-        return false;
-    }
+    m_RHI->Initialize(m_Window);
 
     SDL_assert(m_RHI->m_NvrhiDevice && "NVRHI device is null after RHI initialization");
 
@@ -428,65 +423,24 @@ bool Renderer::Initialize()
     if (!m_RHI->CreateSwapchain(static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight)))
     {
         Shutdown();
-        return false;
+        return;
     }
 
-    if (!InitializeGlobalBindlessTextures())
-    {
-        SDL_Log("[Init] Failed to initialize global bindless textures");
-        Shutdown();
-        return false;
-    }
+    InitializeGlobalBindlessTextures();
+    CommonResources::GetInstance().Initialize();
+    CommonResources::GetInstance().RegisterDefaultTextures();
+    CreateDepthTextures();
+    CreateHDRResources();
+    LoadShaders();
 
-    if (!CommonResources::GetInstance().Initialize())
-    {
-        SDL_Log("[Init] Failed to initialize common resources");
-        Shutdown();
-        return false;
-    }
-
-    // Register default textures with the global bindless system
-    if (!CommonResources::GetInstance().RegisterDefaultTextures())
-    {
-        SDL_Log("[Init] Failed to register default textures");
-        Shutdown();
-        return false;
-    }
-
-    if (!CreateDepthTextures())
-    {
-        Shutdown();
-        return false;
-    }
-
-    if (!CreateHDRResources())
-    {
-        Shutdown();
-        return false;
-    }
-
-    if (!LoadShaders())
-    {
-        Shutdown();
-        return false;
-    }
-
-    if (!m_ImGuiLayer.Initialize())
-    {
-        Shutdown();
-        return false;
-    }
+    m_ImGuiLayer.Initialize();
 
     // Initialize renderers now that shaders and device are ready
     for (const RendererRegistry::Creator& creator : RendererRegistry::GetCreators())
     {
         auto renderer = creator();
-        if (!renderer || !renderer->Initialize())
-        {
-            SDL_LOG_ASSERT_FAIL("Renderer initialization failed", "[Init] Failed to initialize a renderer");
-            Shutdown();
-            return false;
-        }
+        renderer->Initialize();
+        
         m_Renderers.push_back(renderer);
         renderer->m_GPUQueries[0] = m_RHI->m_NvrhiDevice->createTimerQuery();
         renderer->m_GPUQueries[1] = m_RHI->m_NvrhiDevice->createTimerQuery();
@@ -496,16 +450,10 @@ bool Renderer::Initialize()
     m_GPUQueries[1] = m_RHI->m_NvrhiDevice->createTimerQuery();
 
     // Load scene (if configured) after all renderer resources are ready
-    if (!m_Scene.LoadScene())
-    {
-        SDL_Log("[Init] Failed to load scene");
-        Shutdown();
-        return false;
-    }
+    m_Scene.LoadScene();
 
     ExecutePendingCommandLists();
-
-    return true;
+    m_RHI->m_NvrhiDevice->waitForIdle();
 }
 
 void Renderer::Run()
@@ -841,7 +789,7 @@ nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindlessLayout(const nvrhi::Bind
     return handle;
 }
 
-bool Renderer::InitializeGlobalBindlessTextures()
+void Renderer::InitializeGlobalBindlessTextures()
 {
     static const uint32_t kInitialTextureCapacity = 1024;
 
@@ -855,7 +803,7 @@ bool Renderer::InitializeGlobalBindlessTextures()
     if (!m_GlobalTextureBindingLayout)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create global bindless layout for textures", "[Renderer] Failed to create global bindless layout for textures");
-        return false;
+        return;
     }
 
     // Create descriptor table
@@ -863,13 +811,12 @@ bool Renderer::InitializeGlobalBindlessTextures()
     if (!m_GlobalTextureDescriptorTable)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create global texture descriptor table", "[Renderer] Failed to create global texture descriptor table");
-        return false;
+        return;
     }
 
     m_RHI->m_NvrhiDevice->resizeDescriptorTable(m_GlobalTextureDescriptorTable, bindlessDesc.maxCapacity, false);
     
     SDL_Log("[Renderer] Global bindless texture system initialized");
-    return true;
 }
 
 uint32_t Renderer::RegisterTexture(nvrhi::TextureHandle texture)
@@ -1094,7 +1041,7 @@ void Renderer::ExecutePendingCommandLists()
     }
 }
 
-bool Renderer::CreateDepthTextures()
+void Renderer::CreateDepthTextures()
 {
     SDL_Log("[Init] Creating Depth textures");
 
@@ -1113,7 +1060,7 @@ bool Renderer::CreateDepthTextures()
     if (!m_DepthTexture)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create depth texture", "[Init] Failed to create depth texture");
-        return false;
+        return;
     }
 
     // Calculate HZB resolution - use next lower power of 2 for each dimension
@@ -1150,7 +1097,7 @@ bool Renderer::CreateDepthTextures()
     if (!m_HZBTexture)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create HZB texture", "[Init] Failed to create HZB texture");
-        return false;
+        return;
     }
 
     // Create atomic counter buffer for SPD
@@ -1166,7 +1113,6 @@ bool Renderer::CreateDepthTextures()
     cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);
-    return true;
 }
 
 void Renderer::DestroyDepthTextures()
@@ -1178,7 +1124,7 @@ void Renderer::DestroyDepthTextures()
     m_SPDAtomicCounter = nullptr;
 }
 
-bool Renderer::CreateHDRResources()
+void Renderer::CreateHDRResources()
 {
     SDL_Log("[Init] Creating HDR resources");
 
@@ -1197,6 +1143,7 @@ bool Renderer::CreateHDRResources()
     if (!m_HDRColorTexture)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create HDR color texture", "[Init] Failed to create HDR color texture");
+        return;
     }
 
     // Luminance Histogram: 256 bins, each uint32_t
@@ -1210,6 +1157,7 @@ bool Renderer::CreateHDRResources()
     if (!m_LuminanceHistogram)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create luminance histogram buffer", "[Init] Failed to create luminance histogram buffer");
+        return;
     }
 
     // Exposure Buffer: stores current exposure (float)
@@ -1223,9 +1171,8 @@ bool Renderer::CreateHDRResources()
     if (!m_ExposureBuffer)
     {
         SDL_LOG_ASSERT_FAIL("Failed to create exposure buffer", "[Init] Failed to create exposure buffer");
+        return;
     }
-
-    return true;
 }
 
 void Renderer::DestroyHDRResources()
@@ -1269,8 +1216,7 @@ int main(int argc, char* argv[])
 
     Renderer renderer{};
     Renderer::SetInstance(&renderer);
-    if (!renderer.Initialize())
-        return 1;
+    renderer.Initialize();
 
     renderer.Run();
     renderer.Shutdown();

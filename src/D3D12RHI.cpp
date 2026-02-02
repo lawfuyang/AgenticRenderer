@@ -29,7 +29,7 @@ public:
 
     ~D3D12GraphicRHI() override { Shutdown(); }
 
-    bool Initialize(SDL_Window* window) override
+    void Initialize(SDL_Window* window) override
     {
         m_Window = window;
 
@@ -64,7 +64,7 @@ public:
         if (FAILED(hr))
         {
             SDL_LOG_ASSERT_FAIL("CreateDXGIFactory2 failed", "CreateDXGIFactory2 failed: 0x%08X", hr);
-            return false;
+            return;
         }
 
         for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != m_Factory->EnumAdapters1(adapterIndex, &m_Adapter); ++adapterIndex)
@@ -83,7 +83,7 @@ public:
         if (m_Adapter == nullptr)
         {
             SDL_LOG_ASSERT_FAIL("No suitable DXGI adapter found", "No suitable DXGI adapter found");
-            return false;
+            return;
         }
 
         g_DXGIAdapter = m_Adapter.Get();
@@ -93,7 +93,7 @@ public:
         if (FAILED(hr))
         {
             SDL_LOG_ASSERT_FAIL("D3D12CreateDevice failed", "D3D12CreateDevice (baseline) failed: 0x%08X", hr);
-            return false;
+            return;
         }
 
         CD3DX12FeatureSupport featureSupport;
@@ -109,7 +109,7 @@ public:
                 if (FAILED(hr))
                 {
                     SDL_LOG_ASSERT_FAIL("D3D12CreateDevice failed", "D3D12CreateDevice (max level) failed: 0x%08X", hr);
-                    return false;
+                    return;
                 }
             }
 
@@ -145,7 +145,7 @@ public:
         if (FAILED(hr))
         {
             SDL_LOG_ASSERT_FAIL("CreateCommandQueue failed", "CreateCommandQueue failed: 0x%08X", hr);
-            return false;
+            return;
         }
 
         nvrhi::d3d12::DeviceDesc nvrhiDesc;
@@ -160,8 +160,6 @@ public:
         {
             m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
         }
-
-        return true;
     }
 
     void Shutdown() override

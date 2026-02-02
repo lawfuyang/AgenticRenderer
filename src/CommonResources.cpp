@@ -4,7 +4,7 @@
 
 #include "shaders/ShaderShared.h"
 
-bool CommonResources::Initialize()
+void CommonResources::Initialize()
 {
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
@@ -252,10 +252,9 @@ bool CommonResources::Initialize()
     }
 
     SDL_Log("[CommonResources] Initialized successfully");
-    return true;
 }
 
-bool CommonResources::RegisterDefaultTextures()
+void CommonResources::RegisterDefaultTextures()
 {
     Renderer* renderer = Renderer::GetInstance();
 
@@ -271,7 +270,6 @@ bool CommonResources::RegisterDefaultTextures()
     index = renderer->RegisterTexture(DefaultTexturePBR);
     SDL_assert(index == DEFAULT_TEXTURE_PBR);
     SDL_Log("[CommonResources] Default textures registered with bindless system");
-    return true;
 }
 
 void CommonResources::Shutdown()

@@ -13,13 +13,13 @@ class VulkanGraphicRHI : public GraphicRHI
 public:
     ~VulkanGraphicRHI() override { Shutdown(); }
 
-    bool Initialize(SDL_Window* window) override
+    void Initialize(SDL_Window* window) override
     {
-        if (!CreateInstance()) return false;
-        if (!CreateSurface(window)) return false;
+        if (!CreateInstance()) return;
+        if (!CreateSurface(window)) return;
         m_PhysicalDevice = ChoosePhysicalDevice();
-        if (m_PhysicalDevice == VK_NULL_HANDLE) return false;
-        return CreateLogicalDevice();
+        if (m_PhysicalDevice == VK_NULL_HANDLE) return;
+        CreateLogicalDevice();
     }
 
     void Shutdown() override
@@ -491,12 +491,12 @@ public:
         return true;
     }
 
-    bool CreateLogicalDevice()
+    void CreateLogicalDevice()
     {
         if (m_GraphicsQueueFamily == VK_QUEUE_FAMILY_IGNORED)
         {
             SDL_LOG_ASSERT_FAIL("Graphics queue family not set", "Graphics queue family not set before logical device creation");
-            return false;
+            return;
         }
 
         vk::PhysicalDevice vkPhysical = static_cast<vk::PhysicalDevice>(m_PhysicalDevice);
@@ -606,7 +606,7 @@ public:
         if (!vkDevice)
         {
             SDL_LOG_ASSERT_FAIL("vkCreateDevice failed", "vkCreateDevice failed");
-            return false;
+            return;
         }
 
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkDevice);
@@ -637,8 +637,6 @@ public:
         {
             m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
         }
-
-        return true;
     }
 
     bool CreateSurface(SDL_Window* window)

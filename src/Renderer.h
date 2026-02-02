@@ -17,7 +17,7 @@ class IRenderer
 {
 public:
     virtual ~IRenderer() = default;
-    virtual bool Initialize() = 0;
+    virtual void Initialize() = 0;
     virtual void Render(nvrhi::CommandListHandle commandList) = 0;
     virtual const char* GetName() const = 0;
 
@@ -87,7 +87,7 @@ struct Renderer
     // Lifecycle
     // ============================================================================
 
-    bool Initialize();
+    void Initialize();
     void Run();
     void Shutdown();
 
@@ -158,7 +158,7 @@ struct Renderer
     // ============================================================================
 
     // Initialize global bindless texture system
-    bool InitializeGlobalBindlessTextures();
+    void InitializeGlobalBindlessTextures();
 
     // Register a texture in the global bindless table and return its index
     uint32_t RegisterTexture(nvrhi::TextureHandle texture);
@@ -291,10 +291,10 @@ private:
     // GPU Timing
     nvrhi::TimerQueryHandle m_GPUQueries[2];
 
-    bool CreateDepthTextures();
+    void CreateDepthTextures();
     void DestroyDepthTextures();
 
-    bool CreateHDRResources();
+    void CreateHDRResources();
     void DestroyHDRResources();
 
     // Helper for hashing pipeline state
@@ -304,7 +304,7 @@ private:
                                  const nvrhi::BindingLayoutVector& bindingLayouts);
 
     // Shader loading
-    bool LoadShaders();
+    void LoadShaders();
     void UnloadShaders();
 
     static Renderer* s_Instance;

@@ -18,11 +18,11 @@ public:
     CommonResources(CommonResources&&) = delete;
     CommonResources& operator=(CommonResources&&) = delete;
 
-    bool Initialize();
+    void Initialize();
     void Shutdown();
 
     // Register default textures with the global bindless system
-    bool RegisterDefaultTextures();
+    void RegisterDefaultTextures();
 
     // Common sampler states
     nvrhi::SamplerHandle LinearClamp;   // Bilinear filtering, clamp to edge

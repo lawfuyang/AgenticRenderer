@@ -198,7 +198,7 @@ public:
 
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.
-    bool LoadScene();
+    void LoadScene();
 
     // Per-frame update for animations
     void Update(float deltaTime);
@@ -208,7 +208,7 @@ public:
 
     // Binary Scene Cache
     bool LoadFromCache(const std::string& cachePath, std::vector<Vertex>& allVertices, std::vector<uint32_t>& allIndices);
-    bool SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices);
+    void SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices);
 
     // Get directional light direction in world space
     Vector3 GetDirectionalLightDirection() const;

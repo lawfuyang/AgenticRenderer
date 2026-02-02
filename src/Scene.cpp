@@ -1097,13 +1097,13 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 	}
 }
 
-bool Scene::LoadScene()
+void Scene::LoadScene()
 {
 	const std::string& scenePath = Config::Get().m_GltfScene;
 	if (scenePath.empty())
 	{
 		SDL_Log("[Scene] No glTF scene configured, skipping load");
-		return true;
+		return;
 	}
 
 	const std::filesystem::path gltfPath(scenePath);
@@ -1145,7 +1145,7 @@ bool Scene::LoadScene()
 		if (res != cgltf_result_success || !data)
 		{
 			SDL_LOG_ASSERT_FAIL("glTF parse failed", "[Scene] Failed to parse glTF file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
-			return false;
+			return;
 		}
 
 		res = cgltf_validate(data);
@@ -1153,7 +1153,7 @@ bool Scene::LoadScene()
 		{
 			SDL_LOG_ASSERT_FAIL("glTF validation failed", "[Scene] glTF validation failed for file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
 			cgltf_free(data);
-			return false;
+			return;
 		}
 
 		res = cgltf_load_buffers(&options, data, scenePath.c_str());
@@ -1161,7 +1161,7 @@ bool Scene::LoadScene()
 		{
 			SDL_LOG_ASSERT_FAIL("glTF buffer load failed", "[Scene] Failed to load glTF buffers (result: %s)", cgltf_result_tostring(res));
 			cgltf_free(data);
-			return false;
+			return;
 		}
 
 		res = decompressMeshopt(data);
@@ -1169,7 +1169,7 @@ bool Scene::LoadScene()
 		{
 			SDL_LOG_ASSERT_FAIL("glTF meshopt decompression failed", "[Scene] Failed to decompress meshopt-compressed data (result: %s)", cgltf_result_tostring(res));
 			cgltf_free(data);
-			return false;
+			return;
 		}
 
 		m_Nodes.resize(data->nodes_count);
@@ -1279,8 +1279,6 @@ bool Scene::LoadScene()
 	CreateAndUploadGpuBuffers(*this, renderer, allVertices, allIndices);
 
 	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
-
-	return true;
 }
 
 void Scene::Update(float deltaTime)
@@ -1460,10 +1458,14 @@ void Scene::UpdateNodeBoundingSphere(int nodeIndex)
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
 static constexpr uint32_t kSceneCacheVersion = 4;
 
-bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
+void Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
 {
 	std::ofstream os(cachePath, std::ios::binary);
-	if (!os.is_open()) return false;
+	if (!os.is_open())
+	{
+		SDL_LOG_ASSERT_FAIL("Failed to open cache for writing", "[Scene] Failed to open cache file for writing: %s", cachePath.c_str());
+		return;
+	}
 
 	WritePOD(os, kSceneCacheMagic);
 	WritePOD(os, kSceneCacheVersion);
@@ -1584,8 +1586,6 @@ bool Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>&
 		}
 		WriteVector(os, anim.m_Channels);
 	}
-
-	return true;
 }
 
 bool Scene::LoadFromCache(const std::string& cachePath, std::vector<Vertex>& allVertices, std::vector<uint32_t>& allIndices)

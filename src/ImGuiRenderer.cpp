@@ -9,12 +9,12 @@
 class ImGuiRenderer : public IRenderer
 {
 public:
-    bool Initialize() override;
+    void Initialize() override;
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "ImGui"; }
 
 private:
-    bool CreateDeviceObjects();
+    void CreateDeviceObjects();
     void DestroyDeviceObjects();
 
     // GPU Resources (moved from ImGuiLayer)
@@ -30,9 +30,9 @@ private:
 
 REGISTER_RENDERER(ImGuiRenderer);
 
-bool ImGuiRenderer::Initialize()
+void ImGuiRenderer::Initialize()
 {
-    return CreateDeviceObjects();
+    CreateDeviceObjects();
 }
 
 void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
@@ -261,7 +261,7 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList)
     }
 }
 
-bool ImGuiRenderer::CreateDeviceObjects()
+void ImGuiRenderer::CreateDeviceObjects()
 {
     SDL_Log("[Init] Creating ImGui device objects");
     Renderer* renderer = Renderer::GetInstance();
@@ -280,7 +280,7 @@ bool ImGuiRenderer::CreateDeviceObjects()
         if (!m_InputLayout)
         {
             SDL_LOG_ASSERT_FAIL("ImGui input layout creation failed", "[Error] Failed to create ImGui input layout");
-            return false;
+            return;
         }
     }
 
@@ -307,7 +307,7 @@ bool ImGuiRenderer::CreateDeviceObjects()
         if (!m_FontTexture)
         {
             SDL_LOG_ASSERT_FAIL("ImGui font texture creation failed", "[Error] Failed to create ImGui font texture");
-            return false;
+            return;
         }
 
         // Upload font texture data
@@ -316,7 +316,6 @@ bool ImGuiRenderer::CreateDeviceObjects()
     }
 
     SDL_Log("[Init] ImGui device objects created successfully");
-    return true;
 }
 
 void ImGuiRenderer::DestroyDeviceObjects()

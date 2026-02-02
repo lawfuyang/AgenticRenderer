@@ -9,15 +9,13 @@ static constexpr float kMaxLogLuminance = 4.026069f;
 class HDRRenderer : public IRenderer
 {
 public:
-    bool Initialize() override
+    void Initialize() override
     {
         Renderer* renderer = Renderer::GetInstance();
 
         float initialExposure = 1.0f;
         ScopedCommandList cmd{ "Initialize HDR Exposure Buffer" };
         cmd->writeBuffer(renderer->m_ExposureBuffer, &initialExposure, sizeof(float));
-        
-        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList) override

@@ -5,7 +5,7 @@
 class ImGuiLayer
 {
 public:
-    bool Initialize();
+    void Initialize();
     void Shutdown();
     void ProcessEvent(const SDL_Event& event);
     void UpdateFrame();

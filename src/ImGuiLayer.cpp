@@ -9,7 +9,7 @@
 #include <imgui_impl_sdl3.h>
 #include "CommonResources.h"
 
-bool ImGuiLayer::Initialize()
+void ImGuiLayer::Initialize()
 {
     SDL_Window* window = Renderer::GetInstance()->m_Window;
 
@@ -24,11 +24,10 @@ bool ImGuiLayer::Initialize()
     if (!ImGui_ImplSDL3_InitForVulkan(window))
     {
         SDL_LOG_ASSERT_FAIL("ImGui_ImplSDL3_InitForVulkan failed", "[Init] Failed to initialize ImGui SDL3 backend");
-        return false;
+        return;
     }
 
     SDL_Log("[Init] ImGui initialized successfully");
-    return true;
 }
 
 void ImGuiLayer::Shutdown()

@@ -48,7 +48,7 @@ public:
 
     virtual ~GraphicRHI() = default;
 
-    virtual bool Initialize(SDL_Window* window) = 0;
+    virtual void Initialize(SDL_Window* window) = 0;
     virtual void Shutdown() = 0;
     virtual bool CreateSwapchain(uint32_t width, uint32_t height) = 0;
     virtual bool AcquireNextSwapchainImage(uint32_t* outImageIndex) = 0;

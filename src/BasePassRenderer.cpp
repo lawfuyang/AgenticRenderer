@@ -19,7 +19,7 @@ using FfxUInt32x4 = uint32_t[4];
 class BasePassRenderer : public IRenderer
 {
 public:
-    bool Initialize() override;
+    void Initialize() override;
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "BasePass"; }
 
@@ -424,7 +424,7 @@ void BasePassRenderer::GenerateHZBMips(nvrhi::CommandListHandle commandList)
     commandList->dispatch(dispatchThreadGroupCountXY[0], dispatchThreadGroupCountXY[1], 1);
 }
 
-bool BasePassRenderer::Initialize()
+void BasePassRenderer::Initialize()
 {
     Renderer* renderer = Renderer::GetInstance();
 
@@ -471,8 +471,6 @@ bool BasePassRenderer::Initialize()
         .setKeepInitialState(true)
         .setDebugName("MeshletJobCount");
     m_MeshletJobCountBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletJobCountBufDesc);
-
-    return true;
 }
 
 void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
