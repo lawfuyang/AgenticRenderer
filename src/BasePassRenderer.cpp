@@ -182,10 +182,10 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     nvrhi::utils::ScopedMarker commandListMarker(commandList, marker);
 
     const nvrhi::FramebufferHandle framebuffer = renderer->m_RHI->m_NvrhiDevice->createFramebuffer(
-        nvrhi::FramebufferDesc().addColorAttachment(renderer->GetCurrentBackBufferTexture()).setDepthAttachment(renderer->m_DepthTexture));
+        nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture).setDepthAttachment(renderer->m_DepthTexture));
 
     nvrhi::FramebufferInfoEx fbInfo;
-    fbInfo.colorFormats = { renderer->m_RHI->m_SwapchainFormat };
+    fbInfo.colorFormats = { Renderer::HDR_COLOR_FORMAT };
     fbInfo.setDepthFormat(nvrhi::Format::D32);
 
     const uint32_t w = renderer->m_RHI->m_SwapchainExtent.x;

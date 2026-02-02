@@ -110,6 +110,15 @@ void ImGuiLayer::UpdateFrame()
 
         ImGui::Checkbox("Enable Animations", &renderer->m_EnableAnimations);
 
+        // HDR controls
+        if (ImGui::TreeNode("HDR & Exposure"))
+        {
+            ImGui::DragFloat("Exposure Key Value", &m_ExposureKeyValue, 0.01f, 0.0f, 10.0f);
+            ImGui::DragFloat("Adaptation Speed", &m_AdaptationSpeed, 0.01f, 0.0f, 10.0f);
+
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Scene Stats"))
         {
             ImGui::Text("Total Instances: %zu", renderer->m_Scene.m_InstanceData.size());

@@ -71,9 +71,10 @@ struct Renderer
     static constexpr uint32_t SPIRV_CBUFFER_SHIFT   = 300;  // bRegShift (b#)
     static constexpr uint32_t SPIRV_UAV_SHIFT       = 400;  // uRegShift (u#)
 
-    // Depth buffer values for reversed-Z (near: 1.0, far: 0.0)
     static constexpr float DEPTH_NEAR = 1.0f;
     static constexpr float DEPTH_FAR = 0.0f;
+    static constexpr nvrhi::Format HDR_COLOR_FORMAT = nvrhi::Format::R11G11B10_FLOAT;
+    inline static const nvrhi::Color kHDROutputClearColor = nvrhi::Color{ 1.0f };
 
     // ============================================================================
     // Instance Management
@@ -134,6 +135,18 @@ struct Renderer
         nvrhi::BindingLayoutHandle bindingLayout);
 
     // ============================================================================
+    // Rendering Helpers
+    // ============================================================================
+
+    void DrawFullScreenPass(
+        nvrhi::CommandListHandle commandList,
+        const nvrhi::FramebufferHandle& framebuffer,
+        nvrhi::ShaderHandle pixelShader,
+        const nvrhi::BindingSetVector& bindings = {},
+        const void* pushConstants = nullptr,
+        size_t pushConstantsSize = 0);
+
+    // ============================================================================
     // Shaders
     // ============================================================================
 
@@ -167,6 +180,11 @@ struct Renderer
 
     // Depth buffer for main framebuffer
     nvrhi::TextureHandle m_DepthTexture;
+
+    // HDR resources
+    nvrhi::TextureHandle m_HDRColorTexture;
+    nvrhi::BufferHandle m_LuminanceHistogram;
+    nvrhi::BufferHandle m_ExposureBuffer;
 
     // Cached shader handles loaded from compiled SPIR-V binaries
     // (keyed by output stem, e.g., "imgui_VSMain")
@@ -275,6 +293,9 @@ private:
 
     bool CreateDepthTextures();
     void DestroyDepthTextures();
+
+    bool CreateHDRResources();
+    void DestroyHDRResources();
 
     // Helper for hashing pipeline state
     void HashPipelineCommonState(size_t& h, 

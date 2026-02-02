@@ -13,8 +13,10 @@ public:
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();
+
         // Clear color
-        commandList->clearTextureFloat(renderer->GetCurrentBackBufferTexture(), nvrhi::AllSubresources, nvrhi::Color(0.14f, 0.23f, 0.33f, 1.0f));
+        commandList->clearTextureFloat(renderer->m_HDRColorTexture, nvrhi::AllSubresources, Renderer::kHDROutputClearColor);
+        
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
         commandList->clearDepthStencilTexture(renderer->m_DepthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
     }
@@ -457,6 +459,12 @@ bool Renderer::Initialize()
         return false;
     }
 
+    if (!CreateHDRResources())
+    {
+        Shutdown();
+        return false;
+    }
+
     if (!LoadShaders())
     {
         Shutdown();
@@ -599,6 +607,7 @@ void Renderer::Run()
 
         ADD_RENDER_PASS(g_ClearRenderer);
         ADD_RENDER_PASS(g_BasePassRenderer);
+        ADD_RENDER_PASS(g_HDRRenderer);
         ADD_RENDER_PASS(g_ImGuiRenderer);
 
         #undef ADD_RENDER_PASS
@@ -671,6 +680,9 @@ void Renderer::Shutdown()
 
     // Shutdown scene and free its GPU resources
     m_Scene.Shutdown();
+
+    DestroyDepthTextures();
+    DestroyHDRResources();
 
     // Free renderer instances
     m_Renderers.clear();
@@ -992,6 +1004,47 @@ nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::M
     return pipeline;
 }
 
+void Renderer::DrawFullScreenPass(
+    nvrhi::CommandListHandle commandList,
+    const nvrhi::FramebufferHandle& framebuffer,
+    nvrhi::ShaderHandle pixelShader,
+    const nvrhi::BindingSetVector& bindings,
+    const void* pushConstants,
+    size_t pushConstantsSize)
+{
+    nvrhi::MeshletPipelineDesc desc;
+    desc.MS = GetShaderHandle("FullScreen_MSMain");
+    desc.PS = pixelShader;
+
+    for (const auto& bindingSet : bindings) {
+        desc.bindingLayouts.push_back(bindingSet->getLayout());
+    }
+
+    desc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    desc.renderState.depthStencilState.depthTestEnable = false;
+    desc.renderState.depthStencilState.depthWriteEnable = false;
+
+    nvrhi::MeshletPipelineHandle pipeline = GetOrCreateMeshletPipeline(desc, framebuffer->getFramebufferInfo());
+
+    nvrhi::MeshletState state;
+    state.pipeline = pipeline;
+    state.bindings = bindings;
+    state.framebuffer = framebuffer;
+
+    const nvrhi::FramebufferDesc& fbDesc = framebuffer->getDesc();
+    uint32_t width = fbDesc.colorAttachments[0].texture->getDesc().width;
+    uint32_t height = fbDesc.colorAttachments[0].texture->getDesc().height;
+
+    state.viewport.viewports.push_back(nvrhi::Viewport(0, (float)width, 0, (float)height, 0, 1));
+    state.viewport.scissorRects.push_back(nvrhi::Rect(0, (int)width, 0, (int)height));
+
+    commandList->setMeshletState(state);
+    if (pushConstants && pushConstantsSize > 0) {
+        commandList->setPushConstants(pushConstants, pushConstantsSize);
+    }
+    commandList->dispatchMesh(1, 1, 1);
+}
+
 nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerName)
 {
     nvrhi::CommandListHandle handle;
@@ -1123,6 +1176,65 @@ void Renderer::DestroyDepthTextures()
     m_DepthTexture = nullptr;
     m_HZBTexture = nullptr;
     m_SPDAtomicCounter = nullptr;
+}
+
+bool Renderer::CreateHDRResources()
+{
+    SDL_Log("[Init] Creating HDR resources");
+
+    // HDR Color Texture
+    nvrhi::TextureDesc hdrDesc;
+    hdrDesc.width = m_RHI->m_SwapchainExtent.x;
+    hdrDesc.height = m_RHI->m_SwapchainExtent.y;
+    hdrDesc.format = HDR_COLOR_FORMAT;
+    hdrDesc.debugName = "HDRColorTexture";
+    hdrDesc.isRenderTarget = true;
+    hdrDesc.isUAV = true;
+    hdrDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+    hdrDesc.setClearValue(kHDROutputClearColor);
+
+    m_HDRColorTexture = m_RHI->m_NvrhiDevice->createTexture(hdrDesc);
+    if (!m_HDRColorTexture)
+    {
+        SDL_LOG_ASSERT_FAIL("Failed to create HDR color texture", "[Init] Failed to create HDR color texture");
+    }
+
+    // Luminance Histogram: 256 bins, each uint32_t
+    nvrhi::BufferDesc histDesc;
+    histDesc.structStride = sizeof(uint32_t);
+    histDesc.byteSize = 256 * sizeof(uint32_t);
+    histDesc.debugName = "LuminanceHistogram";
+    histDesc.canHaveUAVs = true;
+    histDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    m_LuminanceHistogram = m_RHI->m_NvrhiDevice->createBuffer(histDesc);
+    if (!m_LuminanceHistogram)
+    {
+        SDL_LOG_ASSERT_FAIL("Failed to create luminance histogram buffer", "[Init] Failed to create luminance histogram buffer");
+    }
+
+    // Exposure Buffer: stores current exposure (float)
+    nvrhi::BufferDesc expDesc;
+    expDesc.structStride = sizeof(float);
+    expDesc.byteSize = sizeof(float);
+    expDesc.debugName = "ExposureBuffer";
+    expDesc.canHaveUAVs = true;
+    expDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    m_ExposureBuffer = m_RHI->m_NvrhiDevice->createBuffer(expDesc);
+    if (!m_ExposureBuffer)
+    {
+        SDL_LOG_ASSERT_FAIL("Failed to create exposure buffer", "[Init] Failed to create exposure buffer");
+    }
+
+    return true;
+}
+
+void Renderer::DestroyHDRResources()
+{
+    SDL_Log("[Shutdown] Destroying HDR resources");
+
+    m_HDRColorTexture = nullptr;
+    m_LuminanceHistogram = nullptr;
+    m_ExposureBuffer = nullptr;
 }
 
 // Pipeline caching

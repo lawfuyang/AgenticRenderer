@@ -200,6 +200,30 @@ struct SpdConstants
   Vector2U m_WorkGroupOffset;
 };
 
+struct HistogramConstants
+{
+    uint32_t m_Width;
+    uint32_t m_Height;
+    float m_MinLogLuminance;
+    float m_MaxLogLuminance;
+};
+
+struct AdaptationConstants
+{
+    float m_DeltaTime;
+    float m_KeyValue;
+    float m_AdaptationSpeed;
+    uint32_t m_NumPixels;
+    float m_MinLogLuminance;
+    float m_MaxLogLuminance;
+};
+
+struct TonemapConstants
+{
+    uint32_t m_Width;
+    uint32_t m_Height;
+};
+
 #ifdef __cplusplus
 inline uint32_t DivideAndRoundUp(uint32_t dividend, uint32_t divisor)
 {
