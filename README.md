@@ -20,6 +20,4 @@ This project aims to build a modern Vulkan rendering engine with features implem
 
 ## Scope
 
-This project only intends to reach feature parity with [niagara](https://github.com/zeux/niagara), nothing more. Any extra or advanced graphic features will be implemented in my other repository [ToyRenderer](https://github.com/lawfuyang/ToyRenderer).
-
 **Fair warning:** I fully expect the resulting code and file/folder structure to be completely shit. This is an experiment in seeing what happens when AI agents have free reign over a graphics project. The README.md and git commit messages might also be totally AI-generated.
