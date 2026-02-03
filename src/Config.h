@@ -15,6 +15,9 @@ struct Config
     // Skip loading/saving scene cache
     bool m_SkipCache = false;
 
+    bool ExecutePerPass = false;
+    bool ExecutePerPassAndWait = false;
+
     // Add more configuration options here as needed
     // int renderWidth = 1920;
     // int renderHeight = 1080;

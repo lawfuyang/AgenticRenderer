@@ -43,12 +43,24 @@ void Config::ParseCommandLine(int argc, char* argv[])
             s_Instance.m_SkipCache = true;
             SDL_Log("[Config] Skipping scene cache via command line");
         }
+        else if (std::strcmp(arg, "--execute-per-pass") == 0)
+        {
+            s_Instance.ExecutePerPass = true;
+            SDL_Log("[Config] Execute per pass enabled via command line");
+        }
+        else if (std::strcmp(arg, "--execute-per-pass-and-wait") == 0)
+        {
+            s_Instance.ExecutePerPassAndWait = true;
+            SDL_Log("[Config] Execute per pass and wait enabled via command line");
+        }
         else if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0)
         {
             SDL_Log("Agentic Renderer - Command Line Options:");
             SDL_Log("  --rhidebug                    Enable graphics API validation layers");
             SDL_Log("  --rhidebug-gpu                Enable GPU-assisted validation (requires --rhidebug)");
             SDL_Log("  --d3d12                       Use D3D12 graphics API");
+            SDL_Log("  --execute-per-pass            Execute command lists per pass");
+            SDL_Log("  --execute-per-pass-and-wait   Wait for idle after each pass execution");
             SDL_Log("  --gltf <path>                 Load the specified glTF scene file");
             SDL_Log("  --skip-textures               Skip loading textures from glTF scene");
             SDL_Log("  --skip-cache                  Skip loading/saving scene cache");

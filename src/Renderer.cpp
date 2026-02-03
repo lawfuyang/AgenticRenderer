@@ -78,7 +78,7 @@ namespace
             std::stable_sort(sortedDefines.begin(), sortedDefines.end());
 
             std::string combinedDefines;
-            for (const auto& d : sortedDefines)
+            for (const std::string& d : sortedDefines)
             {
                 if (!combinedDefines.empty()) combinedDefines += " ";
                 combinedDefines += d;
@@ -416,6 +416,11 @@ void Renderer::Initialize()
 
     SDL_assert(m_RHI->m_NvrhiDevice && "NVRHI device is null after RHI initialization");
 
+    SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::HeapDirectlyIndexed));
+    SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::Meshlets));
+    SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::RayQuery));
+    SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::RayTracingAccelStruct));
+
     int windowWidth = 0;
     int windowHeight = 0;
     SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
@@ -438,7 +443,7 @@ void Renderer::Initialize()
     // Initialize renderers now that shaders and device are ready
     for (const RendererRegistry::Creator& creator : RendererRegistry::GetCreators())
     {
-        auto renderer = creator();
+        std::shared_ptr<IRenderer> renderer = creator();
         renderer->Initialize();
         
         m_Renderers.push_back(renderer);
@@ -524,14 +529,10 @@ void Renderer::Run()
         const int readIndex = m_FrameNumber % 2;
         const int writeIndex = (m_FrameNumber + 1) % 2;
 
-        if (m_RHI->m_NvrhiDevice->pollTimerQuery(m_GPUQueries[readIndex]))
-        {
-            m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(m_GPUQueries[readIndex]));
-            m_RHI->m_NvrhiDevice->resetTimerQuery(m_GPUQueries[readIndex]);
-        }
-
         {
             ScopedCommandList cmd{ "GPU Frame Begin" };
+            m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(m_GPUQueries[readIndex]));
+            m_RHI->m_NvrhiDevice->resetTimerQuery(m_GPUQueries[readIndex]);
             cmd->beginTimerQuery(m_GPUQueries[writeIndex]);
         }
 
@@ -540,11 +541,8 @@ void Renderer::Run()
         { \
             extern IRenderer* rendererName; \
             PROFILE_SCOPED(rendererName->GetName()) \
-            if (m_RHI->m_NvrhiDevice->pollTimerQuery(rendererName->m_GPUQueries[readIndex])) \
-            { \
-                rendererName->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(rendererName->m_GPUQueries[readIndex])); \
-                m_RHI->m_NvrhiDevice->resetTimerQuery(rendererName->m_GPUQueries[readIndex]); \
-            } \
+            rendererName->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(rendererName->m_GPUQueries[readIndex])); \
+            m_RHI->m_NvrhiDevice->resetTimerQuery(rendererName->m_GPUQueries[readIndex]); \
             SimpleTimer cpuTimer; \
             ScopedCommandList cmd{ rendererName->GetName() }; \
             cmd->beginTimerQuery(rendererName->m_GPUQueries[writeIndex]); \
@@ -570,6 +568,9 @@ void Renderer::Run()
             PROFILE_SCOPED("WaitForIdle");
             m_RHI->m_NvrhiDevice->waitForIdle();
         }
+
+        m_CommandListFreeList.insert(m_CommandListFreeList.end(), m_InFlightCommandLists.begin(), m_InFlightCommandLists.end());
+        m_InFlightCommandLists.clear();
 
         // Execute any queued GPU work in submission order
         ExecutePendingCommandLists();
@@ -843,7 +844,7 @@ uint32_t Renderer::RegisterTexture(nvrhi::TextureHandle texture)
 void Renderer::HashPipelineCommonState(size_t& h, const nvrhi::RenderState& renderState, const nvrhi::FramebufferInfoEx& fbInfo, const nvrhi::BindingLayoutVector& bindingLayouts)
 {
     // Raster State
-    const auto& rs = renderState.rasterState;
+    const nvrhi::RasterState& rs = renderState.rasterState;
     h = h * 1099511628211u + std::hash<int>()((int)rs.fillMode);
     h = h * 1099511628211u + std::hash<int>()((int)rs.cullMode);
     h = h * 1099511628211u + std::hash<bool>()(rs.frontCounterClockwise);
@@ -855,7 +856,7 @@ void Renderer::HashPipelineCommonState(size_t& h, const nvrhi::RenderState& rend
     h = h * 1099511628211u + std::hash<bool>()(rs.conservativeRasterEnable);
 
     // Depth Stencil State
-    const auto& dss = renderState.depthStencilState;
+    const nvrhi::DepthStencilState& dss = renderState.depthStencilState;
     h = h * 1099511628211u + std::hash<bool>()(dss.depthTestEnable);
     h = h * 1099511628211u + std::hash<bool>()(dss.depthWriteEnable);
     h = h * 1099511628211u + std::hash<int>()((int)dss.depthFunc);
@@ -864,9 +865,9 @@ void Renderer::HashPipelineCommonState(size_t& h, const nvrhi::RenderState& rend
     h = h * 1099511628211u + std::hash<uint32_t>()(dss.stencilWriteMask);
 
     // Blend State
-    const auto& bs = renderState.blendState;
+    const nvrhi::BlendState& bs = renderState.blendState;
     h = h * 1099511628211u + std::hash<bool>()(bs.alphaToCoverageEnable);
-    for (const auto& target : bs.targets)
+    for (const nvrhi::BlendState::RenderTarget& target : bs.targets)
     {
         h = h * 1099511628211u + std::hash<bool>()(target.blendEnable);
         h = h * 1099511628211u + std::hash<int>()((int)target.srcBlend);
@@ -880,7 +881,7 @@ void Renderer::HashPipelineCommonState(size_t& h, const nvrhi::RenderState& rend
 
     // Framebuffer Info
     h = h * 1099511628211u + std::hash<int>()((int)fbInfo.depthFormat);
-    for (auto format : fbInfo.colorFormats)
+    for (nvrhi::Format format : fbInfo.colorFormats)
     {
         h = h * 1099511628211u + std::hash<int>()((int)format);
     }
@@ -963,7 +964,7 @@ void Renderer::DrawFullScreenPass(
     desc.MS = GetShaderHandle("FullScreen_MSMain");
     desc.PS = pixelShader;
 
-    for (const auto& bindingSet : bindings) {
+    for (const nvrhi::BindingSetHandle& bindingSet : bindings) {
         desc.bindingLayouts.push_back(bindingSet->getLayout());
     }
 
@@ -1029,14 +1030,32 @@ void Renderer::ExecutePendingCommandLists()
 
     if (!m_PendingCommandLists.empty())
     {
-        std::vector<nvrhi::ICommandList*> rawLists;
-        rawLists.reserve(m_PendingCommandLists.size());
-        for (const nvrhi::CommandListHandle& handle : m_PendingCommandLists)
+        if (Config::Get().ExecutePerPass || Config::Get().ExecutePerPassAndWait)
         {
-            rawLists.push_back(handle.Get());
-        }
+            for (const nvrhi::CommandListHandle& handle : m_PendingCommandLists)
+            {
+                m_RHI->m_NvrhiDevice->executeCommandList(handle);
 
-        m_RHI->m_NvrhiDevice->executeCommandLists(rawLists.data(), rawLists.size());
+                if (Config::Get().ExecutePerPassAndWait)
+                {
+                    m_RHI->m_NvrhiDevice->waitForIdle();
+                }
+            }
+        }
+        else
+        {
+            std::vector<nvrhi::ICommandList*> rawLists;
+            rawLists.reserve(m_PendingCommandLists.size());
+            for (const nvrhi::CommandListHandle& handle : m_PendingCommandLists)
+            {
+                rawLists.push_back(handle.Get());
+            }
+
+            m_RHI->m_NvrhiDevice->executeCommandLists(rawLists.data(), rawLists.size());
+            
+        }
+        
+        m_InFlightCommandLists.insert(m_InFlightCommandLists.end(), m_PendingCommandLists.begin(), m_PendingCommandLists.end());        
         m_PendingCommandLists.clear();
     }
 }

@@ -85,6 +85,7 @@ struct ForwardLightingPerFrameData
   uint32_t m_EnableOcclusionCulling;
   uint32_t m_HZBWidth;
   uint32_t m_HZBHeight;
+  uint32_t m_EnableRTShadows;
   float m_P00;
   float m_P11;
 };

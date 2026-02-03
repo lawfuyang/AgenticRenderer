@@ -15,6 +15,7 @@ StructuredBuffer<uint> g_MeshletTriangles : register(t5, space1);
 StructuredBuffer<MeshletJob> g_MeshletJobs : register(t6, space1);
 StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
 Texture2D<float> g_HZB : register(t8, space1);
+RaytracingAccelerationStructure g_SceneAS : register(t9, space1);
 
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
@@ -200,7 +201,7 @@ void MSMain(
 float3 TwoChannelNormalX2(float2 normal)
 {
     float2 xy = 2.0f * normal - 1.0f;
-    float z = sqrt(1 - dot(xy, xy));
+    float z = sqrt(saturate(1.0f - dot(xy, xy)));
     return float3(xy.x, xy.y, z);
 }
 
@@ -397,8 +398,29 @@ float4 PSMain(VSOut input) : SV_TARGET
 
     // Lighting and ambient
     float3 radiance = float3(g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity);
+    
+    // Raytraced shadows
+    float shadow = 1.0f;
+    if (g_PerFrame.m_EnableRTShadows != 0)
+    {
+        RayDesc ray;
+        ray.Origin = input.worldPos + N * 0.001f;
+        ray.Direction = L;
+        ray.TMin = 0.0f;
+        ray.TMax = 10000.0f;
+
+        RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+        q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
+        q.Proceed();
+
+        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        {
+            shadow = 0.0f;
+        }
+    }
+
     float3 ambient = (1.0f - NdotL) * baseColor * 0.03f; // IBL fallback
-    float3 color = ambient + (diffuse + spec) * radiance * NdotL;
+    float3 color = ambient + (diffuse + spec) * radiance * NdotL * shadow;
 
     // Emissive
     float3 emissive = mat.m_EmissiveFactor.xyz;

@@ -252,6 +252,9 @@ struct Renderer
     // Enable GLTF animations
     bool m_EnableAnimations = true;
 
+    // Enable Raytraced Shadows
+    bool m_EnableRTShadows = false;
+
     // Debug mode for forward lighting
     int m_DebugMode = 0;
 
@@ -276,6 +279,7 @@ private:
     // Command list pools
     std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;
     std::vector<nvrhi::CommandListHandle> m_PendingCommandLists;
+    std::vector<nvrhi::CommandListHandle> m_InFlightCommandLists;
 
     // Caches
     std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
@@ -325,6 +329,7 @@ public:
     }
 
     nvrhi::CommandListHandle& operator->() { return m_CommandList; }
+    operator nvrhi::ICommandList*() { return m_CommandList.Get(); }
     operator nvrhi::CommandListHandle& () { return m_CommandList; }
 
 private:

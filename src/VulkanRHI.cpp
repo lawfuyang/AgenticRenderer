@@ -558,7 +558,19 @@ public:
         deviceFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
         deviceFeatures.shaderInt64 = VK_TRUE;
 
+        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+        rtPipelineFeatures.rayTracingPipeline = VK_TRUE;
+
+        vk::PhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+        asFeatures.pNext = &rtPipelineFeatures;
+        asFeatures.accelerationStructure = VK_TRUE;
+
+        vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
+        rayQueryFeatures.pNext = &asFeatures;
+        rayQueryFeatures.rayQuery = VK_TRUE;
+
         vk::PhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+        meshShaderFeatures.pNext = &rayQueryFeatures;
         meshShaderFeatures.taskShader = VK_TRUE;
         meshShaderFeatures.meshShader = VK_TRUE;
         meshShaderFeatures.meshShaderQueries = VK_TRUE;

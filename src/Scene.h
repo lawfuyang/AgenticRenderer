@@ -22,11 +22,12 @@ public:
         float m_LODErrors[MAX_LOD_COUNT] = { 0.0f };
         int m_MaterialIndex = -1;
         uint32_t m_MeshDataIndex = 0;
+        nvrhi::rt::AccelStructHandle m_BLAS;
     };
 
     struct Mesh
     {
-        std::vector<Primitive> m_Primitives;
+        std::vector<uint32_t> m_PrimitiveIndices;
         // local sphere
         Vector3 m_Center{};
         float m_Radius{};
@@ -158,6 +159,7 @@ public:
 
     // Public scene storage (instance members)
     std::vector<Mesh> m_Meshes;
+    std::vector<Primitive> m_Primitives;
     std::vector<Node> m_Nodes;
     std::vector<Material> m_Materials;
     std::vector<Texture> m_Textures;
@@ -195,10 +197,13 @@ public:
     std::vector<uint32_t> m_MeshletVertices;
     std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
+    nvrhi::rt::AccelStructHandle m_TLAS;
 
     // Load the scene from the path configured in `Config::Get().m_GltfScene`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.
     void LoadScene();
+
+    void BuildAccelerationStructures();
 
     // Per-frame update for animations
     void Update(float deltaTime);

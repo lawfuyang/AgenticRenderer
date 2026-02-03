@@ -73,6 +73,7 @@ void ImGuiLayer::UpdateFrame()
         ImGui::DragInt("Target FPS", (int*)&renderer->m_TargetFPS, 1.0f, 10, 200);
 
         ImGui::Checkbox("Enable Meshlet Rendering", &renderer->m_UseMeshletRendering);
+        ImGui::Checkbox("Raytraced Shadows", &renderer->m_EnableRTShadows);
 
         // Debug mode dropdown
         const char* debugModes[] = {

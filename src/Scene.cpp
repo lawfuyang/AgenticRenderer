@@ -806,7 +806,8 @@ static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<Vert
 
 			// Extract MeshData
 			p.m_MeshDataIndex = (uint32_t)scene.m_MeshData.size();
-			mesh.m_Primitives.push_back(p);
+			mesh.m_PrimitiveIndices.push_back((uint32_t)scene.m_Primitives.size());
+			scene.m_Primitives.push_back(p);
 
 			MeshData md{};
 			md.m_LODCount = p.m_LODCount;
@@ -984,6 +985,8 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 {
 	SCOPED_TIMER("[Scene] GPU Upload");
 
+	ScopedCommandList cmd{ "Upload Scene Buffers" };
+
 	const size_t vbytes = allVertices.size() * sizeof(Vertex);
 	const size_t ibytes = allIndices.size() * sizeof(uint32_t);
 
@@ -995,6 +998,7 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_VertexBuffer";
+		desc.isAccelStructBuildInput = true;
 		scene.m_VertexBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 	}
 
@@ -1006,12 +1010,12 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.initialState = nvrhi::ResourceStates::IndexBuffer;
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_IndexBuffer";
+		desc.isAccelStructBuildInput = true;
 		scene.m_IndexBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 	}
 
 	if (scene.m_VertexBuffer || scene.m_IndexBuffer)
 	{
-		ScopedCommandList cmd{ "Upload Scene" };
 		if (scene.m_VertexBuffer && vbytes > 0)
 			cmd->writeBuffer(scene.m_VertexBuffer, allVertices.data(), vbytes, 0);
 		if (scene.m_IndexBuffer && ibytes > 0)
@@ -1029,7 +1033,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.debugName = "Scene_MeshDataBuffer";
 		scene.m_MeshDataBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		ScopedCommandList cmd{ "Upload Mesh Data" };
 		cmd->writeBuffer(scene.m_MeshDataBuffer, scene.m_MeshData.data(), scene.m_MeshData.size() * sizeof(MeshData), 0);
 	}
 
@@ -1044,7 +1047,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.debugName = "Scene_MeshletBuffer";
 		scene.m_MeshletBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		ScopedCommandList cmd{ "Upload Meshlets" };
 		cmd->writeBuffer(scene.m_MeshletBuffer, scene.m_Meshlets.data(), scene.m_Meshlets.size() * sizeof(Meshlet), 0);
 	}
 
@@ -1058,7 +1060,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.debugName = "Scene_MeshletVerticesBuffer";
 		scene.m_MeshletVerticesBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		ScopedCommandList cmd{ "Upload Meshlet Vertices" };
 		cmd->writeBuffer(scene.m_MeshletVerticesBuffer, scene.m_MeshletVertices.data(), scene.m_MeshletVertices.size() * sizeof(uint32_t), 0);
 	}
 
@@ -1072,7 +1073,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		desc.debugName = "Scene_MeshletTrianglesBuffer";
 		scene.m_MeshletTrianglesBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		ScopedCommandList cmd{ "Upload Meshlet Triangles" };
 		cmd->writeBuffer(scene.m_MeshletTrianglesBuffer, scene.m_MeshletTriangles.data(), scene.m_MeshletTriangles.size() * sizeof(uint32_t), 0);
 	}
 
@@ -1091,7 +1091,6 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 	// Upload instance data
 	if (scene.m_InstanceDataBuffer)
 	{
-		ScopedCommandList cmd{ "Upload Scene Data" };
 		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
 			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(PerInstanceData), 0);
 	}
@@ -1215,8 +1214,9 @@ void Scene::LoadScene()
 			const Scene::Node& node = m_Nodes[ni];
 			if (node.m_MeshIndex < 0) continue;
 			const Scene::Mesh& mesh = m_Meshes[node.m_MeshIndex];
-			for (const Scene::Primitive& prim : mesh.m_Primitives)
+			for (uint32_t primIdx : mesh.m_PrimitiveIndices)
 			{
+				const Scene::Primitive& prim = m_Primitives[primIdx];
 				PerInstanceData inst{};
 				inst.m_World = node.m_WorldTransform;
 				inst.m_MaterialIndex = prim.m_MaterialIndex;
@@ -1277,8 +1277,82 @@ void Scene::LoadScene()
 	UpdateMaterialsAndCreateConstants(*this, renderer);
 	SetupDirectionalLightAndCamera(*this, renderer);
 	CreateAndUploadGpuBuffers(*this, renderer, allVertices, allIndices);
+	BuildAccelerationStructures();
 
 	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
+}
+
+void Scene::BuildAccelerationStructures()
+{
+    Renderer* renderer = Renderer::GetInstance();
+    nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
+	ScopedCommandList commandList{ "Build Scene Accel Structs" };
+
+    // 1. Build BLAS for each primitive
+	for (Primitive& primitive : m_Primitives)
+	{
+		SDL_assert(!primitive.m_BLAS);
+
+		nvrhi::rt::GeometryDesc geometryDesc;
+		nvrhi::rt::GeometryTriangles& geometryTriangle = geometryDesc.geometryData.triangles;
+		geometryTriangle.indexBuffer = m_IndexBuffer;
+		geometryTriangle.vertexBuffer = m_VertexBuffer;
+		geometryTriangle.indexFormat = nvrhi::Format::R32_UINT;
+		geometryTriangle.vertexFormat = nvrhi::Format::RGB32_FLOAT;
+		geometryTriangle.indexOffset = primitive.m_IndexOffsets[0] * nvrhi::getFormatInfo(geometryTriangle.indexFormat).bytesPerBlock;
+		geometryTriangle.vertexOffset = primitive.m_VertexOffset * sizeof(Vertex);
+		geometryTriangle.indexCount =  primitive.m_IndexCounts[0];
+		geometryTriangle.vertexCount = primitive.m_VertexCount;
+		geometryTriangle.vertexStride = sizeof(Vertex);
+
+		geometryDesc.flags = nvrhi::rt::GeometryFlags::None; // can't be opaque since we have alpha tested materials that can be applied to this mesh
+		geometryDesc.geometryType = nvrhi::rt::GeometryType::Triangles;
+
+		nvrhi::rt::AccelStructDesc blasDesc;
+		blasDesc.bottomLevelGeometries = { geometryDesc };
+		blasDesc.debugName = "BLAS";
+		blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::None;
+
+		primitive.m_BLAS = device->createAccelStruct(blasDesc);
+
+		nvrhi::utils::BuildBottomLevelAccelStruct(commandList, primitive.m_BLAS, blasDesc);
+	}
+
+	// 2. Build TLAS for the scene
+	nvrhi::rt::AccelStructDesc tlasDesc;
+    tlasDesc.topLevelMaxInstances =  m_InstanceData.size();
+    tlasDesc.debugName = "Scene TLAS";
+    tlasDesc.isTopLevel = true;
+    m_TLAS = device->createAccelStruct(tlasDesc);
+
+    std::vector<nvrhi::rt::InstanceDesc> instances;
+	for (uint32_t instanceID = 0; instanceID < m_InstanceData.size(); ++instanceID)
+    {
+		const PerInstanceData& instData = m_InstanceData[instanceID];
+		const Primitive& primitive = m_Primitives[instData.m_MeshDataIndex];
+		const uint32_t alphaMode = m_Materials.at(primitive.m_MaterialIndex).m_AlphaMode;
+
+        nvrhi::rt::InstanceDesc& instanceDesc = instances.emplace_back();
+
+		// Copy transform (transpose of row-vector matrix)
+		const Matrix& world = instData.m_World;
+		nvrhi::rt::AffineTransform transform;
+		transform[0] = world._11; transform[1] = world._21; transform[2] = world._31; transform[3] = world._41;
+		transform[4] = world._12; transform[5] = world._22; transform[6] = world._32; transform[7] = world._42;
+		transform[8] = world._13; transform[9] = world._23; transform[10] = world._33; transform[11] = world._43;
+		instanceDesc.setTransform(transform);
+
+        nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::None;
+        instanceFlags = instanceFlags | ((alphaMode == ALPHA_MODE_OPAQUE) ? nvrhi::rt::InstanceFlags::ForceOpaque : nvrhi::rt::InstanceFlags::ForceNonOpaque);
+
+        instanceDesc.instanceID = instanceID;
+        instanceDesc.instanceMask = 1;
+        instanceDesc.instanceContributionToHitGroupIndex = 0;
+        instanceDesc.flags = instanceFlags;
+        instanceDesc.bottomLevelAS = primitive.m_BLAS;
+    }
+
+    commandList->buildTopLevelAccelStruct(m_TLAS, instances.data(), (uint32_t)instances.size());
 }
 
 void Scene::Update(float deltaTime)
@@ -1439,6 +1513,7 @@ void Scene::Shutdown()
 	m_Cameras.clear();
 	m_Lights.clear();
 	m_InstanceData.clear();
+	m_Primitives.clear();
 }
 
 void Scene::UpdateNodeBoundingSphere(int nodeIndex)
@@ -1456,7 +1531,7 @@ void Scene::UpdateNodeBoundingSphere(int nodeIndex)
 }
 
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 4;
+static constexpr uint32_t kSceneCacheVersion = 6;
 
 void Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>& allVertices, const std::vector<uint32_t>& allIndices)
 {
@@ -1479,10 +1554,13 @@ void Scene::SaveToCache(const std::string& cachePath, const std::vector<Vertex>&
 	WritePOD(os, m_Meshes.size());
 	for (const Scene::Mesh& mesh : m_Meshes)
 	{
-		WriteVector(os, mesh.m_Primitives);
+		WriteVector(os, mesh.m_PrimitiveIndices);
 		WritePOD(os, mesh.m_Center);
 		WritePOD(os, mesh.m_Radius);
 	}
+
+	// Primitives
+	WriteVector(os, m_Primitives);
 
 	// Nodes
 	WritePOD(os, m_Nodes.size());
@@ -1615,10 +1693,15 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<Vertex>& all
 	m_Meshes.resize(meshCount);
 	for (Scene::Mesh& mesh : m_Meshes)
 	{
-		ReadVector(is, mesh.m_Primitives);
+		ReadVector(is, mesh.m_PrimitiveIndices);
 		ReadPOD(is, mesh.m_Center);
 		ReadPOD(is, mesh.m_Radius);
 	}
+
+	// Primitives
+	ReadVector(is, m_Primitives);
+	for (Primitive& prim : m_Primitives)
+		prim.m_BLAS = nullptr; // Clear AS handles read from disk
 
 	// Nodes
 	size_t nodeCount;
