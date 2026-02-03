@@ -419,7 +419,7 @@ float4 PSMain(VSOut input) : SV_TARGET
         }
     }
 
-    float3 ambient = (1.0f - shadow) * baseColor * 0.03f; // hack
+    float3 ambient = (1.0f - (g_PerFrame.m_EnableRTShadows ? shadow : 0.0f)) * baseColor * 0.03f; // hack
     float3 color = ambient + (diffuse + spec) * radiance * NdotL * shadow;
 
     // Emissive

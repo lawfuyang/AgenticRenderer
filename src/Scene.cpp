@@ -1359,7 +1359,7 @@ void Scene::BuildAccelerationStructures()
 		transform[8] = world._13; transform[9] = world._23; transform[10] = world._33; transform[11] = world._43;
 		instanceDesc.setTransform(transform);
 
-        nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::None;
+        nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::TriangleFrontCounterclockwise;
         instanceFlags = instanceFlags | ((alphaMode == ALPHA_MODE_OPAQUE) ? nvrhi::rt::InstanceFlags::ForceOpaque : nvrhi::rt::InstanceFlags::ForceNonOpaque);
 
         instanceDesc.instanceID = instanceID;
