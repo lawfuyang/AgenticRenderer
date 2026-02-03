@@ -409,7 +409,7 @@ float4 PSMain(VSOut input) : SV_TARGET
         ray.TMin = 0.0f;
         ray.TMax = 10000.0f;
 
-        RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
         q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
         q.Proceed();
 
@@ -419,7 +419,7 @@ float4 PSMain(VSOut input) : SV_TARGET
         }
     }
 
-    float3 ambient = (1.0f - NdotL) * baseColor * 0.03f; // IBL fallback
+    float3 ambient = (1.0f - shadow) * baseColor * 0.03f; // hack
     float3 color = ambient + (diffuse + spec) * radiance * NdotL * shadow;
 
     // Emissive

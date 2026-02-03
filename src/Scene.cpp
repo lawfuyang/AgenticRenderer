@@ -1094,6 +1094,23 @@ static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const st
 		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
 			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(PerInstanceData), 0);
 	}
+
+	// print buffers memory stats
+	SDL_Log("[Scene] GPU Buffers Uploaded:\n"
+		"  Vertex Buffer:         %.2f MB (%zu vertices)\n"
+		"  Index Buffer:          %.2f MB (%zu indices)\n"
+		"  Mesh Data Buffer:      %.2f MB (%zu mesh data entries)\n"
+		"  Meshlet Buffer:        %.2f MB (%zu meshlets)\n"
+		"  Meshlet Vertices Buf:  %.2f MB (%zu meshlet vertices)\n"
+		"  Meshlet Triangles Buf: %.2f MB (%zu meshlet triangles)\n"
+		"  Instance Data Buffer:  %.2f MB (%zu instances)",
+		vbytes / (1024.0f * 1024.0f), allVertices.size(),
+		ibytes / (1024.0f * 1024.0f), allIndices.size(),
+		(scene.m_MeshData.size() * sizeof(MeshData)) / (1024.0f * 1024.0f), scene.m_MeshData.size(),
+		(scene.m_Meshlets.size() * sizeof(Meshlet)) / (1024.0f * 1024.0f), scene.m_Meshlets.size(),
+		(scene.m_MeshletVertices.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletVertices.size(),
+		(scene.m_MeshletTriangles.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletTriangles.size(),
+		(scene.m_InstanceData.size() * sizeof(PerInstanceData)) / (1024.0f * 1024.0f), scene.m_InstanceData.size());
 }
 
 void Scene::LoadScene()
@@ -1278,12 +1295,12 @@ void Scene::LoadScene()
 	SetupDirectionalLightAndCamera(*this, renderer);
 	CreateAndUploadGpuBuffers(*this, renderer, allVertices, allIndices);
 	BuildAccelerationStructures();
-
-	SDL_Log("[Scene] Loaded meshes: %zu, nodes: %zu", m_Meshes.size(), m_Nodes.size());
 }
 
 void Scene::BuildAccelerationStructures()
 {
+	SCOPED_TIMER("[Scene] Build Accel Structs");
+
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
 	ScopedCommandList commandList{ "Build Scene Accel Structs" };
@@ -1300,7 +1317,7 @@ void Scene::BuildAccelerationStructures()
 		geometryTriangle.indexFormat = nvrhi::Format::R32_UINT;
 		geometryTriangle.vertexFormat = nvrhi::Format::RGB32_FLOAT;
 		geometryTriangle.indexOffset = primitive.m_IndexOffsets[0] * nvrhi::getFormatInfo(geometryTriangle.indexFormat).bytesPerBlock;
-		geometryTriangle.vertexOffset = primitive.m_VertexOffset * sizeof(Vertex);
+		geometryTriangle.vertexOffset = 0; // Indices are already global relative to the start of the vertex buffer
 		geometryTriangle.indexCount =  primitive.m_IndexCounts[0];
 		geometryTriangle.vertexCount = primitive.m_VertexCount;
 		geometryTriangle.vertexStride = sizeof(Vertex);
@@ -1311,7 +1328,7 @@ void Scene::BuildAccelerationStructures()
 		nvrhi::rt::AccelStructDesc blasDesc;
 		blasDesc.bottomLevelGeometries = { geometryDesc };
 		blasDesc.debugName = "BLAS";
-		blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::None;
+		blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::AllowCompaction | nvrhi::rt::AccelStructBuildFlags::PreferFastTrace;
 
 		primitive.m_BLAS = device->createAccelStruct(blasDesc);
 

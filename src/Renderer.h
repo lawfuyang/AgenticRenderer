@@ -253,7 +253,7 @@ struct Renderer
     bool m_EnableAnimations = true;
 
     // Enable Raytraced Shadows
-    bool m_EnableRTShadows = false;
+    bool m_EnableRTShadows = true;
 
     // Debug mode for forward lighting
     int m_DebugMode = 0;
