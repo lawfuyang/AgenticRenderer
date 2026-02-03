@@ -458,7 +458,6 @@ void Renderer::Initialize()
     m_Scene.LoadScene();
 
     ExecutePendingCommandLists();
-    m_RHI->m_NvrhiDevice->waitForIdle();
 }
 
 void Renderer::Run()
@@ -562,15 +561,6 @@ void Renderer::Run()
             ScopedCommandList cmd{ "GPU Frame End" };
             cmd->endTimerQuery(m_GPUQueries[writeIndex]);
         }
-
-        // Wait for GPU to finish all work before presenting
-        {
-            PROFILE_SCOPED("WaitForIdle");
-            m_RHI->m_NvrhiDevice->waitForIdle();
-        }
-
-        m_CommandListFreeList.insert(m_CommandListFreeList.end(), m_InFlightCommandLists.begin(), m_InFlightCommandLists.end());
-        m_InFlightCommandLists.clear();
 
         // Execute any queued GPU work in submission order
         ExecutePendingCommandLists();
@@ -1027,6 +1017,15 @@ void Renderer::SubmitCommandList(const nvrhi::CommandListHandle& commandList)
 void Renderer::ExecutePendingCommandLists()
 {
     PROFILE_FUNCTION();
+
+    // Wait for GPU to finish all work before presenting
+    {
+        PROFILE_SCOPED("WaitForIdle");
+        m_RHI->m_NvrhiDevice->waitForIdle();
+    }
+
+    m_CommandListFreeList.insert(m_CommandListFreeList.end(), m_InFlightCommandLists.begin(), m_InFlightCommandLists.end());
+    m_InFlightCommandLists.clear();
 
     if (!m_PendingCommandLists.empty())
     {
