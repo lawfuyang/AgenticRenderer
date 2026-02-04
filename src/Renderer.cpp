@@ -602,12 +602,12 @@ void Renderer::Shutdown()
 
     MicroProfileShutdown();
 
-    SDL_assert(m_PendingCommandLists.empty() && "Pending command lists should be empty on device destruction");
-    m_PendingCommandLists.clear();
-    m_CommandListFreeList.clear();
-
     m_RHI->m_NvrhiDevice->waitForIdle();
     m_RHI->m_NvrhiDevice->runGarbageCollection();
+
+    m_InFlightCommandLists.clear();
+    m_PendingCommandLists.clear();
+    m_CommandListFreeList.clear();
 
     m_ImGuiLayer.Shutdown();
     CommonResources::GetInstance().Shutdown();

@@ -1513,6 +1513,7 @@ void Scene::Shutdown()
 	m_MeshletBuffer = nullptr;
 	m_MeshletVerticesBuffer = nullptr;
 	m_MeshletTrianglesBuffer = nullptr;
+	m_TLAS = nullptr;
 
 	// Clear CPU-side containers
 	m_Meshes.clear();
