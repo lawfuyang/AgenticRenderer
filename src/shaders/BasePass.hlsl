@@ -299,7 +299,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
     
 #if defined(ALPHA_TEST)
-    if (mat.m_AlphaMode == ALPHA_MODE_MASK && alpha < mat.m_AlphaCutoff)
+    if (alpha < mat.m_AlphaCutoff)
     {
         discard;
     }
