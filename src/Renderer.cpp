@@ -421,7 +421,6 @@ void Renderer::Initialize()
     m_RHI->Initialize(m_Window);
 
     SDL_assert(m_RHI->m_NvrhiDevice && "NVRHI device is null after RHI initialization");
-
     SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::HeapDirectlyIndexed));
     SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::Meshlets));
     SDL_assert(m_RHI->m_NvrhiDevice->queryFeatureSupport(nvrhi::Feature::RayQuery));
@@ -440,9 +439,7 @@ void Renderer::Initialize()
     InitializeGlobalBindlessTextures();
     CommonResources::GetInstance().Initialize();
     CommonResources::GetInstance().RegisterDefaultTextures();
-    CreateDepthTextures();
-    CreateGBufferResources();
-    CreateHDRResources();
+    CreateSceneResources();
     LoadShaders();
 
     m_ImGuiLayer.Initialize();
@@ -629,9 +626,7 @@ void Renderer::Shutdown()
     // Shutdown scene and free its GPU resources
     m_Scene.Shutdown();
 
-    DestroyDepthTextures();
-    DestroyGBufferResources();
-    DestroyHDRResources();
+    DestroySceneResources();
 
     // Free renderer instances
     m_Renderers.clear();
@@ -645,7 +640,6 @@ void Renderer::Shutdown()
     m_MeshletPipelineCache.clear();
 
     UnloadShaders();
-    DestroyDepthTextures();
 
     m_RHI->m_NvrhiDevice->waitForIdle();
     m_RHI->m_NvrhiDevice->runGarbageCollection();
@@ -952,6 +946,31 @@ nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::M
     return pipeline;
 }
 
+nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout)
+{
+    // Hash relevant pipeline properties: CS shader handle, binding layout pointer
+    size_t h = 1469598103934665603ull;
+    h = h * 1099511628211u + std::hash<const void*>()(shader.Get());
+    h = h * 1099511628211u + std::hash<const void*>()(bindingLayout.Get());
+
+    auto it = m_ComputePipelineCache.find(h);
+    if (it != m_ComputePipelineCache.end())
+        return it->second;
+
+    // Create pipeline and cache it
+    nvrhi::ComputePipelineDesc desc;
+    desc.CS = shader;
+    desc.bindingLayouts = { bindingLayout };
+    nvrhi::ComputePipelineHandle pipeline = m_RHI->m_NvrhiDevice->createComputePipeline(desc);
+    SDL_assert(pipeline && "Failed to create compute pipeline");
+    if (pipeline)
+    {
+        m_ComputePipelineCache.emplace(h, pipeline);
+    }
+
+    return pipeline;
+}
+
 void Renderer::AddFullScreenPass(const RenderPassParams& params)
 {
     PROFILE_SCOPED(params.shaderName.data());
@@ -1102,7 +1121,7 @@ void Renderer::ExecutePendingCommandLists()
     }
 }
 
-void Renderer::CreateDepthTextures()
+void Renderer::CreateSceneResources()
 {
     SDL_Log("[Init] Creating Depth textures");
 
@@ -1174,19 +1193,7 @@ void Renderer::CreateDepthTextures()
     cmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);
-}
 
-void Renderer::DestroyDepthTextures()
-{
-    SDL_Log("[Shutdown] Destroying Depth textures");
-
-    m_DepthTexture = nullptr;
-    m_HZBTexture = nullptr;
-    m_SPDAtomicCounter = nullptr;
-}
-
-void Renderer::CreateGBufferResources()
-{
     SDL_Log("[Init] Creating G-Buffer resources");
 
     nvrhi::TextureDesc desc;
@@ -1220,20 +1227,7 @@ void Renderer::CreateGBufferResources()
     {
         SDL_LOG_ASSERT_FAIL("Failed to create G-Buffer textures", "[Init] Failed to create G-Buffer textures");
     }
-}
 
-void Renderer::DestroyGBufferResources()
-{
-    SDL_Log("[Shutdown] Destroying G-Buffer resources");
-
-    m_GBufferAlbedo = nullptr;
-    m_GBufferNormals = nullptr;
-    m_GBufferORM = nullptr;
-    m_GBufferEmissive = nullptr;
-}
-
-void Renderer::CreateHDRResources()
-{
     SDL_Log("[Init] Creating HDR resources");
 
     // HDR Color Texture
@@ -1283,39 +1277,26 @@ void Renderer::CreateHDRResources()
     }
 }
 
-void Renderer::DestroyHDRResources()
+void Renderer::DestroySceneResources()
 {
+    SDL_Log("[Shutdown] Destroying Depth textures");
+
+    m_DepthTexture = nullptr;
+    m_HZBTexture = nullptr;
+    m_SPDAtomicCounter = nullptr;
+
+    SDL_Log("[Shutdown] Destroying G-Buffer resources");
+
+    m_GBufferAlbedo = nullptr;
+    m_GBufferNormals = nullptr;
+    m_GBufferORM = nullptr;
+    m_GBufferEmissive = nullptr;
+
     SDL_Log("[Shutdown] Destroying HDR resources");
 
     m_HDRColorTexture = nullptr;
     m_LuminanceHistogram = nullptr;
     m_ExposureBuffer = nullptr;
-}
-
-// Pipeline caching
-nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout)
-{
-    // Hash relevant pipeline properties: CS shader handle, binding layout pointer
-    size_t h = 1469598103934665603ull;
-    h = h * 1099511628211u + std::hash<const void*>()(shader.Get());
-    h = h * 1099511628211u + std::hash<const void*>()(bindingLayout.Get());
-
-    auto it = m_ComputePipelineCache.find(h);
-    if (it != m_ComputePipelineCache.end())
-        return it->second;
-
-    // Create pipeline and cache it
-    nvrhi::ComputePipelineDesc desc;
-    desc.CS = shader;
-    desc.bindingLayouts = { bindingLayout };
-    nvrhi::ComputePipelineHandle pipeline = m_RHI->m_NvrhiDevice->createComputePipeline(desc);
-    SDL_assert(pipeline && "Failed to create compute pipeline");
-    if (pipeline)
-    {
-        m_ComputePipelineCache.emplace(h, pipeline);
-    }
-
-    return pipeline;
 }
 
 int main(int argc, char* argv[])

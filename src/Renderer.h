@@ -222,16 +222,9 @@ private:
     nvrhi::TimerQueryHandle m_GPUQueries[2];
 
     // Private methods
-    void CreateDepthTextures();
-    void DestroyDepthTextures();
-    void CreateGBufferResources();
-    void DestroyGBufferResources();
-    void CreateHDRResources();
-    void DestroyHDRResources();
-    void HashPipelineCommonState(size_t& h, 
-                                 const nvrhi::RenderState& renderState, 
-                                 const nvrhi::FramebufferInfoEx& fbInfo, 
-                                 const nvrhi::BindingLayoutVector& bindingLayouts);
+    void CreateSceneResources();
+    void DestroySceneResources();
+    void HashPipelineCommonState(size_t& h, const nvrhi::RenderState&, const nvrhi::FramebufferInfoEx&, const nvrhi::BindingLayoutVector&);
     void LoadShaders();
     void UnloadShaders();
 
