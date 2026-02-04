@@ -116,30 +116,17 @@ void SceneLoader::ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matr
 }
 
 // --- Helper pieces extracted from Scene::LoadScene for clarity ---
-void SceneLoader::SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, std::vector<bool>& samplerForImageIsWrap, const cgltf_data* data)
+void SceneLoader::SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, const cgltf_data* data)
 {
-    if (tex && tex->image)
+    if (tex && !Config::Get().m_SkipTextures)
     {
-        const cgltf_size imgIndex = cgltf_image_index(data, tex->image);
-        if (!Config::Get().m_SkipTextures)
-        {
-            textureIndex = static_cast<int>(imgIndex);
-        }
-        if (tex->sampler)
-        {
-            cgltf_sampler* s = tex->sampler;
-            const bool isWrap = (s->wrap_s == cgltf_wrap_mode_repeat || s->wrap_t == cgltf_wrap_mode_repeat);
-            samplerForImageIsWrap[imgIndex] = isWrap;
-        }
+        textureIndex = static_cast<int>(cgltf_texture_index(data, tex));
     }
 }
 
 void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene)
 {
 	SCOPED_TIMER("[Scene] Materials+Images");
-
-	// Prepare per-image sampler mapping (default unknown)
-	std::vector<bool> samplerForImageIsWrap(data->images_count, false);
 
 	// Materials
 	for (cgltf_size i = 0; i < data->materials_count; ++i)
@@ -160,8 +147,8 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 			// Metallic = dielectric approximation
 			scene.m_Materials.back().m_MetallicFactor = std::max(std::max(sg.specular_factor[0], sg.specular_factor[1]), sg.specular_factor[2]);
 
-			SetTextureAndSampler(sg.diffuse_texture.texture, scene.m_Materials.back().m_BaseColorTexture, samplerForImageIsWrap, data);
-			SetTextureAndSampler(sg.specular_glossiness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
+			SetTextureAndSampler(sg.diffuse_texture.texture, scene.m_Materials.back().m_BaseColorTexture, data);
+			SetTextureAndSampler(sg.specular_glossiness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, data);
 		}
 		else if (data->materials[i].has_pbr_metallic_roughness)
 		{
@@ -169,7 +156,7 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 			scene.m_Materials.back().m_BaseColorFactor.y = pbr.base_color_factor[1];
 			scene.m_Materials.back().m_BaseColorFactor.z = pbr.base_color_factor[2];
 			scene.m_Materials.back().m_BaseColorFactor.w = pbr.base_color_factor[3];
-			SetTextureAndSampler(pbr.base_color_texture.texture, scene.m_Materials.back().m_BaseColorTexture, samplerForImageIsWrap, data);
+			SetTextureAndSampler(pbr.base_color_texture.texture, scene.m_Materials.back().m_BaseColorTexture, data);
 
 			float metallic = pbr.metallic_factor;
 			if (pbr.metallic_roughness_texture.texture == NULL && metallic == 1.0f)
@@ -177,7 +164,7 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 			scene.m_Materials.back().m_RoughnessFactor = pbr.roughness_factor;
 			scene.m_Materials.back().m_MetallicFactor = metallic;
 
-			SetTextureAndSampler(pbr.metallic_roughness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, samplerForImageIsWrap, data);
+			SetTextureAndSampler(pbr.metallic_roughness_texture.texture, scene.m_Materials.back().m_MetallicRoughnessTexture, data);
 		}
 		else
 		{
@@ -187,8 +174,8 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 			scene.m_Materials.back().m_RoughnessFactor = 1.0f;
 		}
 
-		SetTextureAndSampler(data->materials[i].normal_texture.texture, scene.m_Materials.back().m_NormalTexture, samplerForImageIsWrap, data);
-		SetTextureAndSampler(data->materials[i].emissive_texture.texture, scene.m_Materials.back().m_EmissiveTexture, samplerForImageIsWrap, data);
+		SetTextureAndSampler(data->materials[i].normal_texture.texture, scene.m_Materials.back().m_NormalTexture, data);
+		SetTextureAndSampler(data->materials[i].emissive_texture.texture, scene.m_Materials.back().m_EmissiveTexture, data);
 		scene.m_Materials.back().m_EmissiveFactor.x = data->materials[i].emissive_factor[0];
 		scene.m_Materials.back().m_EmissiveFactor.y = data->materials[i].emissive_factor[1];
 		scene.m_Materials.back().m_EmissiveFactor.z = data->materials[i].emissive_factor[2];
@@ -214,12 +201,25 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 		}
 	}
 
-	// Images -> textures (URI only)
-	for (cgltf_size i = 0; i < data->images_count; ++i)
+	// Textures (from cgltf_textures)
+	for (cgltf_size i = 0; i < data->textures_count; ++i)
 	{
 		scene.m_Textures.emplace_back();
-		scene.m_Textures.back().m_Uri = data->images[i].uri ? data->images[i].uri : std::string();
-		scene.m_Textures.back().m_Sampler = samplerForImageIsWrap[i] ? Scene::Texture::Wrap : Scene::Texture::Clamp;
+		const cgltf_texture& tex = data->textures[i];
+		if (tex.image)
+		{
+			scene.m_Textures.back().m_Uri = tex.image->uri ? tex.image->uri : std::string();
+		}
+		
+		if (tex.sampler)
+		{
+			const bool isWrap = (tex.sampler->wrap_s == cgltf_wrap_mode_repeat || tex.sampler->wrap_t == cgltf_wrap_mode_repeat);
+			scene.m_Textures.back().m_Sampler = isWrap ? Scene::Texture::Wrap : Scene::Texture::Clamp;
+		}
+		else
+		{
+			scene.m_Textures.back().m_Sampler = Scene::Texture::Wrap; // Default
+		}
 	}
 }
 

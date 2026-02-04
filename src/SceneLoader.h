@@ -27,7 +27,7 @@ public:
 
 private:
     // Utility functions
-    static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, std::vector<bool>& samplerForImageIsWrap, const cgltf_data* data);
+    static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, const cgltf_data* data);
     static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent);
     static cgltf_result decompressMeshopt(cgltf_data* data);
     static const char* cgltf_result_tostring(cgltf_result result);
