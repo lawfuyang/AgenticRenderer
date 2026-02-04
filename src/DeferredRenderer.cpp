@@ -43,23 +43,19 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(12, renderer->m_Scene.m_VertexBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(13, renderer->m_Scene.m_MeshDataBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_IndexBuffer),
-            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HDRColorTexture),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
             nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
         };
 
-        const uint32_t dispatchX = DivideAndRoundUp(renderer->m_RHI->m_SwapchainExtent.x, 8);
-        const uint32_t dispatchY = DivideAndRoundUp(renderer->m_RHI->m_SwapchainExtent.y, 8);
-
         Renderer::RenderPassParams params{
             .commandList = commandList,
-            .shaderName = "DeferredLighting_DeferredLighting_CSMain",
+            .shaderName = "DeferredLighting_DeferredLighting_PSMain",
             .bindingSetDesc = bset,
             .useBindlessTextures = true,
-            .dispatchParams = { .x = dispatchX, .y = dispatchY, .z = 1 }
+            .framebuffer = renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture))
         };
 
-        renderer->AddComputePass(params);
+        renderer->AddFullScreenPass(params);
     }
 
     const char* GetName() const override { return "Deferred"; }

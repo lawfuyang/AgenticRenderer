@@ -19,24 +19,22 @@ StructuredBuffer<MaterialConstants> g_Materials : register(t11, space1);
 StructuredBuffer<Vertex> g_Vertices : register(t12, space1);
 StructuredBuffer<MeshData> g_MeshData : register(t13, space1);
 StructuredBuffer<uint> g_Indices : register(t14, space1);
-RWTexture2D<float4> g_OutColor : register(u0, space1);
 
-[numthreads(8, 8, 1)]
-void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
+struct FullScreenVertexOut
 {
-    float2 dims;
-    g_OutColor.GetDimensions(dims.x, dims.y);
-    if (dispatchThreadID.x >= dims.x || dispatchThreadID.y >= dims.y)
-        return;
+    float4 pos : SV_Position;
+    float2 uv : TEXCOORD0;
+};
 
-    uint2 uvInt = dispatchThreadID.xy;
-    float2 uv = (float2(uvInt) + 0.5f) / dims;
+float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
+{
+    uint2 uvInt = uint2(input.pos.xy);
+    float2 uv = input.uv;
     
     float depth = g_Depth.Load(uint3(uvInt, 0));
     if (depth == 0.0f) // Reversed-Z, 0 is far plane
     {
-        g_OutColor[uvInt] = float4(1.0f, 1.0f, 1.0f, 1.0f);
-        return;
+        return float4(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     float4 albedoAlpha = g_GBufferAlbedo.Load(uint3(uvInt, 0));
@@ -181,5 +179,5 @@ void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             }
     }
 
-    g_OutColor[uvInt] = float4(color, alpha);
+    return float4(color, alpha);
 }
