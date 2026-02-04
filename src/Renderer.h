@@ -61,11 +61,7 @@ static bool s_##ClassName##Registered = []() { \
 
 struct Renderer
 {
-    // ============================================================================
     // Constants
-    // ============================================================================
-
-    // ShaderMake default SPIRV register shifts (from external/ShaderMake/ShaderMake/ShaderMake.cpp Options)
     static constexpr uint32_t SPIRV_SAMPLER_SHIFT   = 100;  // sRegShift (s#)
     static constexpr uint32_t SPIRV_TEXTURE_SHIFT   = 200;  // tRegShift (t#)
     static constexpr uint32_t SPIRV_CBUFFER_SHIFT   = 300;  // bRegShift (b#)
@@ -76,68 +72,31 @@ struct Renderer
     static constexpr nvrhi::Format HDR_COLOR_FORMAT = nvrhi::Format::R11G11B10_FLOAT;
     inline static const nvrhi::Color kHDROutputClearColor = nvrhi::Color{ 1.0f };
 
-    // ============================================================================
     // Instance Management
-    // ============================================================================
-
     static void SetInstance(Renderer* instance);
     static Renderer* GetInstance();
 
-    // ============================================================================
     // Lifecycle
-    // ============================================================================
-
     void Initialize();
     void Run();
     void Shutdown();
 
-    // ============================================================================
     // Command List Management
-    // ============================================================================
-
     nvrhi::CommandListHandle AcquireCommandList(std::string_view markerName);
     void SubmitCommandList(const nvrhi::CommandListHandle& commandList);
     void ExecutePendingCommandLists();
 
-    // ============================================================================
     // Swapchain / Backbuffer
-    // ============================================================================
-
     nvrhi::TextureHandle GetCurrentBackBufferTexture() const;
 
-    // ============================================================================
     // Binding Layouts & Pipelines
-    // ============================================================================
-
-    // Create or retrieve a cached binding layout derived from a BindingSetDesc.
-    nvrhi::BindingLayoutHandle GetOrCreateBindingLayoutFromBindingSetDesc(
-        const nvrhi::BindingSetDesc& setDesc,
-        uint32_t registerSpace = 0);
-
-    // Create or retrieve a cached bindless layout.
+    nvrhi::BindingLayoutHandle GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, uint32_t registerSpace = 0);
     nvrhi::BindingLayoutHandle GetOrCreateBindlessLayout(const nvrhi::BindlessLayoutDesc& desc);
+    nvrhi::GraphicsPipelineHandle GetOrCreateGraphicsPipeline(const nvrhi::GraphicsPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo);
+    nvrhi::MeshletPipelineHandle GetOrCreateMeshletPipeline(const nvrhi::MeshletPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo);
+    nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout);
 
-    // Get or create a graphics pipeline given a full pipeline description and framebuffer info.
-    // The pipeline will be cached internally by the renderer.
-    nvrhi::GraphicsPipelineHandle GetOrCreateGraphicsPipeline(
-        const nvrhi::GraphicsPipelineDesc& pipelineDesc,
-        const nvrhi::FramebufferInfoEx& fbInfo);
-
-    // Get or create a meshlet pipeline given a full meshlet pipeline description and framebuffer info.
-    // The pipeline will be cached internally by the renderer.
-    nvrhi::MeshletPipelineHandle GetOrCreateMeshletPipeline(
-        const nvrhi::MeshletPipelineDesc& pipelineDesc,
-        const nvrhi::FramebufferInfoEx& fbInfo);
-
-    // Get or create a compute pipeline given a shader and binding layout.
-    nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(
-        nvrhi::ShaderHandle shader,
-        nvrhi::BindingLayoutHandle bindingLayout);
-
-    // ============================================================================
     // Rendering Helpers
-    // ============================================================================
-
     void DrawFullScreenPass(
         nvrhi::CommandListHandle commandList,
         const nvrhi::FramebufferHandle& framebuffer,
@@ -146,39 +105,26 @@ struct Renderer
         const void* pushConstants = nullptr,
         size_t pushConstantsSize = 0);
 
-    // ============================================================================
     // Shaders
-    // ============================================================================
-
-    // Retrieve a shader handle by name (output stem), e.g., "imgui_VSMain" or "imgui_PSMain"
     nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
 
-    // ============================================================================
     // Global Bindless Texture System
-    // ============================================================================
-
-    // Initialize global bindless texture system
     void InitializeGlobalBindlessTextures();
-
-    // Register a texture in the global bindless table and return its index
     uint32_t RegisterTexture(nvrhi::TextureHandle texture);
-
-    // Get the global texture bindless descriptor table
     nvrhi::DescriptorTableHandle GetGlobalTextureDescriptorTable() const { return m_GlobalTextureDescriptorTable; }
-
-    // Get the global texture bindless binding layout
     nvrhi::BindingLayoutHandle GetGlobalTextureBindingLayout() const { return m_GlobalTextureBindingLayout; }
 
-    // ============================================================================
-    // Public State & Resources
-    // ============================================================================
+    // Public Methods
+    double GetFrameTimeMs() const { return m_FrameTime; }
+    void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
 
+    // Public State & Resources
     SDL_Window* m_Window = nullptr;
     std::unique_ptr<GraphicRHI> m_RHI;
 
     uint32_t m_CurrentSwapchainImageIdx = 0;
 
-    // Depth buffer for main framebuffer
+    // Depth buffer
     nvrhi::TextureHandle m_DepthTexture;
 
     // HDR resources
@@ -186,23 +132,18 @@ struct Renderer
     nvrhi::BufferHandle m_LuminanceHistogram;
     nvrhi::BufferHandle m_ExposureBuffer;
 
-    // Cached shader handles loaded from compiled SPIR-V binaries
-    // (keyed by output stem, e.g., "imgui_VSMain")
+    // Shader cache
     std::unordered_map<std::string, nvrhi::ShaderHandle> m_ShaderCache;
 
-    // ImGui state
+    // UI
     ImGuiLayer m_ImGuiLayer;
 
     // Parallel processing
     std::unique_ptr<TaskScheduler> m_TaskScheduler;
 
-    // Scene
+    // Scene and Camera
     Scene m_Scene;
-
-    // Camera
     Camera m_Camera;
-
-    // Selected camera index for GLTF cameras
     int m_SelectedCameraIndex = -1;
 
     // Renderers
@@ -212,71 +153,29 @@ struct Renderer
     double m_FrameTime = 0.0;
     double m_GPUTime   = 0.0;
     double m_FPS       = 0.0;
-
-    // Target FPS for frame rate limiting
     uint32_t m_TargetFPS = 200;
-
-    // Main view pipeline statistics
     nvrhi::PipelineStatistics m_MainViewPipelineStatistics;
-
-    // Frame counter for double buffering
     uint32_t m_FrameNumber = 0;
 
-    // Frustum culling enable flag
+    // Culling options
     bool m_EnableFrustumCulling = true;
-
-    // Cone culling enable flag
     bool m_EnableConeCulling = true;
-
-    // Freeze culling camera flag
     bool m_FreezeCullingCamera = false;
-
-    // Frozen culling view matrix
     Matrix m_FrozenCullingViewMatrix;
-
-    // Frozen culling camera position
     Vector3 m_FrozenCullingCameraPos;
-
-    // Occlusion culling enable flag
     bool m_EnableOcclusionCulling = true;
-
-    // Hierarchical Z-Buffer (HZB) textures for occlusion culling
     nvrhi::TextureHandle m_HZBTexture;
-
-    // Use meshlet rendering path
-    bool m_UseMeshletRendering = true;
-
-    // Forced LOD index (-1 for auto, 0+ for forced)
-    int m_ForcedLOD = -1;
-
-    // Enable GLTF animations
-    bool m_EnableAnimations = true;
-
-    // Enable Raytraced Shadows
-    bool m_EnableRTShadows = true;
-
-    // Debug mode for forward lighting
-    int m_DebugMode = 0;
-
-    // SPD Atomic Counter for HZB
     nvrhi::BufferHandle m_SPDAtomicCounter;
 
-    // ============================================================================
-    // Public Methods
-    // ============================================================================
-
-    // Return last frame time in milliseconds
-    double GetFrameTimeMs() const { return m_FrameTime; }
-
-    // Set camera from a GLTF scene camera
-    void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
-
-    // ============================================================================
-    // Internal State
-    // ============================================================================
+    // Rendering options
+    bool m_UseMeshletRendering = true;
+    int m_ForcedLOD = -1;
+    bool m_EnableAnimations = true;
+    bool m_EnableRTShadows = true;
+    int m_DebugMode = 0;
 
 private:
-    // Command list pools
+    // Internal State
     std::vector<nvrhi::CommandListHandle> m_CommandListFreeList;
     std::vector<nvrhi::CommandListHandle> m_PendingCommandLists;
     std::vector<nvrhi::CommandListHandle> m_InFlightCommandLists;
@@ -287,7 +186,7 @@ private:
     std::unordered_map<size_t, nvrhi::MeshletPipelineHandle> m_MeshletPipelineCache;
     std::unordered_map<size_t, nvrhi::ComputePipelineHandle> m_ComputePipelineCache;
 
-    // Global bindless texture descriptor table
+    // Global bindless texture system
     nvrhi::DescriptorTableHandle m_GlobalTextureDescriptorTable;
     nvrhi::BindingLayoutHandle m_GlobalTextureBindingLayout;
     uint32_t m_NextTextureIndex = 0;
@@ -295,19 +194,15 @@ private:
     // GPU Timing
     nvrhi::TimerQueryHandle m_GPUQueries[2];
 
+    // Private methods
     void CreateDepthTextures();
     void DestroyDepthTextures();
-
     void CreateHDRResources();
     void DestroyHDRResources();
-
-    // Helper for hashing pipeline state
     void HashPipelineCommonState(size_t& h, 
                                  const nvrhi::RenderState& renderState, 
                                  const nvrhi::FramebufferInfoEx& fbInfo, 
                                  const nvrhi::BindingLayoutVector& bindingLayouts);
-
-    // Shader loading
     void LoadShaders();
     void UnloadShaders();
 
