@@ -89,8 +89,8 @@ void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         RayDesc ray;
         ray.Origin = worldPos + N * 0.1f;
         ray.Direction = L;
-        ray.TMin = 0.0f;
-        ray.TMax = 10000.0f;
+        ray.TMin = 0.1f;
+        ray.TMax = 1e10f;
 
         RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
         q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
@@ -102,9 +102,11 @@ void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         }
     }
 
-    float3 ambient = (1.0f - (g_Deferred.m_EnableRTShadows ? shadow : 0.0f)) * baseColor * 0.03f;
-    float3 color = ambient + (diffuse + spec) * radiance * NdotL * shadow;
+    float3 color = (diffuse + spec) * radiance * NdotL * shadow;
     color += emissive;
+
+    // hack ambient until we have restir gi
+    color += baseColor * 0.03f;
 
     // Debug visualizations
     if (g_Deferred.m_DebugMode != DEBUG_MODE_NONE)
