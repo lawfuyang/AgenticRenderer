@@ -94,7 +94,7 @@ struct Renderer
     nvrhi::BindingLayoutHandle GetOrCreateBindlessLayout(const nvrhi::BindlessLayoutDesc& desc);
     nvrhi::GraphicsPipelineHandle GetOrCreateGraphicsPipeline(const nvrhi::GraphicsPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo);
     nvrhi::MeshletPipelineHandle GetOrCreateMeshletPipeline(const nvrhi::MeshletPipelineDesc& pipelineDesc, const nvrhi::FramebufferInfoEx& fbInfo);
-    nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout);
+    nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, const nvrhi::BindingLayoutVector& bindingLayouts);
 
     // Rendering Helpers
     void DrawFullScreenPass(
@@ -117,6 +117,7 @@ struct Renderer
         nvrhi::CommandListHandle commandList;
         std::string_view shaderName;
         nvrhi::BindingSetDesc bindingSetDesc;
+        bool useBindlessTextures = false;
         const void* pushConstants = nullptr;
         size_t pushConstantsSize = 0;
         // Compute specific

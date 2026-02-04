@@ -1,19 +1,25 @@
 #include "ShaderShared.h"
 #include "CommonLighting.hlsli"
+#include "Bindless.hlsli"
 
-cbuffer DeferredCB : register(b1, space0)
+cbuffer DeferredCB : register(b1, space1)
 {
     DeferredLightingConstants g_Deferred;
 };
 
-Texture2D<float4> g_GBufferAlbedo    : register(t0, space0);
-Texture2D<float2> g_GBufferNormals   : register(t1, space0);
-Texture2D<float4> g_GBufferORM       : register(t2, space0);
-Texture2D<float4> g_GBufferEmissive  : register(t3, space0);
-Texture2D<float>  g_Depth            : register(t4, space0);
-RaytracingAccelerationStructure g_SceneAS : register(t5, space0);
-
-RWTexture2D<float4> g_OutColor : register(u0, space0);
+// These are bound to space 1 because we use the global bindless descriptor table in space 0.
+Texture2D<float4> g_GBufferAlbedo    : register(t0, space1);
+Texture2D<float2> g_GBufferNormals   : register(t1, space1);
+Texture2D<float4> g_GBufferORM       : register(t2, space1);
+Texture2D<float4> g_GBufferEmissive  : register(t3, space1);
+Texture2D<float>  g_Depth            : register(t4, space1);
+RaytracingAccelerationStructure g_SceneAS : register(t5, space1);
+StructuredBuffer<PerInstanceData> g_Instances : register(t10, space1);
+StructuredBuffer<MaterialConstants> g_Materials : register(t11, space1);
+StructuredBuffer<Vertex> g_Vertices : register(t12, space1);
+StructuredBuffer<MeshData> g_MeshData : register(t13, space1);
+StructuredBuffer<uint> g_Indices : register(t14, space1);
+RWTexture2D<float4> g_OutColor : register(u0, space1);
 
 [numthreads(8, 8, 1)]
 void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
@@ -92,9 +98,54 @@ void DeferredLighting_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         ray.TMin = 0.1f;
         ray.TMax = 1e10f;
 
-        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
         q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
-        q.Proceed();
+        
+        while (q.Proceed())
+        {
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+            {
+                uint instanceIndex = q.CandidateInstanceIndex();
+                uint primitiveIndex = q.CandidatePrimitiveIndex();
+                float2 bary = q.CandidateTriangleBarycentrics();
+
+                PerInstanceData inst = g_Instances[instanceIndex];
+                MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
+                MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
+
+                if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+                {
+                    uint baseIndex = mesh.m_IndexOffsets[0];
+                    uint i0 = g_Indices[baseIndex + 3 * primitiveIndex + 0];
+                    uint i1 = g_Indices[baseIndex + 3 * primitiveIndex + 1];
+                    uint i2 = g_Indices[baseIndex + 3 * primitiveIndex + 2];
+
+                    float2 uv0 = g_Vertices[i0].m_Uv;
+                    float2 uv1 = g_Vertices[i1].m_Uv;
+                    float2 uv2 = g_Vertices[i2].m_Uv;
+
+                    float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
+                    
+                    bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
+                    float4 albedoSample = hasAlbedo 
+                        ? SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, 0)
+                        : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
+                    
+                    float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
+                    
+                    if (alpha >= mat.m_AlphaCutoff)
+                    {
+                        q.CommitNonOpaqueTriangleHit();
+                    }
+                }
+                else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+                {
+                    // This should not happen if TLAS/BLAS flags are correct, but handle it just in case
+                    q.CommitNonOpaqueTriangleHit();
+                }
+                // ALPHA_MODE_BLEND: ignore as requested
+            }
+        }
 
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
         {

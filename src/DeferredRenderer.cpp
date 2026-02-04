@@ -38,7 +38,14 @@ public:
             nvrhi::BindingSetItem::Texture_SRV(3, renderer->m_GBufferEmissive),
             nvrhi::BindingSetItem::Texture_SRV(4, renderer->m_DepthTexture),
             nvrhi::BindingSetItem::RayTracingAccelStruct(5, renderer->m_Scene.m_TLAS),
-            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HDRColorTexture)
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(11, renderer->m_Scene.m_MaterialConstantsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(12, renderer->m_Scene.m_VertexBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(13, renderer->m_Scene.m_MeshDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_IndexBuffer),
+            nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HDRColorTexture),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
+            nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap)
         };
 
         const uint32_t dispatchX = DivideAndRoundUp(renderer->m_RHI->m_SwapchainExtent.x, 8);
@@ -48,6 +55,7 @@ public:
             .commandList = commandList,
             .shaderName = "DeferredLighting_DeferredLighting_CSMain",
             .bindingSetDesc = bset,
+            .useBindlessTextures = true,
             .dispatchParams = { .x = dispatchX, .y = dispatchY, .z = 1 }
         };
 

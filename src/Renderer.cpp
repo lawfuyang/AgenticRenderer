@@ -946,12 +946,15 @@ nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::M
     return pipeline;
 }
 
-nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, nvrhi::BindingLayoutHandle bindingLayout)
+nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, const nvrhi::BindingLayoutVector& bindingLayouts)
 {
-    // Hash relevant pipeline properties: CS shader handle, binding layout pointer
+    // Hash relevant pipeline properties: CS shader handle, binding layout pointers
     size_t h = 1469598103934665603ull;
     h = h * 1099511628211u + std::hash<const void*>()(shader.Get());
-    h = h * 1099511628211u + std::hash<const void*>()(bindingLayout.Get());
+    for (const auto& layout : bindingLayouts)
+    {
+        h = h * 1099511628211u + std::hash<const void*>()(layout.Get());
+    }
 
     auto it = m_ComputePipelineCache.find(h);
     if (it != m_ComputePipelineCache.end())
@@ -960,7 +963,7 @@ nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderH
     // Create pipeline and cache it
     nvrhi::ComputePipelineDesc desc;
     desc.CS = shader;
-    desc.bindingLayouts = { bindingLayout };
+    desc.bindingLayouts = bindingLayouts;
     nvrhi::ComputePipelineHandle pipeline = m_RHI->m_NvrhiDevice->createComputePipeline(desc);
     SDL_assert(pipeline && "Failed to create compute pipeline");
     if (pipeline)
@@ -980,10 +983,20 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
     desc.MS = GetShaderHandle("FullScreen_MSMain");
     desc.PS = GetShaderHandle(params.shaderName);
 
-    const nvrhi::BindingLayoutHandle layout = GetOrCreateBindingLayoutFromBindingSetDesc(params.bindingSetDesc);
+    std::vector<nvrhi::BindingSetHandle> bindingSets;
+
+    if (params.useBindlessTextures)
+    {
+        desc.bindingLayouts.push_back(GetGlobalTextureBindingLayout());
+        bindingSets.push_back(GetGlobalTextureDescriptorTable());
+    }
+
+    const uint32_t registerSpace = params.useBindlessTextures ? (m_RHI->GetGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN ? 0 : 1) : 0;
+    const nvrhi::BindingLayoutHandle layout = GetOrCreateBindingLayoutFromBindingSetDesc(params.bindingSetDesc, registerSpace);
     const nvrhi::BindingSetHandle bindingSet = m_RHI->m_NvrhiDevice->createBindingSet(params.bindingSetDesc, layout);
 
     desc.bindingLayouts.push_back(layout);
+    bindingSets.push_back(bindingSet);
 
     desc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
     desc.renderState.depthStencilState.depthTestEnable = false;
@@ -993,7 +1006,10 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
 
     nvrhi::MeshletState state;
     state.pipeline = pipeline;
-    state.bindings = { bindingSet };
+    for (const auto& bindingSet : bindingSets)
+    {
+        state.bindings.push_back(bindingSet.Get());
+    }
     state.framebuffer = params.framebuffer;
 
     const nvrhi::FramebufferDesc& fbDesc = params.framebuffer->getDesc();
@@ -1016,12 +1032,28 @@ void Renderer::AddComputePass(const RenderPassParams& params)
     PROFILE_SCOPED(params.shaderName.data());
     nvrhi::utils::ScopedMarker scopedMarker{ params.commandList, params.shaderName.data() };
 
-    const nvrhi::BindingLayoutHandle layout = GetOrCreateBindingLayoutFromBindingSetDesc(params.bindingSetDesc);
+    nvrhi::BindingLayoutVector layouts;
+    std::vector<nvrhi::BindingSetHandle> bindingSets;
+
+    if (params.useBindlessTextures)
+    {
+        layouts.push_back(GetGlobalTextureBindingLayout());
+        bindingSets.push_back(GetGlobalTextureDescriptorTable());
+    }
+
+    const uint32_t registerSpace = params.useBindlessTextures ? (m_RHI->GetGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN ? 0 : 1) : 0;
+    const nvrhi::BindingLayoutHandle layout = GetOrCreateBindingLayoutFromBindingSetDesc(params.bindingSetDesc, registerSpace);
     const nvrhi::BindingSetHandle bindingSet = m_RHI->m_NvrhiDevice->createBindingSet(params.bindingSetDesc, layout);
+    
+    layouts.push_back(layout);
+    bindingSets.push_back(bindingSet);
 
     nvrhi::ComputeState state;
-    state.pipeline = GetOrCreateComputePipeline(GetShaderHandle(params.shaderName), layout);
-    state.bindings = { bindingSet };
+    state.pipeline = GetOrCreateComputePipeline(GetShaderHandle(params.shaderName), layouts);
+    for (const auto& bindingSet : bindingSets)
+    {
+        state.bindings.push_back(bindingSet.Get());
+    }
 
     if (params.dispatchParams.indirectBuffer)
     {

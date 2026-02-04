@@ -1,6 +1,7 @@
 #include "ShaderShared.h"
 #include "Culling.h"
 #include "CommonLighting.hlsli"
+#include "Bindless.hlsli"
 
 cbuffer PerFrameCB : register(b0, space1)
 {
@@ -18,8 +19,6 @@ StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
 Texture2D<float> g_HZB : register(t8, space1);
 RaytracingAccelerationStructure g_SceneAS : register(t9, space1);
 
-SamplerState g_SamplerAnisoClamp : register(s0, space1);
-SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 SamplerState g_MinReductionSampler : register(s2, space1);
 
 float3x3 MakeAdjugateMatrix(float4x4 m)
@@ -219,18 +218,6 @@ float3x3 CalculateTBNWithoutTangent(float3 p, float3 n, float2 uv)
     float3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
     float3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
     return float3x3(normalize(T), normalize(B), n);
-}
-
-// Helper function to sample from bindless textures using a sampler index.
-float4 SampleBindlessTexture(uint textureIndex, uint samplerIndex, float2 uv)
-{
-    Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(textureIndex)];
-    
-    // Sample once using branch-based selection to avoid sampler-typed phi nodes.
-    if (samplerIndex == SAMPLER_CLAMP_INDEX)
-        return tex.Sample(g_SamplerAnisoClamp, uv);
-    else
-        return tex.Sample(g_SamplerAnisoWrap, uv);
 }
 
 float3 HashColor(uint id)

@@ -960,6 +960,7 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 	{
 		nvrhi::BufferDesc desc{};
 		desc.byteSize = (uint32_t)ibytes;
+		desc.structStride = sizeof(uint32_t);
 		desc.isIndexBuffer = true;
 		desc.initialState = nvrhi::ResourceStates::IndexBuffer;
 		desc.keepInitialState = true;
