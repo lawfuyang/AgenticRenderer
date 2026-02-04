@@ -243,21 +243,12 @@ float3 GetDebugColor(uint debugMode, uint instanceID, uint meshletID, uint lodIn
 {
     if (debugMode == DEBUG_MODE_INSTANCES)
     {
-        // Color by instance ID
-        return float3(
-            frac(instanceID * 0.1f),
-            frac(instanceID * 0.2f),
-            frac(instanceID * 0.3f)
-        );
+        return HashColor(instanceID);
     }
     else if (debugMode == DEBUG_MODE_MESHLETS)
     {
         // Color by meshlet ID
-        return float3(
-            frac(meshletID * 0.1f),
-            frac(meshletID * 0.2f),
-            frac(meshletID * 0.3f)
-        );
+        return HashColor(meshletID);
     }
     else if (debugMode == DEBUG_MODE_LOD)
     {
