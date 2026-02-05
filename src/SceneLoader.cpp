@@ -677,7 +677,9 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 							&outVertices[p.m_VertexOffset].m_Pos.x, p.m_VertexCount, sizeof(Vertex),
 							&outVertices[p.m_VertexOffset].m_Normal.x, sizeof(Vertex),
 							attribute_weights, 3,
-							nullptr, target_index_count, target_error_hq, 0, &lodError);
+							nullptr, target_index_count, target_error_hq,
+							meshopt_SimplifySparse,
+							&lodError);
 						lodIndices.resize(new_index_count);
 
 						// Stop if we reached the target index count
