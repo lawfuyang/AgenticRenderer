@@ -1,6 +1,6 @@
 #include "ShaderShared.h"
-#include "CommonLighting.hlsli"
 #include "Bindless.hlsli"
+#include "CommonLighting.hlsli"
 
 cbuffer DeferredCB : register(b1, space1)
 {
@@ -19,6 +19,8 @@ StructuredBuffer<MaterialConstants> g_Materials : register(t11, space1);
 StructuredBuffer<VertexQuantized> g_Vertices : register(t12, space1);
 StructuredBuffer<MeshData> g_MeshData : register(t13, space1);
 StructuredBuffer<uint> g_Indices : register(t14, space1);
+SamplerState g_SamplerAnisoClamp : register(s0, space1);
+SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 
 struct FullScreenVertexOut
 {
@@ -62,126 +64,27 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     // Lighting calculations
     float3 V = normalize(g_Deferred.m_CameraPos.xyz - worldPos);
     float3 L = g_Deferred.m_LightDirection;
-    float3 H = normalize(V + L);
 
-    float NdotL = saturate(dot(N, L));
-    float NdotV = saturate(dot(N, V));
-    float NdotH = saturate(dot(N, H));
-    float VdotH = saturate(dot(V, H));
-    float LdotV = saturate(dot(L, V));
+    LightingInputs lightingInputs;
+    lightingInputs.N = N;
+    lightingInputs.V = V;
+    lightingInputs.L = L;
+    lightingInputs.baseColor = baseColor;
+    lightingInputs.roughness = roughness;
+    lightingInputs.metallic = metallic;
+    lightingInputs.lightIntensity = g_Deferred.m_LightIntensity;
+    lightingInputs.worldPos = worldPos;
+    lightingInputs.enableRTShadows = g_Deferred.m_EnableRTShadows != 0;
+    lightingInputs.sceneAS = g_SceneAS;
+    lightingInputs.instances = g_Instances;
+    lightingInputs.meshData = g_MeshData;
+    lightingInputs.materials = g_Materials;
+    lightingInputs.indices = g_Indices;
+    lightingInputs.vertices = g_Vertices;
+    lightingInputs.clampSampler = g_SamplerAnisoClamp;
+    lightingInputs.wrapSampler = g_SamplerAnisoWrap;
 
-    float a = roughness * roughness;
-    float a2 = clamp(a * a, 0.0001f, 1.0f);
-
-    float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
-    float3 diffuse = oren * (1.0f - metallic) * baseColor;
-
-    const float materialSpecular = 0.5f;
-    float3 specularColor = ComputeF0(materialSpecular, baseColor, metallic);
-
-    float D = D_GGX(a2, NdotH);
-    float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
-    float3 F = F_Schlick(specularColor, VdotH);
-    float3 spec = (D * Vis) * F;
-
-    float3 radiance = float3(g_Deferred.m_LightIntensity, g_Deferred.m_LightIntensity, g_Deferred.m_LightIntensity);
-
-    // Raytraced shadows
-    float shadow = 1.0f;
-    if (g_Deferred.m_EnableRTShadows != 0)
-    {
-        RayDesc ray;
-        ray.Origin = worldPos + N * 0.1f;
-        ray.Direction = L;
-        ray.TMin = 0.1f;
-        ray.TMax = 1e10f;
-
-        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
-        q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
-        
-        while (q.Proceed())
-        {
-            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
-            {
-                uint instanceIndex = q.CandidateInstanceIndex();
-                uint primitiveIndex = q.CandidatePrimitiveIndex();
-                float2 bary = q.CandidateTriangleBarycentrics();
-
-                PerInstanceData inst = g_Instances[instanceIndex];
-                MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
-                MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
-
-                if (mat.m_AlphaMode == ALPHA_MODE_MASK)
-                {
-                    uint baseIndex = mesh.m_IndexOffsets[0];
-                    uint i0 = g_Indices[baseIndex + 3 * primitiveIndex + 0];
-                    uint i1 = g_Indices[baseIndex + 3 * primitiveIndex + 1];
-                    uint i2 = g_Indices[baseIndex + 3 * primitiveIndex + 2];
-
-                    Vertex v0 = UnpackVertex(g_Vertices[i0]);
-                    Vertex v1 = UnpackVertex(g_Vertices[i1]);
-                    Vertex v2 = UnpackVertex(g_Vertices[i2]);
-
-                    float2 uv0 = v0.m_Uv;
-                    float2 uv1 = v1.m_Uv;
-                    float2 uv2 = v2.m_Uv;
-
-                    float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
-                    
-                    // Compute approximate UV gradients for proper texture filtering in ray tracing
-                    // Use triangle geometry and distance to estimate ddx/ddy
-                    float3 p0 = mul(float4(v0.m_Pos, 1.0f), inst.m_World).xyz;
-                    float3 p1 = mul(float4(v1.m_Pos, 1.0f), inst.m_World).xyz;
-                    float3 p2 = mul(float4(v2.m_Pos, 1.0f), inst.m_World).xyz;
-                    
-                    // Interpolate hit position using barycentrics
-                    float3 hitPos = p0 * (1.0f - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
-                    float dist = length(hitPos - ray.Origin);
-                    
-                    // Compute triangle area in world space
-                    float3 edge1 = p1 - p0;
-                    float3 edge2 = p2 - p0;
-                    float triangleArea = length(cross(edge1, edge2)) * 0.5f;
-                    
-                    // Compute UV range across the triangle
-                    float2 uvMin = min(uv0, min(uv1, uv2));
-                    float2 uvMax = max(uv0, max(uv1, uv2));
-                    float2 uvRange = uvMax - uvMin;
-                    
-                    // Approximate gradient scale based on triangle size and distance
-                    // This provides a heuristic for proper mip selection
-                    float gradientScale = triangleArea / max(dist, 0.1f);
-                    float2 ddx_uv = uvRange * gradientScale;
-                    float2 ddy_uv = uvRange * gradientScale;
-                    
-                    bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
-                    float4 albedoSample = hasAlbedo 
-                        ? SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv)
-                        : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
-                    
-                    float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
-                    
-                    if (alpha >= mat.m_AlphaCutoff)
-                    {
-                        q.CommitNonOpaqueTriangleHit();
-                    }
-                }
-                else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
-                {
-                    // This should not happen if TLAS/BLAS flags are correct, but handle it just in case
-                    q.CommitNonOpaqueTriangleHit();
-                }
-                // ALPHA_MODE_BLEND: ignore as requested
-            }
-        }
-
-        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
-        {
-            shadow = 0.0f;
-        }
-    }
-
-    float3 color = (diffuse + spec) * radiance * NdotL * shadow;
+    float3 color = ComputeDirectionalLighting(lightingInputs);
     color += emissive;
 
     // hack ambient until we have restir gi

@@ -1,7 +1,7 @@
 #include "ShaderShared.h"
 #include "Culling.h"
-#include "CommonLighting.hlsli"
 #include "Bindless.hlsli"
+#include "CommonLighting.hlsli"
 
 cbuffer PerFrameCB : register(b0, space1)
 {
@@ -16,9 +16,11 @@ StructuredBuffer<uint> g_MeshletVertices : register(t4, space1);
 StructuredBuffer<uint> g_MeshletTriangles : register(t5, space1);
 StructuredBuffer<MeshletJob> g_MeshletJobs : register(t6, space1);
 StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
+StructuredBuffer<uint> g_Indices : register(t10, space1);
 Texture2D<float> g_HZB : register(t8, space1);
 RaytracingAccelerationStructure g_SceneAS : register(t9, space1);
-
+SamplerState g_SamplerAnisoClamp : register(s0, space1);
+SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 SamplerState g_MinReductionSampler : register(s2, space1);
 
 float3x3 MakeAdjugateMatrix(float4x4 m)
@@ -283,7 +285,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     // Texture sampling (only when present)
     bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
     float4 albedoSample = hasAlbedo
-        ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, g_SamplerAnisoClamp, g_SamplerAnisoWrap, mat.m_AlbedoSamplerIndex, input.uv)
         : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
 
     // Alpha test (discard) as early as possible
@@ -298,17 +300,17 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
     bool hasORM = (mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0;
     float4 ormSample = hasORM
-        ? SampleBindlessTexture(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_RoughnessMetallicTextureIndex, g_SamplerAnisoClamp, g_SamplerAnisoWrap, mat.m_RoughnessSamplerIndex, input.uv)
         : float4(mat.m_RoughnessMetallic.x, mat.m_RoughnessMetallic.y, 1.0f, 0.0f); // R=occ, G=rough, B=metal
 
     bool hasNormal = (mat.m_TextureFlags & TEXFLAG_NORMAL) != 0;
     float4 nmSample = hasNormal
-        ? SampleBindlessTexture(mat.m_NormalTextureIndex, mat.m_NormalSamplerIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_NormalTextureIndex, g_SamplerAnisoClamp, g_SamplerAnisoWrap, mat.m_NormalSamplerIndex, input.uv)
         : float4(0.5f, 0.5f, 1.0f, 0.0f);
 
     bool hasEmissive = (mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0;
     float4 emissiveSample = hasEmissive
-        ? SampleBindlessTexture(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, input.uv)
+        ? SampleBindlessTexture(mat.m_EmissiveTextureIndex, g_SamplerAnisoClamp, g_SamplerAnisoWrap, mat.m_EmissiveSamplerIndex, input.uv)
         : float4(1.0f, 1.0f, 1.0f, 1.0f);
 
     // Normal (from normal map when available)
@@ -357,28 +359,27 @@ GBufferOut GBuffer_PSMain(VSOut input)
     }
 
     float3 L = g_PerFrame.m_LightDirection;
-    float3 H = normalize(V + L);
 
-    float NdotL = saturate(dot(N, L));
-    float NdotV = saturate(dot(N, V));
-    float NdotH = saturate(dot(N, H));
-    float VdotH = saturate(dot(V, H));
-    float LdotV = saturate(dot(L, V));
+    LightingInputs lightingInputs;
+    lightingInputs.N = N;
+    lightingInputs.V = V;
+    lightingInputs.L = L;
+    lightingInputs.baseColor = baseColor;
+    lightingInputs.roughness = roughness;
+    lightingInputs.metallic = metallic;
+    lightingInputs.lightIntensity = g_PerFrame.m_LightIntensity;
+    lightingInputs.worldPos = input.worldPos;
+    lightingInputs.enableRTShadows = g_PerFrame.m_EnableRTShadows != 0;
+    lightingInputs.sceneAS = g_SceneAS;
+    lightingInputs.instances = g_Instances;
+    lightingInputs.meshData = g_MeshData;
+    lightingInputs.materials = g_Materials;
+    lightingInputs.indices = g_Indices;
+    lightingInputs.vertices = g_Vertices;
+    lightingInputs.clampSampler = g_SamplerAnisoClamp;
+    lightingInputs.wrapSampler = g_SamplerAnisoWrap;
 
-    float a2 = clamp(roughness * roughness * roughness * roughness, 0.0001f, 1.0f);
-    float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
-    float3 diffuse = oren * (1.0f - metallic) * baseColor;
-
-    float3 specularColor = ComputeF0(0.5f, baseColor, metallic);
-    float D = D_GGX(a2, NdotH);
-    float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
-    float3 F = F_Schlick(specularColor, VdotH);
-    float3 spec = (D * Vis) * F;
-
-    float3 radiance = float3(g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity, g_PerFrame.m_LightIntensity);
-    
-    // Transparent objects don't get shadow for now to keep it simple
-    float3 light = (diffuse + spec) * radiance * NdotL;
+    float3 light = ComputeDirectionalLighting(lightingInputs);
 
     float3 color =  light + emissive;
 

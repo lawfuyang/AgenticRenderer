@@ -62,4 +62,148 @@ float OrenNayar(float nl, float nv, float lv, float a2, float s)
     return s * nl * (A + B * max(0.0, cos_phi_diff) * C);
 }
 
+struct LightingInputs
+{
+    float3 N;
+    float3 V;
+    float3 L;
+    float3 baseColor;
+    float roughness;
+    float metallic;
+    float lightIntensity;
+    float3 worldPos;
+    bool enableRTShadows;
+    RaytracingAccelerationStructure sceneAS;
+    StructuredBuffer<PerInstanceData> instances;
+    StructuredBuffer<MeshData> meshData;
+    StructuredBuffer<MaterialConstants> materials;
+    StructuredBuffer<uint> indices;
+    StructuredBuffer<VertexQuantized> vertices;
+    SamplerState clampSampler;
+    SamplerState wrapSampler;
+};
+
+float3 ComputeDirectionalLighting(LightingInputs inputs)
+{
+    float3 H = normalize(inputs.V + inputs.L);
+
+    float NdotL = saturate(dot(inputs.N, inputs.L));
+    float NdotV = saturate(dot(inputs.N, inputs.V));
+    float NdotH = saturate(dot(inputs.N, H));
+    float VdotH = saturate(dot(inputs.V, H));
+    float LdotV = saturate(dot(inputs.L, inputs.V));
+
+    float a2 = clamp(inputs.roughness * inputs.roughness * inputs.roughness * inputs.roughness, 0.0001f, 1.0f);
+    float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
+    float3 diffuse = oren * (1.0f - inputs.metallic) * inputs.baseColor;
+
+    float3 specularColor = ComputeF0(0.5f, inputs.baseColor, inputs.metallic);
+    float D = D_GGX(a2, NdotH);
+    float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
+    float3 F = F_Schlick(specularColor, VdotH);
+    float3 spec = (D * Vis) * F;
+
+    float3 radiance = float3(inputs.lightIntensity, inputs.lightIntensity, inputs.lightIntensity);
+
+    // Raytraced shadows
+    float shadow = 1.0f;
+    if (inputs.enableRTShadows)
+    {
+        RayDesc ray;
+        ray.Origin = inputs.worldPos + inputs.N * 0.1f;
+        ray.Direction = inputs.L;
+        ray.TMin = 0.1f;
+        ray.TMax = 1e10f;
+
+        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+        q.TraceRayInline(inputs.sceneAS, RAY_FLAG_NONE, 0xFF, ray);
+        
+        while (q.Proceed())
+        {
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+            {
+                uint instanceIndex = q.CandidateInstanceIndex();
+                uint primitiveIndex = q.CandidatePrimitiveIndex();
+                float2 bary = q.CandidateTriangleBarycentrics();
+
+                PerInstanceData inst = inputs.instances[instanceIndex];
+                MeshData mesh = inputs.meshData[inst.m_MeshDataIndex];
+                MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
+
+                if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+                {
+                    uint baseIndex = mesh.m_IndexOffsets[0];
+                    uint i0 = inputs.indices[baseIndex + 3 * primitiveIndex + 0];
+                    uint i1 = inputs.indices[baseIndex + 3 * primitiveIndex + 1];
+                    uint i2 = inputs.indices[baseIndex + 3 * primitiveIndex + 2];
+
+                    Vertex v0 = UnpackVertex(inputs.vertices[i0]);
+                    Vertex v1 = UnpackVertex(inputs.vertices[i1]);
+                    Vertex v2 = UnpackVertex(inputs.vertices[i2]);
+
+                    float2 uv0 = v0.m_Uv;
+                    float2 uv1 = v1.m_Uv;
+                    float2 uv2 = v2.m_Uv;
+
+                    float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
+                    
+                    // Compute approximate UV gradients for proper texture filtering in ray tracing
+                    // Use triangle geometry and distance to estimate ddx/ddy
+                    float3 p0 = mul(float4(v0.m_Pos, 1.0f), inst.m_World).xyz;
+                    float3 p1 = mul(float4(v1.m_Pos, 1.0f), inst.m_World).xyz;
+                    float3 p2 = mul(float4(v2.m_Pos, 1.0f), inst.m_World).xyz;
+                    
+                    // Interpolate hit position using barycentrics
+                    float3 hitPos = p0 * (1.0f - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
+                    float dist = length(hitPos - ray.Origin);
+                    
+                    // Compute triangle area in world space
+                    float3 edge1 = p1 - p0;
+                    float3 edge2 = p2 - p0;
+                    float triangleArea = length(cross(edge1, edge2)) * 0.5f;
+                    
+                    // Compute UV range across the triangle
+                    float2 uvMin = min(uv0, min(uv1, uv2));
+                    float2 uvMax = max(uv0, max(uv1, uv2));
+                    float2 uvRange = uvMax - uvMin;
+                    
+                    // Approximate gradient scale based on triangle size and distance
+                    // This provides a heuristic for proper mip selection
+                    float gradientScale = triangleArea / max(dist, 0.1f);
+                    float2 ddx_uv = uvRange * gradientScale;
+                    float2 ddy_uv = uvRange * gradientScale;
+                    
+                    bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
+                    float4 albedoSample = hasAlbedo 
+                        ? SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, inputs.clampSampler, inputs.wrapSampler, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv)
+                        : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
+                    
+                    float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
+                    
+                    if (alpha >= mat.m_AlphaCutoff)
+                    {
+                        q.CommitNonOpaqueTriangleHit();
+                    }
+                }
+                else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
+                {
+                    // ignore. dont let transparent geometry cast shadows
+                }
+                else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+                {
+                    // This should not happen if TLAS/BLAS flags are correct, but handle it just in case
+                    q.CommitNonOpaqueTriangleHit();
+                }
+            }
+        }
+
+        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        {
+            shadow = 0.0f;
+        }
+    }
+
+    return (diffuse + spec) * radiance * NdotL * shadow;
+}
+
 #endif // COMMON_LIGHTING_HLSLI

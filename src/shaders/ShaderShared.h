@@ -99,6 +99,7 @@ struct ForwardLightingPerFrameData
   Vector4 m_CullingCameraPos; // xyz: culling camera position
   Vector3 m_LightDirection;
   float m_LightIntensity;
+  uint32_t m_EnableRTShadows;
   uint32_t m_DebugMode;
   uint32_t m_EnableFrustumCulling;
   uint32_t m_EnableConeCulling;

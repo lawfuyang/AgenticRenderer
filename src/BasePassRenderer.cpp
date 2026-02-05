@@ -244,6 +244,7 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
         nvrhi::BindingSetItem::StructuredBuffer_SRV(7, renderer->m_Scene.m_MeshDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_IndexBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
         nvrhi::BindingSetItem::Sampler(2, CommonResources::GetInstance().MinReductionClamp)
@@ -273,6 +274,7 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
 
     cb.m_LightDirection = renderer->m_Scene.GetDirectionalLightDirection();
     cb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
+    cb.m_EnableRTShadows = renderer->m_EnableRTShadows ? 1 : 0;
     cb.m_DebugMode = (uint32_t)renderer->m_DebugMode;
     cb.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
     cb.m_EnableConeCulling = (renderer->m_EnableConeCulling && args.m_AlphaMode == ALPHA_MODE_OPAQUE) ? 1 : 0;
