@@ -40,4 +40,16 @@ float4 SampleBindlessTextureLevel(uint textureIndex, uint samplerIndex, float2 u
         return tex.SampleLevel(g_SamplerAnisoWrap, uv, lod);
 }
 
+// Helper function to sample from bindless textures with explicit gradients.
+// Useful for ray tracing where implicit derivatives are unavailable.
+float4 SampleBindlessTextureGrad(uint textureIndex, uint samplerIndex, float2 uv, float2 ddx_uv, float2 ddy_uv)
+{
+    Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(textureIndex)];
+    
+    if (samplerIndex == SAMPLER_CLAMP_INDEX)
+        return tex.SampleGrad(g_SamplerAnisoClamp, uv, ddx_uv, ddy_uv);
+    else
+        return tex.SampleGrad(g_SamplerAnisoWrap, uv, ddx_uv, ddy_uv);
+}
+
 #endif // BINDLESS_HLSLI
