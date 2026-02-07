@@ -22,7 +22,6 @@ public:
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        const ImGuiLayer& imgui = renderer->m_ImGuiLayer;
 
         nvrhi::utils::ScopedMarker marker(commandList, "HDR Post-Processing");
 
@@ -67,8 +66,8 @@ public:
 
             AdaptationConstants consts;
             consts.m_DeltaTime = (float)renderer->m_FrameTime / 1000.0f;
-            consts.m_KeyValue = imgui.m_ExposureKeyValue;
-            consts.m_AdaptationSpeed = imgui.m_AdaptationSpeed;
+            consts.m_KeyValue = renderer->m_ExposureKeyValue;
+            consts.m_AdaptationSpeed = renderer->m_AdaptationSpeed;
             consts.m_NumPixels = renderer->m_RHI->m_SwapchainExtent.x * renderer->m_RHI->m_SwapchainExtent.y;
             consts.m_MinLogLuminance = kMinLogLuminance;
             consts.m_MaxLogLuminance = kMaxLogLuminance;

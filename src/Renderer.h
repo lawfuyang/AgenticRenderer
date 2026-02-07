@@ -201,6 +201,8 @@ struct Renderer
     int m_ForcedLOD = -1;
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
+    float m_ExposureKeyValue = 0.18f;
+    float m_AdaptationSpeed = 1.0f;
     int m_DebugMode = 0;
 
 private:

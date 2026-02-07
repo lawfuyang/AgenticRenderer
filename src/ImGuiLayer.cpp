@@ -75,8 +75,8 @@ void ImGuiLayer::UpdateFrame()
         // HDR controls
         if (ImGui::TreeNode("HDR & Exposure"))
         {
-            ImGui::DragFloat("Exposure Key Value", &m_ExposureKeyValue, 0.01f, 0.0f, 10.0f);
-            ImGui::DragFloat("Adaptation Speed", &m_AdaptationSpeed, 0.01f, 0.0f, 10.0f);
+            ImGui::DragFloat("Exposure Key Value", &renderer->m_ExposureKeyValue, 0.01f, 0.0f, 10.0f);
+            ImGui::DragFloat("Adaptation Speed", &renderer->m_AdaptationSpeed, 0.01f, 0.0f, 10.0f);
 
             ImGui::TreePop();
         }
