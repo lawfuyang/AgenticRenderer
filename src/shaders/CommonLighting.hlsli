@@ -28,9 +28,9 @@ float3 DecodeNormal(float2 f)
 }
 
 // PBR Helper functions
-float3 ComputeF0(float specular, float3 baseColor, float metallic)
+float3 ComputeF0(float3 baseColor, float metallic)
 {
-    return lerp(float3(0.04, 0.04, 0.04) * specular * 2.0, baseColor, metallic);
+    return lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
 }
 
 float D_GGX(float NdotH, float m)
@@ -95,12 +95,13 @@ float3 ComputeDirectionalLighting(LightingInputs inputs)
 
     float a2 = clamp(inputs.roughness * inputs.roughness * inputs.roughness * inputs.roughness, 0.0001f, 1.0f);
     float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
-    float3 diffuse = oren * (1.0f - inputs.metallic) * inputs.baseColor;
+    float3 kD = (1.0 - inputs.metallic);
+    float3 diffuse = oren * kD * inputs.baseColor;
 
-    float3 specularColor = ComputeF0(0.5f, inputs.baseColor, inputs.metallic);
+    float3 f0 = ComputeF0(inputs.baseColor, inputs.metallic);
     float D = D_GGX(a2, NdotH);
     float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
-    float3 F = F_Schlick(specularColor, VdotH);
+    float3 F = F_Schlick(f0, VdotH);
     float3 spec = (D * Vis) * F;
 
     float3 radiance = float3(inputs.lightIntensity, inputs.lightIntensity, inputs.lightIntensity);
