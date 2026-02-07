@@ -241,7 +241,7 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 
 	SCOPED_TIMER("[Scene] LoadTextures");
 
-	const uint32_t threadCount = renderer->m_TaskScheduler->GetThreadCount();
+	const uint32_t threadCount = renderer->m_TaskScheduler->GetThreadCount() + 1;
 	std::vector<nvrhi::CommandListHandle> threadCommandLists(threadCount);
 	for (uint32_t i = 0; i < threadCount; ++i)
 	{

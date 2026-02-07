@@ -51,6 +51,7 @@ void TaskScheduler::ParallelFor(uint32_t count, const std::function<void(uint32_
         }
     }
     m_Condition.notify_all();
+    m_CompletionCondition.notify_all();
 
     std::unique_lock<std::mutex> lock(completionMutex);
     completionCondition.wait(lock, [&remaining]() { return remaining == 0; });
@@ -67,13 +68,46 @@ void TaskScheduler::ScheduleTask(std::function<void()> func)
             });
     }
     m_Condition.notify_one();
+    m_CompletionCondition.notify_all();
 }
 
 void TaskScheduler::ExecuteAllScheduledTasks()
 {
-    std::unique_lock<std::mutex> lock(m_CompletionMutex);
+    PROFILE_FUNCTION();
+
     m_Condition.notify_all();
-    m_CompletionCondition.wait(lock, [this]() { return m_RemainingTasks == 0; });
+
+    while (m_RemainingTasks > 0)
+    {
+        std::function<void(uint32_t)> task;
+        {
+            std::lock_guard<std::mutex> lock(m_QueueMutex);
+            if (!m_Tasks.empty())
+            {
+                task = std::move(m_Tasks.back());
+                m_Tasks.pop_back();
+            }
+        }
+
+        if (task)
+        {
+            task(GetThreadCount());
+
+            if (m_RemainingTasks.fetch_sub(1) == 1)
+            {
+                std::lock_guard<std::mutex> lock(m_CompletionMutex);
+                m_CompletionCondition.notify_all();
+            }
+        }
+        else
+        {
+            std::unique_lock<std::mutex> lock(m_CompletionMutex);
+            if (m_RemainingTasks > 0)
+            {
+                m_CompletionCondition.wait(lock, [this]() { return m_RemainingTasks == 0 || !m_Tasks.empty(); });
+            }
+        }
+    }
 }
 
 void TaskScheduler::WorkerThread(uint32_t threadIndex)
