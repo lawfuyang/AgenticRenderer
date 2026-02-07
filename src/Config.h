@@ -15,6 +15,10 @@ struct Config
     // Skip loading/saving scene cache
     bool m_SkipCache = false;
 
+    // Environment map textures
+    std::string m_IrradianceTexture = "irradiance.dds";
+    std::string m_RadianceTexture = "radiance.dds";
+
     bool ExecutePerPass = false;
     bool ExecutePerPassAndWait = false;
 

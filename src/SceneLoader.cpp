@@ -282,32 +282,7 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 		tex.m_Handle = renderer->m_RHI->m_NvrhiDevice->createTexture(desc);
 
 		nvrhi::CommandListHandle& cmd = threadCommandLists[threadIndex];
-		const nvrhi::FormatInfo& info = nvrhi::getFormatInfo(desc.format);
-		size_t offset = 0;
-		for (uint32_t arraySlice = 0; arraySlice < desc.arraySize; ++arraySlice)
-		{
-			for (uint32_t mipLevel = 0; mipLevel < desc.mipLevels; ++mipLevel)
-			{
-				uint32_t mipWidth = std::max(1u, desc.width >> mipLevel);
-				uint32_t mipHeight = std::max(1u, desc.height >> mipLevel);
-				uint32_t mipDepth = std::max(1u, desc.depth >> mipLevel);
-
-				uint32_t widthInBlocks = (mipWidth + info.blockSize - 1) / info.blockSize;
-				uint32_t heightInBlocks = (mipHeight + info.blockSize - 1) / info.blockSize;
-
-				size_t rowPitch = (size_t)widthInBlocks * info.bytesPerBlock;
-				size_t slicePitch = (size_t)heightInBlocks * rowPitch;
-				size_t subresourceSize = slicePitch * mipDepth;
-
-				if (offset + subresourceSize > imgData->GetSize())
-				{
-					SDL_LOG_ASSERT_FAIL("Texture data overflow", "[Scene] Data overflow for texture %s at mip %u", fullPath.string().c_str(), mipLevel);
-				}
-
-				cmd->writeTexture(tex.m_Handle, arraySlice, mipLevel, static_cast<const uint8_t*>(imgData->GetData()) + offset, rowPitch, slicePitch);
-				offset += subresourceSize;
-			}
-		}
+		UploadTexture(cmd, tex.m_Handle, desc, imgData->GetData(), imgData->GetSize());
 	});
 
 	for (uint32_t i = 0; i < threadCount; ++i)

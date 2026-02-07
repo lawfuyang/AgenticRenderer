@@ -2,6 +2,7 @@
 #include "CommonResources.h"
 #include "Renderer.h"
 #include "TextureLoader.h"
+#include "Config.h"
 
 #include "shaders/ShaderShared.h"
 
@@ -226,20 +227,6 @@ void CommonResources::Initialize()
         // Create dummy UAV texture
         DummyUAVTexture = createDefaultTexture("DummyUAV", nvrhi::Format::R32_FLOAT, true);
 
-        nvrhi::TextureDesc brdfDesc;
-        std::unique_ptr<ITextureDataReader> brdfData;
-        const char* basePath = SDL_GetBasePath();
-        if (basePath)
-        {
-            std::filesystem::path brdfPath = std::filesystem::path(basePath) / "brdf_lut.dds";
-            if (LoadTexture(brdfPath.generic_string(), brdfDesc, brdfData))
-            {
-                brdfDesc.debugName = "BRDF_LUT";
-                BRDF_LUT = device->createTexture(brdfDesc);
-            }
-        }
-        SDL_assert(BRDF_LUT && brdfData && "Failed to load BRDF_LUT texture from brdf_lut.dds. Make sure it exists next to the executable.");
-
         nvrhi::BufferDesc bufferDesc;
         bufferDesc.byteSize = 4;
         bufferDesc.structStride = 4;
@@ -251,6 +238,35 @@ void CommonResources::Initialize()
         // Upload texture data using renderer's command list management
         nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("CommonResources_DefaultTextures");
         ScopedCommandList commandList{ cmd };
+
+        const char* basePath = SDL_GetBasePath();
+        const Config& config = Config::Get();
+
+        auto LoadAndUpload = [&](const std::string& configPath, const char* debugName, nvrhi::TextureHandle& outTexture)
+        {
+            nvrhi::TextureDesc desc;
+            std::unique_ptr<ITextureDataReader> data;
+            std::filesystem::path path(configPath);
+            if (path.is_relative() && basePath)
+            {
+                path = std::filesystem::path(basePath) / path;
+            }
+
+            if (LoadTexture(path.generic_string(), desc, data))
+            {
+                desc.debugName = debugName;
+                outTexture = device->createTexture(desc);
+                SDL_assert(outTexture);
+                ::UploadTexture(commandList, outTexture, desc, data->GetData(), data->GetSize());
+            }
+        };
+
+        // Load BRDF LUT
+        LoadAndUpload("brdf_lut.dds", "BRDF_LUT", BRDF_LUT);
+
+        // Load IBL textures
+        LoadAndUpload(config.m_IrradianceTexture, "IrradianceTexture", IrradianceTexture);
+        LoadAndUpload(config.m_RadianceTexture, "RadianceTexture", RadianceTexture);
 
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)
@@ -271,9 +287,6 @@ void CommonResources::Initialize()
         // PBR texture (ORM: Occlusion=1, Roughness=1, Metallic=0)
         uint32_t pbrPixel = 0xFFFFFF00; // RGBA(0,255,255,255) - R=Metallic(0), G=Roughness(255), B=Occlusion(255), A=255
         commandList->writeTexture(DefaultTexturePBR, 0, 0, &pbrPixel, sizeof(uint32_t), 0);
-
-        // BRDF LUT
-        commandList->writeTexture(BRDF_LUT, 0, 0, brdfData->GetData(), brdfDesc.width* nvrhi::getFormatInfo(brdfDesc.format).bytesPerBlock);
 
         // Note: Default textures are registered later in Renderer::Initialize after bindless system is set up
     }
@@ -298,11 +311,17 @@ void CommonResources::RegisterDefaultTextures()
     SDL_assert(index == DEFAULT_TEXTURE_PBR);
     index = renderer->RegisterTexture(BRDF_LUT);
     SDL_assert(index == DEFAULT_TEXTURE_BRDF_LUT);
+    index = renderer->RegisterTexture(IrradianceTexture);
+    SDL_assert(index == DEFAULT_TEXTURE_IRRADIANCE);
+    index = renderer->RegisterTexture(RadianceTexture);
+    SDL_assert(index == DEFAULT_TEXTURE_RADIANCE);
     SDL_Log("[CommonResources] Default textures registered with bindless system");
 }
 
 void CommonResources::Shutdown()
 {
+    RadianceTexture = nullptr;
+    IrradianceTexture = nullptr;
     BRDF_LUT = nullptr;
     DummyUAVTexture = nullptr;
     DummyUAVBuffer = nullptr;

@@ -341,3 +341,33 @@ bool LoadTexture(std::string_view filePath, nvrhi::TextureDesc& desc, std::uniqu
 
     return false;
 }
+
+void UploadTexture(nvrhi::ICommandList* cmd, nvrhi::ITexture* texture, const nvrhi::TextureDesc& desc, const void* data, size_t dataSize)
+{
+    const nvrhi::FormatInfo& info = nvrhi::getFormatInfo(desc.format);
+    size_t offset = 0;
+    for (uint32_t arraySlice = 0; arraySlice < desc.arraySize; ++arraySlice)
+    {
+        for (uint32_t mipLevel = 0; mipLevel < desc.mipLevels; ++mipLevel)
+        {
+            uint32_t mipWidth = std::max(1u, desc.width >> mipLevel);
+            uint32_t mipHeight = std::max(1u, desc.height >> mipLevel);
+            uint32_t mipDepth = std::max(1u, desc.depth >> mipLevel);
+
+            uint32_t widthInBlocks = (mipWidth + info.blockSize - 1) / info.blockSize;
+            uint32_t heightInBlocks = (mipHeight + info.blockSize - 1) / info.blockSize;
+
+            size_t rowPitch = (size_t)widthInBlocks * info.bytesPerBlock;
+            size_t slicePitch = (size_t)heightInBlocks * rowPitch;
+            size_t subresourceSize = slicePitch * mipDepth;
+
+            if (dataSize > 0 && offset + subresourceSize > dataSize)
+            {
+                SDL_LOG_ASSERT_FAIL("Texture data overflow", "[TextureLoader] Data overflow for texture at mip %u", mipLevel);
+            }
+
+            cmd->writeTexture(texture, arraySlice, mipLevel, static_cast<const uint8_t*>(data) + offset, rowPitch, slicePitch);
+            offset += subresourceSize;
+        }
+    }
+}

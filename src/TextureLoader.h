@@ -5,6 +5,8 @@
 #include <nvrhi/nvrhi.h>
 #include <memory>
 
+void UploadTexture(nvrhi::ICommandList* cmd, nvrhi::ITexture* texture, const nvrhi::TextureDesc& desc, const void* data, size_t dataSize = 0);
+
 class ITextureDataReader
 {
 public:

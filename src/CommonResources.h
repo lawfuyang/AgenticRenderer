@@ -64,6 +64,8 @@ public:
     nvrhi::TextureHandle DefaultTexturePBR;          // RGBA(0,1,1,1) - ORM: Metallic=0, Roughness=1, Occlusion=1
     nvrhi::TextureHandle DummyUAVTexture;            // 1x1 UAV texture for filling slots
     nvrhi::TextureHandle BRDF_LUT;                   // BRDF integration LUT for IBL
+    nvrhi::TextureHandle IrradianceTexture;          // Irradiance cubemap for IBL
+    nvrhi::TextureHandle RadianceTexture;            // Radiance cubemap (filtered environment) for IBL
 
     // Default buffers
     nvrhi::BufferHandle DummyUAVBuffer;    // Empty structured buffer

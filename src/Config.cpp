@@ -30,7 +30,7 @@ void Config::ParseCommandLine(int argc, char* argv[])
             }
             else
             {
-                SDL_Log("[Config] Missing value for --gltf");
+                SDL_LOG_ASSERT_FAIL("Missing value for --gltf", "[Config] Missing value for --gltf");
             }
         }
         else if (std::strcmp(arg, "--skip-textures") == 0)
@@ -42,6 +42,30 @@ void Config::ParseCommandLine(int argc, char* argv[])
         {
             s_Instance.m_SkipCache = true;
             SDL_Log("[Config] Skipping scene cache via command line");
+        }
+        else if (std::strcmp(arg, "--irradiance") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                s_Instance.m_IrradianceTexture = argv[++i];
+                SDL_Log("[Config] Irradiance texture set via command line: %s", s_Instance.m_IrradianceTexture.c_str());
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("Missing value for --irradiance", "[Config] Missing value for --irradiance");
+            }
+        }
+        else if (std::strcmp(arg, "--radiance") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                s_Instance.m_RadianceTexture = argv[++i];
+                SDL_Log("[Config] Radiance texture set via command line: %s", s_Instance.m_RadianceTexture.c_str());
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("Missing value for --radiance", "[Config] Missing value for --radiance");
+            }
         }
         else if (std::strcmp(arg, "--execute-per-pass") == 0)
         {
@@ -64,6 +88,8 @@ void Config::ParseCommandLine(int argc, char* argv[])
             SDL_Log("  --gltf <path>                 Load the specified glTF scene file");
             SDL_Log("  --skip-textures               Skip loading textures from glTF scene");
             SDL_Log("  --skip-cache                  Skip loading/saving scene cache");
+            SDL_Log("  --irradiance <path>           Path to irradiance cubemap texture (DDS)");
+            SDL_Log("  --radiance <path>             Path to radiance cubemap texture (DDS)");
             SDL_Log("  --help, -h                    Show this help message");
         }
         else
