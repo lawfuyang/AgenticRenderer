@@ -18,6 +18,7 @@ class IRenderer
 public:
     virtual ~IRenderer() = default;
     virtual void Initialize() = 0;
+    virtual void PostSceneLoad() = 0;
     virtual void Render(nvrhi::CommandListHandle commandList) = 0;
     virtual const char* GetName() const = 0;
 
@@ -201,8 +202,16 @@ struct Renderer
     int m_ForcedLOD = -1;
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
+
+    // IBL settings
+    bool m_EnableIBL = true;
+    float m_IBLIntensity = 1.0f;
+    std::string m_IrradianceTexture = "irradiance.dds";
+    std::string m_RadianceTexture = "radiance.dds";
+    std::string m_BRDFLutTexture = "brdf_lut.dds";
+
     float m_ExposureKeyValue = 0.18f;
-    float m_AdaptationSpeed = 1.0f;
+    float m_AdaptationSpeed = 5.0f;
     int m_DebugMode = 0;
 
 private:

@@ -1,7 +1,10 @@
 #include "Config.h"
+#include "Renderer.h"
 
 void Config::ParseCommandLine(int argc, char* argv[])
 {
+    Renderer* renderer = Renderer::GetInstance();
+
     for (int i = 1; i < argc; ++i)
     {
         const char* arg = argv[i];
@@ -47,8 +50,8 @@ void Config::ParseCommandLine(int argc, char* argv[])
         {
             if (i + 1 < argc)
             {
-                s_Instance.m_IrradianceTexture = argv[++i];
-                SDL_Log("[Config] Irradiance texture set via command line: %s", s_Instance.m_IrradianceTexture.c_str());
+                renderer->m_IrradianceTexture = argv[++i];
+                SDL_Log("[Config] Irradiance texture set via command line: %s", renderer->m_IrradianceTexture.c_str());
             }
             else
             {
@@ -59,12 +62,54 @@ void Config::ParseCommandLine(int argc, char* argv[])
         {
             if (i + 1 < argc)
             {
-                s_Instance.m_RadianceTexture = argv[++i];
-                SDL_Log("[Config] Radiance texture set via command line: %s", s_Instance.m_RadianceTexture.c_str());
+                renderer->m_RadianceTexture = argv[++i];
+                SDL_Log("[Config] Radiance texture set via command line: %s", renderer->m_RadianceTexture.c_str());
             }
             else
             {
                 SDL_LOG_ASSERT_FAIL("Missing value for --radiance", "[Config] Missing value for --radiance");
+            }
+        }
+        else if (std::strcmp(arg, "--envmap") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                std::filesystem::path envMapPath = argv[++i];
+                std::string stem = envMapPath.stem().string();
+                std::filesystem::path parent = envMapPath.parent_path();
+                renderer->m_IrradianceTexture = (parent / (stem + "_irradiance.dds")).string();
+                renderer->m_RadianceTexture = (parent / (stem + "_radiance.dds")).string();
+
+                SDL_Log("[Config] Environment map set via command line: %s", envMapPath.string().c_str());
+                SDL_Log("[Config] Irradiance: %s", renderer->m_IrradianceTexture.c_str());
+                SDL_Log("[Config] Radiance: %s", renderer->m_RadianceTexture.c_str());
+
+                if (!std::filesystem::exists(renderer->m_IrradianceTexture)) {
+                    SDL_LOG_ASSERT_FAIL("Irradiance map not found", "Irradiance map not found: %s", renderer->m_IrradianceTexture.c_str());
+                }
+                if (!std::filesystem::exists(renderer->m_RadianceTexture)) {
+                    SDL_LOG_ASSERT_FAIL("Radiance map not found", "Radiance map not found: %s", renderer->m_RadianceTexture.c_str());
+                }
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("Missing value for --envmap", "[Config] Missing value for --envmap");
+            }
+        }
+        else if (std::strcmp(arg, "--brdflut") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                renderer->m_BRDFLutTexture = argv[++i];
+                SDL_Log("[Config] BRDF LUT texture set via command line: %s", renderer->m_BRDFLutTexture.c_str());
+                
+                if (!std::filesystem::exists(renderer->m_BRDFLutTexture)) {
+                    SDL_LOG_ASSERT_FAIL("BRDF LUT not found", "BRDF LUT not found: %s", renderer->m_BRDFLutTexture.c_str());
+                }
+            }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("Missing value for --brdflut", "[Config] Missing value for --brdflut");
             }
         }
         else if (std::strcmp(arg, "--execute-per-pass") == 0)
@@ -90,6 +135,8 @@ void Config::ParseCommandLine(int argc, char* argv[])
             SDL_Log("  --skip-cache                  Skip loading/saving scene cache");
             SDL_Log("  --irradiance <path>           Path to irradiance cubemap texture (DDS)");
             SDL_Log("  --radiance <path>             Path to radiance cubemap texture (DDS)");
+            SDL_Log("  --envmap <path>               Path to environment map (.hdr/.exr for auto-inference of DDS)");
+            SDL_Log("  --brdflut <path>              Path to BRDF LUT texture (DDS)");
             SDL_Log("  --help, -h                    Show this help message");
         }
         else

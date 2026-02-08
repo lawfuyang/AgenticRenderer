@@ -20,6 +20,7 @@ class BasePassRenderer : public IRenderer
 {
 public:
     void Initialize() override;
+    void PostSceneLoad() override;
     void Render(nvrhi::CommandListHandle commandList) override;
     void RenderTransparent(nvrhi::CommandListHandle commandList);
     const char* GetName() const override { return "BasePass"; }
@@ -113,14 +114,14 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(2, renderer->m_Scene.m_MeshDataBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_VisibleIndirectBuffer ? m_VisibleIndirectBuffer : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_VisibleIndirectBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_VisibleCountBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, m_OccludedIndicesBuffer ? m_OccludedIndicesBuffer : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, m_OccludedIndicesBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(3, m_OccludedCountBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? m_OccludedIndirectBuffer : CommonResources::GetInstance().DummyUAVBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, m_MeshletJobBuffer ? m_MeshletJobBuffer : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, m_MeshletJobBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(6, m_MeshletJobCountBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, m_MeshletIndirectBuffer ? m_MeshletIndirectBuffer : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, m_MeshletIndirectBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
     };
 
@@ -147,6 +148,7 @@ void BasePassRenderer::PerformOcclusionCulling(nvrhi::CommandListHandle commandL
     nvrhi::utils::ScopedMarker buildIndirectMarker{ commandList, "Build Indirect Arguments" };
 
     // Build indirect for Phase 2 culling and/or meshlet rendering
+    if (args.m_CullingPhase == 0)
     {
         Renderer::RenderPassParams params;
         params.commandList = commandList;
@@ -283,6 +285,9 @@ void BasePassRenderer::RenderInstances(nvrhi::CommandListHandle commandList, con
     cb.m_HZBHeight = (uint32_t)renderer->m_HZBTexture->getDesc().height;
     cb.m_P00 = projectionMatrix.m[0][0];
     cb.m_P11 = projectionMatrix.m[1][1];
+    cb.m_EnableIBL = renderer->m_EnableIBL ? 1 : 0;
+    cb.m_IBLIntensity = renderer->m_IBLIntensity;
+    cb.m_RadianceMipCount = CommonResources::GetInstance().RadianceTexture->getDesc().mipLevels;
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     nvrhi::RenderState renderState;
@@ -499,6 +504,53 @@ void BasePassRenderer::Initialize()
     m_MeshletJobCountBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletJobCountBufDesc);
 }
 
+void BasePassRenderer::PostSceneLoad()
+{
+    Renderer* renderer = Renderer::GetInstance();
+
+    uint32_t numPrimitives = (uint32_t)renderer->m_Scene.m_InstanceData.size();
+    numPrimitives = std::max(numPrimitives, 1u); // avoid zero-sized buffers
+
+    // Allocate buffers once. Primitives/meshlet counts are static for this scene.
+    const nvrhi::BufferDesc visibleIndirectBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(nvrhi::DrawIndexedIndirectArguments))
+        .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
+        .setIsDrawIndirectArgs(true)
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true)
+        .setDebugName("VisibleIndirectBuffer");
+    m_VisibleIndirectBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(visibleIndirectBufDesc);
+
+    const nvrhi::BufferDesc occludedIndicesBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(uint32_t))
+        .setStructStride(sizeof(uint32_t))
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true)
+        .setDebugName("OccludedIndices");
+    m_OccludedIndicesBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(occludedIndicesBufDesc);
+
+    const nvrhi::BufferDesc meshletIndirectBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(DispatchIndirectArguments)) // One per potential instance
+        .setStructStride(sizeof(DispatchIndirectArguments))
+        .setIsDrawIndirectArgs(true)
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true)
+        .setDebugName("MeshletIndirectBuffer");
+    m_MeshletIndirectBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletIndirectBufDesc);
+
+    const nvrhi::BufferDesc meshletJobBufDesc = nvrhi::BufferDesc()
+        .setByteSize(numPrimitives * sizeof(MeshletJob))
+        .setStructStride(sizeof(MeshletJob))
+        .setCanHaveUAVs(true)
+        .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+        .setKeepInitialState(true)
+        .setDebugName("MeshletJobBuffer");
+    m_MeshletJobBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletJobBufDesc);
+}
+
 void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
 {
     Renderer* renderer = Renderer::GetInstance();
@@ -541,54 +593,6 @@ void BasePassRenderer::Render(nvrhi::CommandListHandle commandList)
         const DirectX::XMMATRIX v = DirectX::XMLoadFloat4x4(&renderer->m_FrozenCullingViewMatrix);
         const DirectX::XMMATRIX p = DirectX::XMLoadFloat4x4(&proj);
         DirectX::XMStoreFloat4x4(&viewProjForCulling, v * p);
-    }
-
-    // Allocate buffers once. Primitives/meshlet counts are static for this scene.
-    if (!m_VisibleIndirectBuffer)
-    {
-        const nvrhi::BufferDesc visibleIndirectBufDesc = nvrhi::BufferDesc()
-            .setByteSize(numPrimitives * sizeof(nvrhi::DrawIndexedIndirectArguments))
-            .setStructStride(sizeof(nvrhi::DrawIndexedIndirectArguments))
-            .setIsDrawIndirectArgs(true)
-            .setCanHaveUAVs(true)
-            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-            .setKeepInitialState(true)
-            .setDebugName("VisibleIndirectBuffer");
-        m_VisibleIndirectBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(visibleIndirectBufDesc);
-
-        const nvrhi::BufferDesc occludedIndicesBufDesc = nvrhi::BufferDesc()
-            .setByteSize(numPrimitives * sizeof(uint32_t))
-            .setStructStride(sizeof(uint32_t))
-            .setCanHaveUAVs(true)
-            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-            .setKeepInitialState(true)
-            .setDebugName("OccludedIndices");
-        m_OccludedIndicesBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(occludedIndicesBufDesc);
-    }
-
-    if (!m_MeshletIndirectBuffer)
-    {
-        const nvrhi::BufferDesc meshletIndirectBufDesc = nvrhi::BufferDesc()
-            .setByteSize(numPrimitives * sizeof(DispatchIndirectArguments)) // One per potential instance
-            .setStructStride(sizeof(DispatchIndirectArguments))
-            .setIsDrawIndirectArgs(true)
-            .setCanHaveUAVs(true)
-            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-            .setKeepInitialState(true)
-            .setDebugName("MeshletIndirectBuffer");
-        m_MeshletIndirectBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletIndirectBufDesc);
-    }
-
-    if (!m_MeshletJobBuffer)
-    {
-        const nvrhi::BufferDesc meshletJobBufDesc = nvrhi::BufferDesc()
-            .setByteSize(numPrimitives * sizeof(MeshletJob))
-            .setStructStride(sizeof(MeshletJob))
-            .setCanHaveUAVs(true)
-            .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-            .setKeepInitialState(true)
-            .setDebugName("MeshletJobBuffer");
-        m_MeshletJobBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(meshletJobBufDesc);
     }
 
     auto ClearVisibleCounters = [&]

@@ -216,7 +216,7 @@ static nvrhi::Format GetFormatFromDDS(const DDS_PIXELFORMAT& pf, bool hasDX10, c
     }
 }
 
-static nvrhi::TextureDimension GetDimensionFromDDS(bool hasDX10, const DDS_HEADER_DXT10& dx10, uint32_t arraySize)
+static nvrhi::TextureDimension GetDimensionFromDDS(bool hasDX10, const DDS_HEADER_DXT10& dx10, uint32_t& arraySize)
 {
     if (hasDX10)
     {
@@ -225,7 +225,11 @@ static nvrhi::TextureDimension GetDimensionFromDDS(bool hasDX10, const DDS_HEADE
         case DDS_RESOURCE_DIMENSION_TEXTURE1D: return arraySize > 1 ? nvrhi::TextureDimension::Texture1DArray : nvrhi::TextureDimension::Texture1D;
         case DDS_RESOURCE_DIMENSION_TEXTURE2D:
         {
-            if (arraySize == 6 && (dx10.miscFlag & DDS_RESOURCE_MISC_TEXTURECUBE)) return nvrhi::TextureDimension::TextureCube;
+            if (dx10.miscFlag & DDS_RESOURCE_MISC_TEXTURECUBE)
+            {
+                arraySize = 6;
+                return nvrhi::TextureDimension::TextureCube;
+            }
             if (arraySize > 1) return nvrhi::TextureDimension::Texture2DArray;
             return nvrhi::TextureDimension::Texture2D;
         }

@@ -7,6 +7,7 @@ class DeferredRenderer : public IRenderer
 {
 public:
     void Initialize() override {}
+    void PostSceneLoad() override {}
     void Render(nvrhi::CommandListHandle commandList) override
     {
         PROFILE_FUNCTION();
@@ -28,6 +29,9 @@ public:
         dcb.m_LightIntensity = renderer->m_Scene.m_DirectionalLight.intensity / 10000.0f;
         dcb.m_EnableRTShadows = renderer->m_EnableRTShadows ? 1 : 0;
         dcb.m_DebugMode = renderer->m_DebugMode;
+        dcb.m_EnableIBL = renderer->m_EnableIBL ? 1 : 0;
+        dcb.m_IBLIntensity = renderer->m_IBLIntensity;
+        dcb.m_RadianceMipCount = CommonResources::GetInstance().RadianceTexture->getDesc().mipLevels;
         commandList->writeBuffer(deferredCB, &dcb, sizeof(dcb), 0);
 
         bset.bindings = {

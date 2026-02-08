@@ -33,18 +33,36 @@ float3 ComputeF0(float3 baseColor, float metallic)
     return lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
 }
 
-float D_GGX(float NdotH, float m)
+float DistributionGGX(float NdotH, float roughness)
 {
-    float m2 = m * m;
-    float f = (NdotH * m2 - NdotH) * NdotH + 1.0;
-    return m2 / (3.14159265 * f * f);
+    float a = roughness*roughness;
+    float a2 = a*a;
+    float NdotH2 = NdotH*NdotH;
+
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
 }
 
-float Vis_SmithJointApprox(float a2, float NdotV, float NdotL)
+float GeometrySchlickGGX(float NdotV, float roughness)
 {
-    float visV = NdotL * sqrt(NdotV * (NdotV - a2 * NdotV) + a2);
-    float visL = NdotV * sqrt(NdotL * (NdotL - a2 * NdotL) + a2);
-    return 0.5 / (visV + visL);
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+
+float GeometrySmith(float NdotV, float NdotL, float roughness)
+{
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
 }
 
 float3 F_Schlick(float3 f0, float VdotH)
@@ -53,13 +71,43 @@ float3 F_Schlick(float3 f0, float VdotH)
     return f0 + (f90 - f0) * pow(1.0 - VdotH, 5.0);
 }
 
-float OrenNayar(float nl, float nv, float lv, float a2, float s)
+float OrenNayar(float NdotL, float NdotV, float LdotV, float roughness)
 {
-    float A = 1.0 - 0.5 * a2 / (a2 + 0.33);
-    float B = 0.45 * a2 / (a2 + 0.09);
-    float C = sqrt((1.0 - nl * nl) * (1.0 - nv * nv)) / max(nl, nv);
-    float cos_phi_diff = lv - nl * nv;
-    return s * nl * (A + B * max(0.0, cos_phi_diff) * C);
+    if (NdotL <= 0.0 || NdotV <= 0.0) return 0.0;
+
+    float sigma2 = roughness * roughness;
+
+    float A = 1.0 - 0.5 * sigma2 / (sigma2 + 0.33);
+    float B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+    float cosPhi = LdotV - NdotL * NdotV;
+    float sinAlphaTanBeta =
+        sqrt((1.0 - NdotL*NdotL) * (1.0 - NdotV*NdotV)) /
+        max(NdotL, NdotV);
+
+    return NdotL * (A + B * max(0.0, cosPhi) * sinAlphaTanBeta) / PI;
+}
+
+float DisneyBurleyDiffuse(float NdotL, float NdotV, float LdotH, float perceptualRoughness)
+{
+    if (NdotL <= 0 || NdotV <= 0)
+        return 0;
+
+    // Burley diffuse uses perceptual roughness directly
+    float rough = perceptualRoughness;
+    float rough2 = rough * rough;
+
+    // Schlick-style Fresnel for diffuse
+    float FL = pow(1.0 - NdotL, 5.0);
+    float FV = pow(1.0 - NdotV, 5.0);
+
+    float Fd90 = 0.5 + 2.0 * rough2 * LdotH * LdotH;
+
+    float Fd =
+        lerp(1.0, Fd90, FL) *
+        lerp(1.0, Fd90, FV);
+
+    return Fd * NdotL / PI;
 }
 
 struct LightingInputs
@@ -72,6 +120,7 @@ struct LightingInputs
     float metallic;
     float lightIntensity;
     float3 worldPos;
+    uint radianceMipCount;
     bool enableRTShadows;
     RaytracingAccelerationStructure sceneAS;
     StructuredBuffer<PerInstanceData> instances;
@@ -81,28 +130,50 @@ struct LightingInputs
     StructuredBuffer<VertexQuantized> vertices;
     SamplerState clampSampler;
     SamplerState wrapSampler;
+
+    // Derived values
+    float3 F0;       // Base reflectivity at normal incidence
+    float3 F;        // Fresnel term, precomputed using F_Schlick with NdotV
+    float3 kD;       // Diffuse coefficient, (1 - metallic)
+    float NdotV;     // Dot product of surface normal and view direction
 };
+
+struct IBLComponents
+{
+    float3 irradiance;
+    float3 radiance;
+    float3 ibl;
+};
+
+void PrepareLightingByproducts(inout LightingInputs inputs)
+{
+    inputs.NdotV = saturate(dot(inputs.N, inputs.V));
+    inputs.F0 = ComputeF0(inputs.baseColor, inputs.metallic);
+    inputs.F = F_Schlick(inputs.F0, inputs.NdotV);
+    inputs.kD = (1.0f - inputs.metallic);
+}
 
 float3 ComputeDirectionalLighting(LightingInputs inputs)
 {
     float3 H = normalize(inputs.V + inputs.L);
 
     float NdotL = saturate(dot(inputs.N, inputs.L));
-    float NdotV = saturate(dot(inputs.N, inputs.V));
     float NdotH = saturate(dot(inputs.N, H));
     float VdotH = saturate(dot(inputs.V, H));
     float LdotV = saturate(dot(inputs.L, inputs.V));
+    float LdotH = saturate(dot(inputs.L, H));
 
-    float a2 = clamp(inputs.roughness * inputs.roughness * inputs.roughness * inputs.roughness, 0.0001f, 1.0f);
-    float oren = OrenNayar(NdotL, NdotV, LdotV, a2, 1.0f);
-    float3 kD = (1.0 - inputs.metallic);
-    float3 diffuse = oren * kD * inputs.baseColor;
+    //float diffuseTerm = OrenNayar(NdotL, inputs.NdotV, LdotV, inputs.roughness);
+    float diffuseTerm = DisneyBurleyDiffuse(NdotL, inputs.NdotV, LdotH, inputs.roughness);
+    float3 diffuse = diffuseTerm * inputs.kD * inputs.baseColor;
 
-    float3 f0 = ComputeF0(inputs.baseColor, inputs.metallic);
-    float D = D_GGX(a2, NdotH);
-    float Vis = Vis_SmithJointApprox(a2, NdotV, NdotL);
-    float3 F = F_Schlick(f0, VdotH);
-    float3 spec = (D * Vis) * F;
+    float NDF = DistributionGGX(NdotH, inputs.roughness);
+    float G = GeometrySmith(inputs.NdotV, NdotL, inputs.roughness);
+    float3 F = inputs.F;
+
+    float3 numerator = NDF * G * F; 
+    float denominator = 4.0 * inputs.NdotV * NdotL + 0.0001; // + 0.0001 to prevent divide by zero
+    float3 spec = numerator / denominator;
 
     float3 radiance = float3(inputs.lightIntensity, inputs.lightIntensity, inputs.lightIntensity);
 
@@ -204,7 +275,35 @@ float3 ComputeDirectionalLighting(LightingInputs inputs)
         }
     }
 
-    return (diffuse + spec) * radiance * NdotL * shadow;
+    return (diffuse + spec) * NdotL * radiance * shadow;
+}
+
+IBLComponents ComputeIBL(LightingInputs inputs)
+{
+    IBLComponents components;
+
+    // Diffuse IBL
+    TextureCube irradianceMap = ResourceDescriptorHeap[DEFAULT_TEXTURE_IRRADIANCE];
+    float3 irradiance = irradianceMap.Sample(inputs.clampSampler, inputs.N).rgb;
+    float3 diffuseIBL = irradiance * inputs.baseColor * inputs.kD;
+
+    // Specular IBL
+    TextureCube prefilteredEnvMap = ResourceDescriptorHeap[DEFAULT_TEXTURE_RADIANCE];
+    float3 R = reflect(-inputs.V, inputs.N);
+    
+    float mipLevel = inputs.roughness * (float(inputs.radianceMipCount) - 1.0f);
+    float3 prefilteredColor = prefilteredEnvMap.SampleLevel(inputs.clampSampler, R, mipLevel).rgb;
+
+    Texture2D brdfLut = ResourceDescriptorHeap[DEFAULT_TEXTURE_BRDF_LUT];
+    float2 brdf = brdfLut.SampleLevel(inputs.clampSampler, float2(inputs.NdotV, inputs.roughness), 0).rg;
+
+    float3 specularIBL = prefilteredColor * (inputs.F0 * brdf.x + brdf.y);
+
+    components.irradiance = diffuseIBL;
+    components.radiance = specularIBL;
+    components.ibl = (diffuseIBL + specularIBL);
+
+    return components;
 }
 
 #endif // COMMON_LIGHTING_HLSLI

@@ -10,6 +10,7 @@ class ClearRenderer : public IRenderer
 {
 public:
     void Initialize() override {}
+    void PostSceneLoad() override {}
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();
@@ -460,6 +461,12 @@ void Renderer::Initialize()
 
     // Load scene (if configured) after all renderer resources are ready
     m_Scene.LoadScene();
+
+    // Initialize renderers with scene-dependent resources
+    for (const auto& renderer : m_Renderers)
+    {
+        renderer->PostSceneLoad();
+    }
 
     ExecutePendingCommandLists();
 }
@@ -1384,10 +1391,10 @@ void Renderer::DestroySceneResources()
 
 int main(int argc, char* argv[])
 {
-    Config::ParseCommandLine(argc, argv);
-
     Renderer renderer{};
     Renderer::SetInstance(&renderer);
+    Config::ParseCommandLine(argc, argv);
+
     renderer.Initialize();
 
     renderer.Run();

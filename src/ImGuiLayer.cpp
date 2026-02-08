@@ -173,9 +173,11 @@ void ImGuiLayer::UpdateFrame()
         {
             ImGui::Checkbox("Use Meshlet Rendering", &renderer->m_UseMeshletRendering);
             ImGui::Checkbox("Enable RT Shadows", &renderer->m_EnableRTShadows);
+            ImGui::Checkbox("Enable IBL", &renderer->m_EnableIBL);
+            ImGui::SliderFloat("IBL Intensity", &renderer->m_IBLIntensity, 0.0f, 10.0f);
 
             static const char* kDebugModes[] = {
-                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD"
+                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD", "Irradiance", "Radiance", "IBL"
             };
             ImGui::Combo("Debug Mode", &renderer->m_DebugMode, kDebugModes, IM_ARRAYSIZE(kDebugModes));
 

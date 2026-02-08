@@ -369,6 +369,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     lightingInputs.metallic = metallic;
     lightingInputs.lightIntensity = g_PerFrame.m_LightIntensity;
     lightingInputs.worldPos = input.worldPos;
+    lightingInputs.radianceMipCount = g_PerFrame.m_RadianceMipCount;
     lightingInputs.enableRTShadows = g_PerFrame.m_EnableRTShadows != 0;
     lightingInputs.sceneAS = g_SceneAS;
     lightingInputs.instances = g_Instances;
@@ -379,12 +380,15 @@ GBufferOut GBuffer_PSMain(VSOut input)
     lightingInputs.clampSampler = g_SamplerAnisoClamp;
     lightingInputs.wrapSampler = g_SamplerAnisoWrap;
 
+    PrepareLightingByproducts(lightingInputs);
+
     float3 light = ComputeDirectionalLighting(lightingInputs);
 
-    float3 color =  light + emissive;
+    IBLComponents iblComp = ComputeIBL(lightingInputs);
+    float3 ibl = iblComp.ibl;
+    ibl *= float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
 
-    // hack ambient until we have restir gi
-    color += baseColor * 0.03f;
+    float3 color = light + ibl + emissive;
 
     // Debug visualizations
     if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)
@@ -395,6 +399,22 @@ GBufferOut GBuffer_PSMain(VSOut input)
         {
             color = GetDebugColor(g_PerFrame.m_DebugMode, input.instanceID, input.meshletID, input.lodIndex);
         }
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_WORLD_NORMALS)
+            color = N * 0.5f + 0.5f;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_ALBEDO)
+            color = baseColor;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_ROUGHNESS)
+            color = roughness.xxx;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_METALLIC)
+            color = metallic.xxx;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_EMISSIVE)
+            color = emissive;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_IRRADIANCE)
+            color = iblComp.irradiance;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_RADIANCE)
+            color = iblComp.radiance;
+        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_IBL)
+            color = ibl;
     }
 
     return float4(color, alpha);

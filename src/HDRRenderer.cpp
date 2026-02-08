@@ -19,6 +19,8 @@ public:
         scopedCmd->writeBuffer(renderer->m_ExposureBuffer, &initialExposure, sizeof(float));
     }
 
+    void PostSceneLoad() override {}
+
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();

@@ -242,7 +242,7 @@ void CommonResources::Initialize()
         const char* basePath = SDL_GetBasePath();
         const Config& config = Config::Get();
 
-        auto LoadAndUpload = [&](const std::string& configPath, const char* debugName, nvrhi::TextureHandle& outTexture)
+        auto LoadAndUpload = [&](const std::string& configPath, const char* debugName, nvrhi::TextureHandle& outTexture, bool expectCube = false)
         {
             nvrhi::TextureDesc desc;
             std::unique_ptr<ITextureDataReader> data;
@@ -254,19 +254,28 @@ void CommonResources::Initialize()
 
             if (LoadTexture(path.generic_string(), desc, data))
             {
+                if (expectCube && desc.dimension != nvrhi::TextureDimension::TextureCube)
+                {
+                    SDL_LOG_ASSERT_FAIL("Texture must be a cubemap", "%s must be a TextureCube", debugName);
+                }
+
                 desc.debugName = debugName;
                 outTexture = device->createTexture(desc);
                 SDL_assert(outTexture);
                 ::UploadTexture(commandList, outTexture, desc, data->GetData(), data->GetSize());
             }
+            else
+            {
+                SDL_LOG_ASSERT_FAIL("Failed to load texture", "Failed to load texture: %s", path.generic_string().c_str());
+            }
         };
 
         // Load BRDF LUT
-        LoadAndUpload("brdf_lut.dds", "BRDF_LUT", BRDF_LUT);
+        LoadAndUpload(renderer->m_BRDFLutTexture, "BRDF_LUT", BRDF_LUT);
 
         // Load IBL textures
-        LoadAndUpload(config.m_IrradianceTexture, "IrradianceTexture", IrradianceTexture);
-        LoadAndUpload(config.m_RadianceTexture, "RadianceTexture", RadianceTexture);
+        LoadAndUpload(renderer->m_IrradianceTexture, "IrradianceTexture", IrradianceTexture, true);
+        LoadAndUpload(renderer->m_RadianceTexture, "RadianceTexture", RadianceTexture, true);
 
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)

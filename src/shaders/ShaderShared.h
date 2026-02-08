@@ -57,6 +57,9 @@ struct ImGuiPushConstants
 #define DEBUG_MODE_METALLIC 6
 #define DEBUG_MODE_EMISSIVE 7
 #define DEBUG_MODE_LOD 8
+#define DEBUG_MODE_IRRADIANCE 9
+#define DEBUG_MODE_RADIANCE 10
+#define DEBUG_MODE_IBL 11
 
 #define MAX_LOD_COUNT 8
 
@@ -108,6 +111,10 @@ struct ForwardLightingPerFrameData
   uint32_t m_HZBHeight;
   float m_P00;
   float m_P11;
+  uint32_t m_EnableIBL;
+  float m_IBLIntensity;
+  uint32_t m_RadianceMipCount;
+  uint32_t pad0;
 };
 
 struct DeferredLightingConstants
@@ -118,6 +125,10 @@ struct DeferredLightingConstants
   float m_LightIntensity;
   uint32_t m_EnableRTShadows;
   uint32_t m_DebugMode;
+  uint32_t m_EnableIBL;
+  float m_IBLIntensity;
+  uint32_t m_RadianceMipCount;
+  uint32_t pad1;
 };
 
 // Material constants (persistent, per-material data)

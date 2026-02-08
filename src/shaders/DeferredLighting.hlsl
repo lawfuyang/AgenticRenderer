@@ -74,6 +74,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.metallic = metallic;
     lightingInputs.lightIntensity = g_Deferred.m_LightIntensity;
     lightingInputs.worldPos = worldPos;
+    lightingInputs.radianceMipCount = g_Deferred.m_RadianceMipCount;
     lightingInputs.enableRTShadows = g_Deferred.m_EnableRTShadows != 0;
     lightingInputs.sceneAS = g_SceneAS;
     lightingInputs.instances = g_Instances;
@@ -84,11 +85,15 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.clampSampler = g_SamplerAnisoClamp;
     lightingInputs.wrapSampler = g_SamplerAnisoWrap;
 
-    float3 color = ComputeDirectionalLighting(lightingInputs);
-    color += emissive;
+    PrepareLightingByproducts(lightingInputs);
 
-    // hack ambient until we have restir gi
-    color += baseColor * 0.03f;
+    float3 color = ComputeDirectionalLighting(lightingInputs);
+    
+    IBLComponents iblComp = ComputeIBL(lightingInputs);
+    float3 ibl = iblComp.ibl;
+    ibl *= float(g_Deferred.m_EnableIBL) * g_Deferred.m_IBLIntensity;
+
+    color += ibl + emissive;
 
     // Debug visualizations
     if (g_Deferred.m_DebugMode != DEBUG_MODE_NONE)
@@ -103,6 +108,12 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             color = metallic.xxx;
         else if (g_Deferred.m_DebugMode == DEBUG_MODE_EMISSIVE)
             color = emissive;
+        else if (g_Deferred.m_DebugMode == DEBUG_MODE_IRRADIANCE)
+            color = iblComp.irradiance;
+        else if (g_Deferred.m_DebugMode == DEBUG_MODE_RADIANCE)
+            color = iblComp.radiance;
+        else if (g_Deferred.m_DebugMode == DEBUG_MODE_IBL)
+            color = ibl;
         
         if (g_Deferred.m_DebugMode == DEBUG_MODE_INSTANCES ||
             g_Deferred.m_DebugMode == DEBUG_MODE_MESHLETS ||
