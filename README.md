@@ -66,14 +66,14 @@ The project automatically downloads and builds the following dependencies:
 
 ### Command Line Options
 - `--gltf <path>`: Load a glTF scene file
-- `--d3d12`: Select D3D12 graphics API (default: Vulkan)
+- `--vulkan`: Select Vulkan graphics API (default: D3D12)
 - `--rhidebug`: Enable Graphic API validation layers
 - `--skip-textures`: Skip loading textures from glTF
 - `--skip-cache`: Skip scene caching
 
 ### Example
 ```bash
-AgenticRenderer.exe --gltf scenes/sponza.gltf --d3d12 --rhidebug
+AgenticRenderer.exe --gltf scenes/sponza.gltf --vulkan --rhidebug
 ```
 
 ### Controls
