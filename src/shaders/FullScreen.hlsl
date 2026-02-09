@@ -1,11 +1,5 @@
 #include "ShaderShared.h"
 
-struct FullScreenVertexOut
-{
-    float4 pos : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
 [numthreads(3, 1, 1)]
 [outputtopology("triangle")]
 void MSMain(

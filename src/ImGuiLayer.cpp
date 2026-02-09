@@ -96,7 +96,20 @@ void ImGuiLayer::UpdateFrame()
 
             ImGui::Checkbox("Enable Animations", &renderer->m_EnableAnimations);
 
-            // HDR controls
+            ImGui::TreePop();
+        }
+
+        // Post-processing settings
+        if (ImGui::TreeNode("Post-Processing"))
+        {
+            ImGui::Checkbox("Enable Bloom", &renderer->m_EnableBloom);
+            ImGui::Checkbox("Debug Bloom Only", &renderer->m_DebugBloom);
+            ImGui::DragFloat("Bloom Intensity", &renderer->m_BloomIntensity, 0.001f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bloom Knee", &renderer->m_BloomKnee, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bloom Upsample Radius", &renderer->m_UpsampleRadius, 0.01f, 0.1f, 2.0f);
+
+            ImGui::Separator();
+
             ImGui::DragFloat("Exposure Key Value", &renderer->m_ExposureKeyValue, 0.01f, 0.0f, 10.0f);
             ImGui::DragFloat("Adaptation Speed", &renderer->m_AdaptationSpeed, 0.01f, 0.0f, 10.0f);
 

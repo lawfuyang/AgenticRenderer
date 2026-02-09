@@ -596,6 +596,7 @@ void Renderer::Run()
         ADD_RENDER_PASS(g_HZBGeneratorPhase2);
         ADD_RENDER_PASS(g_DeferredRenderer);
         ADD_RENDER_PASS(g_TransparentPassRenderer);
+        ADD_RENDER_PASS(g_BloomRenderer);
         ADD_RENDER_PASS(g_HDRRenderer);
         ADD_RENDER_PASS(g_ImGuiRenderer);
 
@@ -966,6 +967,8 @@ nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi:
     if (it != m_GraphicsPipelineCache.end())
         return it->second;
 
+    SDL_Log("[Pipeline Cache] Creating new graphics pipeline (hash=%zu)", h);
+
     // Create pipeline and cache it
     nvrhi::GraphicsPipelineHandle pipeline = m_RHI->m_NvrhiDevice->createGraphicsPipeline(pipelineDesc, fbInfo);
     SDL_assert(pipeline && "Failed to create graphics pipeline");
@@ -995,6 +998,8 @@ nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::M
     if (it != m_MeshletPipelineCache.end())
         return it->second;
 
+    SDL_Log("[Pipeline Cache] Creating new meshlet pipeline (hash=%zu)", h);
+
     // Create pipeline and cache it
     nvrhi::MeshletPipelineHandle pipeline = m_RHI->m_NvrhiDevice->createMeshletPipeline(pipelineDesc, fbInfo);
     SDL_assert(pipeline && "Failed to create meshlet pipeline");
@@ -1021,6 +1026,8 @@ nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderH
     auto it = m_ComputePipelineCache.find(h);
     if (it != m_ComputePipelineCache.end())
         return it->second;
+
+    SDL_Log("[Pipeline Cache] Creating new compute pipeline (hash=%zu)", h);
 
     // Create pipeline and cache it
     nvrhi::ComputePipelineDesc desc;
@@ -1075,8 +1082,10 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
     state.framebuffer = params.framebuffer;
 
     const nvrhi::FramebufferDesc& fbDesc = params.framebuffer->getDesc();
-    uint32_t width = fbDesc.colorAttachments[0].texture->getDesc().width;
-    uint32_t height = fbDesc.colorAttachments[0].texture->getDesc().height;
+    nvrhi::TextureDesc texDesc = fbDesc.colorAttachments[0].texture->getDesc();
+    uint32_t mipLevel = fbDesc.colorAttachments[0].subresources.baseMipLevel;
+    uint32_t width = std::max(1u, texDesc.width >> mipLevel);
+    uint32_t height = std::max(1u, texDesc.height >> mipLevel);
 
     state.viewport.viewports.push_back(nvrhi::Viewport(0, (float)width, 0, (float)height, 0, 1));
     state.viewport.scissorRects.push_back(nvrhi::Rect(0, (int)width, 0, (int)height));
@@ -1395,6 +1404,8 @@ void Renderer::DestroySceneResources()
     m_HDRColorTexture = nullptr;
     m_LuminanceHistogram = nullptr;
     m_ExposureBuffer = nullptr;
+    m_BloomDownPyramid = nullptr;
+    m_BloomUpPyramid = nullptr;
 }
 
 int main(int argc, char* argv[])

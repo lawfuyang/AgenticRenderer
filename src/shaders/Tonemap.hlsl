@@ -1,15 +1,12 @@
 #include "ShaderShared.h"
 
-struct FullScreenVertexOut
-{
-    float4 pos : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
-PUSH_CONSTANT ConstantBuffer<TonemapConstants> TonemapCB : register(b0);
+PUSH_CONSTANT TonemapConstants TonemapCB;
 
 Texture2D<float3> HDRColorInput : register(t0);
 StructuredBuffer<float> ExposureInput : register(t1);
+Texture2D<float3> BloomInput : register(t2);
+
+SamplerState LinearClampSampler : register(s0);
 
 // Input color is non-negative and resides in the Linear Rec. 709 color space.
 // Output color is also Linear Rec. 709, but in the [0, 1] range.
@@ -49,7 +46,19 @@ float4 Tonemap_PSMain(FullScreenVertexOut input) : SV_Target
     float3 color = HDRColorInput[pixelPos];
     float exposure = ExposureInput[0];
     
+    float3 bloom = 0;
+    if (TonemapCB.m_EnableBloom)
+    {
+        bloom = BloomInput.SampleLevel(LinearClampSampler, input.uv, 0).rgb * TonemapCB.m_BloomIntensity;
+    }
+
+    if (TonemapCB.m_DebugBloom)
+    {
+        return float4(bloom, 1.0f);
+    }
+
     color *= exposure;
+    color += bloom;
     
     float3 tonemapped = PBRNeutralToneMapping(color);
 

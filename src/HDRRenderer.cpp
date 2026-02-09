@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Config.h"
 #include "Utilities.h"
+#include "CommonResources.h"
 #include "shaders/ShaderShared.h"
 
 static constexpr float kMinLogLuminance = -12.47393f;
@@ -100,12 +101,17 @@ public:
             TonemapConstants consts;
             consts.m_Width = renderer->m_RHI->m_SwapchainExtent.x;
             consts.m_Height = renderer->m_RHI->m_SwapchainExtent.y;
+            consts.m_BloomIntensity = renderer->m_BloomIntensity;
+            consts.m_EnableBloom = (renderer->m_EnableBloom && renderer->m_BloomUpPyramid) ? 1 : 0;
+            consts.m_DebugBloom = (renderer->m_DebugBloom) ? 1 : 0;
 
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(TonemapConstants)),
                 nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HDRColorTexture),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_ExposureBuffer)
+                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_ExposureBuffer),
+                nvrhi::BindingSetItem::Texture_SRV(2, renderer->m_BloomUpPyramid),
+                nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 
             nvrhi::FramebufferDesc fbDesc;

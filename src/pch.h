@@ -72,5 +72,5 @@ using Frustum = DirectX::BoundingFrustum;
 
 #define SDL_LOG_ASSERT_FAIL(assertMsg, logFmt, ...) do { SDL_Log(logFmt, ##__VA_ARGS__); SDL_assert(false && assertMsg); } while(0)
 
-#define PROFILE_SCOPED(NAME) MICROPROFILE_SCOPEI("", NAME, MP_AUTO);
+#define PROFILE_SCOPED(NAME) MICROPROFILE_SCOPE_CSTR(NAME);
 #define PROFILE_FUNCTION() MICROPROFILE_SCOPEI("", __FUNCTION__, MP_AUTO);

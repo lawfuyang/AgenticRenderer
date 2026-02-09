@@ -22,12 +22,6 @@ StructuredBuffer<uint> g_Indices : register(t14, space1);
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 
-struct FullScreenVertexOut
-{
-    float4 pos : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
     uint2 uvInt = uint2(input.pos.xy);

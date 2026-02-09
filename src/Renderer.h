@@ -160,6 +160,8 @@ struct Renderer
 
     // HDR resources
     nvrhi::TextureHandle m_HDRColorTexture;
+    nvrhi::TextureHandle m_BloomDownPyramid;
+    nvrhi::TextureHandle m_BloomUpPyramid;
     nvrhi::BufferHandle m_LuminanceHistogram;
     nvrhi::BufferHandle m_ExposureBuffer;
 
@@ -216,6 +218,13 @@ struct Renderer
 
     float m_ExposureKeyValue = 0.18f;
     float m_AdaptationSpeed = 5.0f;
+
+    bool m_EnableBloom = true;
+    bool m_DebugBloom = false;
+    float m_BloomIntensity = 0.1f;
+    float m_BloomKnee = 0.1f;
+    float m_UpsampleRadius = 0.85f;
+
     int m_DebugMode = 0;
 
 private:

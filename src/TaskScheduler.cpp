@@ -4,7 +4,7 @@
 TaskScheduler::TaskScheduler()
 {
     //const uint32_t kNumThreads = std::thread::hardware_concurrency();
-    const uint32_t kNumThreads = 8;
+    const uint32_t kNumThreads = 12;
     for (uint32_t i = 0; i < kNumThreads; ++i)
     {
         m_Workers.emplace_back(&TaskScheduler::WorkerThread, this, i);

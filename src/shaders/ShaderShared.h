@@ -38,6 +38,12 @@
       #define GET_DRAW_INDEX() drawIndex
       #define PUSH_CONSTANT 
   #endif
+
+  struct FullScreenVertexOut
+  {
+      float4 pos : SV_Position;
+      float2 uv : TEXCOORD0;
+  };
 #endif
 
 struct ImGuiPushConstants
@@ -263,6 +269,17 @@ struct TonemapConstants
 {
     uint32_t m_Width;
     uint32_t m_Height;
+    float m_BloomIntensity;
+    uint32_t m_EnableBloom;    uint32_t m_DebugBloom;
+    uint32_t m_Pad;};
+
+struct BloomConstants
+{
+    float m_Knee;
+    float m_Strength;
+    uint32_t m_Width;
+    uint32_t m_Height;
+    float m_UpsampleRadius;
 };
 
 #ifdef __cplusplus
