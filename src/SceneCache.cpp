@@ -1,7 +1,9 @@
 #include "Scene.h"
 
+#include "meshoptimizer.h"
+
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 13;
+static constexpr uint32_t kSceneCacheVersion = 14;
 
 // --- Binary Serialization Helpers ---
 template<typename T>
@@ -48,6 +50,56 @@ static void ReadVector(std::istream& is, std::vector<T>& vec)
 	vec.resize(size);
 	if (size > 0)
 		is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
+}
+
+static void WriteMeshletDataCompressed(std::ostream& os, const std::vector<Meshlet>& meshlets, const std::vector<uint32_t>& meshletVertices, const std::vector<uint32_t>& meshletTriangles)
+{
+	std::vector<unsigned char> encoded(meshopt_encodeMeshletBound(kMaxMeshletVertices, kMaxMeshletTriangles));
+
+	for (const Meshlet& m : meshlets)
+	{
+		const uint32_t* vertices = &meshletVertices[m.m_VertexOffset];
+
+		unsigned char triangles[kMaxMeshletTriangles * 3];
+		for (uint32_t i = 0; i < m.m_TriangleCount; ++i)
+		{
+			uint32_t packed = meshletTriangles[m.m_TriangleOffset + i];
+			triangles[i * 3 + 0] = packed & 0xFF;
+			triangles[i * 3 + 1] = (packed >> 8) & 0xFF;
+			triangles[i * 3 + 2] = (packed >> 16) & 0xFF;
+		}
+
+		size_t encodedSize = meshopt_encodeMeshlet(encoded.data(), encoded.size(), vertices, m.m_VertexCount, triangles, m.m_TriangleCount);
+		uint32_t size32 = (uint32_t)encodedSize;
+		WritePOD(os, size32);
+		os.write(reinterpret_cast<const char*>(encoded.data()), size32);
+	}
+}
+
+static void ReadMeshletDataCompressed(std::istream& is, const std::vector<Meshlet>& meshlets, std::vector<uint32_t>& meshletVertices, std::vector<uint32_t>& meshletTriangles)
+{
+	std::vector<unsigned char> encoded;
+	for (const Meshlet& m : meshlets)
+	{
+		uint32_t encodedSize;
+		ReadPOD(is, encodedSize);
+
+		encoded.resize(encodedSize);
+		is.read(reinterpret_cast<char*>(encoded.data()), encodedSize);
+
+		uint32_t* vertices = &meshletVertices[m.m_VertexOffset];
+		unsigned char triangles[kMaxMeshletTriangles * 3];
+
+		meshopt_decodeMeshlet(vertices, m.m_VertexCount, sizeof(uint32_t), triangles, m.m_TriangleCount, 3, encoded.data(), encodedSize);
+
+		for (uint32_t i = 0; i < m.m_TriangleCount; ++i)
+		{
+			uint32_t i0 = triangles[i * 3 + 0];
+			uint32_t i1 = triangles[i * 3 + 1];
+			uint32_t i2 = triangles[i * 3 + 2];
+			meshletTriangles[m.m_TriangleOffset + i] = i0 | (i1 << 8) | (i2 << 16);
+		}
+	}
 }
 
 void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<VertexQuantized>& allVerticesQuantized)
@@ -155,8 +207,9 @@ void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t
 
 	WriteVector(os, m_MeshData);
 	WriteVector(os, m_Meshlets);
-	WriteVector(os, m_MeshletVertices);
-	WriteVector(os, m_MeshletTriangles);
+	WritePOD(os, m_MeshletVertices.size());
+	WritePOD(os, m_MeshletTriangles.size());
+	WriteMeshletDataCompressed(os, m_Meshlets, m_MeshletVertices, m_MeshletTriangles);
 	WriteVector(os, allIndices);
 	WriteVector(os, allVerticesQuantized);
 
@@ -303,8 +356,12 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& a
 
 	ReadVector(is, m_MeshData);
 	ReadVector(is, m_Meshlets);
-	ReadVector(is, m_MeshletVertices);
-	ReadVector(is, m_MeshletTriangles);
+	size_t meshletVertexCount, meshletTriangleCount;
+	ReadPOD(is, meshletVertexCount);
+	ReadPOD(is, meshletTriangleCount);
+	m_MeshletVertices.resize(meshletVertexCount);
+	m_MeshletTriangles.resize(meshletTriangleCount);
+	ReadMeshletDataCompressed(is, m_Meshlets, m_MeshletVertices, m_MeshletTriangles);
 	ReadVector(is, allIndices);
 	ReadVector(is, allVerticesQuantized);
 

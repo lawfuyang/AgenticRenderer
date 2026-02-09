@@ -168,14 +168,13 @@ struct MeshData
 
 struct Meshlet
 {
-  Vector3 m_Center;
-  float m_Radius;
+  uint32_t m_CenterRadius[2]; // x: center.x, y: center.y, z: center.z, w: radius (all quantized as 16-bit half-floats)
   uint32_t m_VertexOffset;
   uint32_t m_TriangleOffset;
   uint32_t m_VertexCount;
   uint32_t m_TriangleCount;
   uint32_t m_ConeAxisAndCutoff;
-  Vector3 pad0;
+  uint32_t pad0[3];
 };
 
 struct MeshletJob

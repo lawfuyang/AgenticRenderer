@@ -23,6 +23,14 @@ SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 SamplerState g_MinReductionSampler : register(s2, space1);
 
+void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
+{
+    center.x = f16tof32(m.m_CenterRadius[0] & 0xFFFF);
+    center.y = f16tof32(m.m_CenterRadius[0] >> 16);
+    center.z = f16tof32(m.m_CenterRadius[1] & 0xFFFF);
+    radius   = f16tof32(m.m_CenterRadius[1] >> 16);
+}
+
 float3x3 MakeAdjugateMatrix(float4x4 m)
 {
     return float3x3
@@ -112,12 +120,16 @@ void ASMain(
         uint absoluteMeshletIndex = mesh.m_MeshletOffsets[lodIndex] + meshletIndex;
         Meshlet m = g_Meshlets[absoluteMeshletIndex];
 
+        float3 meshletCenter;
+        float meshletRadius;
+        UnpackMeshletBV(m, meshletCenter, meshletRadius);
+
         // Transform meshlet sphere to world space, then to view space
-        float4 worldCenter = mul(float4(m.m_Center, 1.0f), inst.m_World);
+        float4 worldCenter = mul(float4(meshletCenter, 1.0f), inst.m_World);
         float3 viewCenter = mul(worldCenter, g_PerFrame.m_View).xyz;
 
         // Approximate world-space radius using max scale from world matrix
-        float worldRadius = m.m_Radius * GetMaxScale(inst.m_World);
+        float worldRadius = meshletRadius * GetMaxScale(inst.m_World);
 
         if (g_PerFrame.m_EnableFrustumCulling)
         {
