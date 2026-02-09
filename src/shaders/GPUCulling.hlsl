@@ -80,14 +80,16 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
         }
         else
         {
-            float d = max(length(sphereViewCenter), 1e-5);
+            // Use distance to closest point on the bounding sphere to avoid aggressive LOD for large objects
+            float d = max(sphereViewCenter.z - inst.m_Radius, 0.1f);
             float targetPixelError = 2.0f;
             float worldScale = GetMaxScale(inst.m_World);
 
             for (uint i = 0; i < mesh.m_LODCount; ++i)
             {
                 float error = mesh.m_LODErrors[i] * worldScale;
-                float projectedError = error * g_Culling.m_P11 * (float)g_Culling.m_HZBHeight / d;
+                // Correct projected error formula: error * cot(fov/2) / distance * viewport_height / 2
+                float projectedError = (error * g_Culling.m_P11 * (float)g_Culling.m_HZBHeight) / (2.0f * d);
                 if (projectedError <= targetPixelError)
                 {
                     lodIndex = i;
