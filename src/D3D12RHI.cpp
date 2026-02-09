@@ -314,6 +314,22 @@ public:
         return true;
     }
 
+    float GetVRAMUsageMB() const override
+    {
+        if (!m_Adapter) return 0.0f;
+
+        ComPtr<IDXGIAdapter3> adapter3;
+        if (SUCCEEDED(m_Adapter.As(&adapter3)))
+        {
+            DXGI_QUERY_VIDEO_MEMORY_INFO info;
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
+            {
+                return static_cast<float>(info.CurrentUsage) / 1024.0f / 1024.0f;
+            }
+        }
+        return 0.0f;
+    }
+
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
 };
 

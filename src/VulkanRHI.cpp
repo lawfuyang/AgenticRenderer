@@ -328,6 +328,30 @@ public:
         return false;
     }
 
+    float GetVRAMUsageMB() const override
+    {
+        if (m_PhysicalDevice == VK_NULL_HANDLE) return 0.0f;
+
+        vk::PhysicalDevice vkPhysical = static_cast<vk::PhysicalDevice>(m_PhysicalDevice);
+
+        vk::PhysicalDeviceMemoryBudgetPropertiesEXT budgetProps{};
+        vk::PhysicalDeviceMemoryProperties2 memoryProps2{};
+        memoryProps2.pNext = &budgetProps;
+
+        vkPhysical.getMemoryProperties2(&memoryProps2);
+
+        uint64_t totalUsage = 0;
+        for (uint32_t i = 0; i < memoryProps2.memoryProperties.memoryHeapCount; ++i)
+        {
+            if (memoryProps2.memoryProperties.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
+            {
+                totalUsage += budgetProps.heapUsage[i];
+            }
+        }
+
+        return static_cast<float>(totalUsage) / 1024.0f / 1024.0f;
+    }
+
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::VULKAN; }
 
     bool CreateInstance()
@@ -536,6 +560,7 @@ public:
             VK_KHR_MAINTENANCE1_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
             VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME,
+            VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
         };
 
         // Filter to only supported extensions

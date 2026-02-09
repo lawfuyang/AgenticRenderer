@@ -54,8 +54,10 @@ void ImGuiLayer::UpdateFrame()
     if (ImGui::BeginMainMenuBar())
     {
         ImGui::Text("FPS: %.1f", renderer->m_FPS);
+        ImGui::Separator();
         ImGui::Text("CPU Time: %.3f ms", renderer->m_FrameTime);
-        ImGui::Text("GPU Time: %.3f ms", renderer->m_GPUTime);
+        ImGui::Separator();
+        ImGui::Text("VRAM: %.1f MB", renderer->m_RHI->GetVRAMUsageMB());
         ImGui::EndMainMenuBar();
     }
 

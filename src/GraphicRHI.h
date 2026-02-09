@@ -54,6 +54,8 @@ public:
     virtual bool AcquireNextSwapchainImage(uint32_t* outImageIndex) = 0;
     virtual bool PresentSwapchain(uint32_t imageIndex) = 0;
 
+    virtual float GetVRAMUsageMB() const = 0;
+
     virtual nvrhi::GraphicsAPI GetGraphicsAPI() const = 0;
 };
 

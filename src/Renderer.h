@@ -184,7 +184,6 @@ struct Renderer
 
     // Performance metrics
     double m_FrameTime = 0.0;
-    double m_GPUTime   = 0.0;
     double m_FPS       = 0.0;
     uint32_t m_TargetFPS = 200;
     nvrhi::PipelineStatistics m_MainViewPipelineStatistics;

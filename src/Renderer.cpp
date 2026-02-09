@@ -565,7 +565,6 @@ void Renderer::Run()
             PROFILE_SCOPED("GPU Frame Start");
             nvrhi::CommandListHandle cmd = AcquireCommandList("GPU Frame Start");
             ScopedCommandList scopedCmd{ cmd };
-            m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(m_GPUQueries[readIndex]));
             m_RHI->m_NvrhiDevice->resetTimerQuery(m_GPUQueries[readIndex]);
             scopedCmd->beginTimerQuery(m_GPUQueries[writeIndex]);
         }
