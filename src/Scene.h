@@ -141,6 +141,7 @@ public:
         // Spot
         float m_SpotInnerConeAngle = 0.0f;
         float m_SpotOuterConeAngle = DirectX::XM_PIDIV4; // 45deg
+        float m_AngularSize = 0.533f; // For directional lights (degree)
         int m_NodeIndex = -1;
     };
 
@@ -149,6 +150,7 @@ public:
         float yaw       = 0.0f;
         float pitch     = -DirectX::XM_PI / 3.0f; // -60 degrees, like Unreal Engine default sunlight
         float intensity = 20000.0f;  // Default to 20,000 lux (bright daylight)
+        float angularSize = 0.533f; // Sun angular size in degrees (default to real sun)
     };
 
     // Public scene storage (instance members)

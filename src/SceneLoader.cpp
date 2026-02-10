@@ -289,13 +289,15 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 				else if (json_strcmp(ctx, t, "type"))
 				{
 					std::string type = json_get_string(ctx, t + 1);
+					int objToken = tokenIdx;
+					int nKeys = tokens[objToken].size;
+					int ctStart = objToken + 1;
+
 					if (type == "EnvironmentLight")
 					{
-						int objToken = tokenIdx;
-						int n = tokens[objToken].size;
-						int ct = objToken + 1;
+						int ct = ctStart;
 						std::string envMapRelPath;
-						for (int ki = 0; ki < n; ++ki)
+						for (int ki = 0; ki < nKeys; ++ki)
 						{
 							if (json_strcmp(ctx, ct, "path")) envMapRelPath = json_get_string(ctx, ct + 1);
 							ct = cgltf_skip_json(tokens.data(), ct + 1);
@@ -309,6 +311,41 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 
 							scene.m_IrradianceTexturePath = (parent / (stem + "_irradiance.dds")).string();
 							scene.m_RadianceTexturePath = (parent / (stem + "_radiance.dds")).string();
+						}
+					}
+					else if (type == "PerspectiveCamera" || type == "PerspectiveCameraEx")
+					{
+						scene.m_Cameras.emplace_back();
+						Scene::Camera& cam = scene.m_Cameras.back();
+						cam.m_Name = newNode.m_Name;
+						cam.m_NodeIndex = nodeIdx;
+						cam.m_Projection.nearZ = 0.1f;
+						newNode.m_CameraIndex = (int)scene.m_Cameras.size() - 1;
+
+						int ct = ctStart;
+						for (int ki = 0; ki < nKeys; ++ki)
+						{
+							if (json_strcmp(ctx, ct, "verticalFov")) cam.m_Projection.fovY = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "zNear")) cam.m_Projection.nearZ = json_get_float(ctx, ct + 1);
+							ct = cgltf_skip_json(tokens.data(), ct + 1);
+						}
+					}
+					else if (type == "DirectionalLight")
+					{
+						scene.m_Lights.emplace_back();
+						Scene::Light& light = scene.m_Lights.back();
+						light.m_Type = Scene::Light::Directional;
+						light.m_Name = newNode.m_Name;
+						light.m_NodeIndex = nodeIdx;
+						newNode.m_LightIndex = (int)scene.m_Lights.size() - 1;
+
+						int ct = ctStart;
+						for (int ki = 0; ki < nKeys; ++ki)
+						{
+							if (json_strcmp(ctx, ct, "irradiance")) light.m_Intensity = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "angularSize")) light.m_AngularSize = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "color")) light.m_Color = json_get_vec3(ctx, ct + 1);
+							ct = cgltf_skip_json(tokens.data(), ct + 1);
 						}
 					}
 				}
@@ -1324,6 +1361,7 @@ void SceneLoader::SetupDirectionalLightAndCamera(Scene& scene, Renderer* rendere
 			scene.m_DirectionalLight.yaw = yaw;
 			scene.m_DirectionalLight.pitch = pitch;
 			scene.m_DirectionalLight.intensity = light.m_Intensity;
+			scene.m_DirectionalLight.angularSize = light.m_AngularSize;
 			break;
 		}
 	}
