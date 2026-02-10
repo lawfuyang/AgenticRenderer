@@ -577,7 +577,10 @@ void Renderer::Run()
             m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex]() { \
                 PROFILE_SCOPED(pRenderer->GetName()) \
                 ScopedCommandList scopedCmd{ cmd }; \
+                if (m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex])) \
+                { \
                 pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex])); \
+                } \
                 m_RHI->m_NvrhiDevice->resetTimerQuery(pRenderer->m_GPUQueries[readIndex]); \
                 SimpleTimer cpuTimer; \
                 scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
