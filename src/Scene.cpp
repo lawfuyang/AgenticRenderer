@@ -421,6 +421,10 @@ void Scene::Shutdown()
 	m_TLAS = nullptr;
 	m_RTInstanceDescs.clear();
 
+	// Release environment texture handles
+	m_RadianceTexture = nullptr;
+	m_IrradianceTexture = nullptr;
+
 	// Clear CPU-side containers
 	m_Meshes.clear();
 	m_Nodes.clear();

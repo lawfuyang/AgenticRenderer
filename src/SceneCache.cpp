@@ -205,8 +205,8 @@ void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t
 
 	WritePOD(os, m_DirectionalLight);
 
-	WriteString(os, m_RadianceTexture);
-	WriteString(os, m_IrradianceTexture);
+	WriteString(os, m_RadianceTexturePath);
+	WriteString(os, m_IrradianceTexturePath);
 
 	WriteVector(os, m_MeshData);
 	WriteVector(os, m_Meshlets);
@@ -357,8 +357,8 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& a
 
 	ReadPOD(is, m_DirectionalLight);
 
-	ReadString(is, m_RadianceTexture);
-	ReadString(is, m_IrradianceTexture);
+	ReadString(is, m_RadianceTexturePath);
+	ReadString(is, m_IrradianceTexturePath);
 
 	ReadVector(is, m_MeshData);
 	ReadVector(is, m_Meshlets);

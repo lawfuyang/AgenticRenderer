@@ -161,8 +161,11 @@ public:
     std::vector<Animation> m_Animations;
     std::vector<int> m_DynamicNodeIndices; // Topologically sorted
 
-    std::string m_RadianceTexture;
-    std::string m_IrradianceTexture;
+    std::string m_RadianceTexturePath;
+    std::string m_IrradianceTexturePath;
+
+    nvrhi::TextureHandle m_RadianceTexture;
+    nvrhi::TextureHandle m_IrradianceTexture;
 
     DirectionalLight m_DirectionalLight;
 
