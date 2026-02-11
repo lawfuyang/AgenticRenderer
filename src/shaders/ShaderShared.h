@@ -246,11 +246,19 @@ struct HZBFromDepthConstants
   uint32_t m_Height;
 };
 
+enum SpdReductionType
+{
+    SPD_REDUCTION_MIN = 0,
+    SPD_REDUCTION_MAX = 1,
+    SPD_REDUCTION_AVERAGE = 2
+};
+
 struct SpdConstants
 {
   uint32_t m_Mips;
   uint32_t m_NumWorkGroups;
   Vector2U m_WorkGroupOffset;
+  SpdReductionType m_ReductionType;
 };
 
 struct HistogramConstants

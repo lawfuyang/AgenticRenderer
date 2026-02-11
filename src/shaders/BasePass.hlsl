@@ -283,6 +283,29 @@ float3 GetDebugColor(uint debugMode, uint instanceID, uint meshletID, uint lodIn
     return float3(0.0f, 0.0f, 0.0f); // Should not reach here
 }
 
+// Direction of refracted light.
+float3 GetVolumeTransmissionRay(float3 n, float3 v, float thickness, float ior, float3 modelScale)
+{
+    float3 refractionVector = refract(-v, normalize(n), 1.0 / ior);
+    return normalize(refractionVector) * thickness * modelScale;
+}
+
+// Compute attenuated light as it travels through a volume.
+float3 ApplyVolumeAttenuation(float3 radiance, float transmissionDistance, float3 attenuationColor, float attenuationDistance)
+{
+    if (attenuationDistance <= 0.0)
+    {
+        // Attenuation distance is +∞ (which we indicate by zero), i.e. the transmitted color is not attenuated at all.
+        return radiance;
+    }
+    else
+    {
+        // Compute light attenuation using Beer's law.
+        float3 transmittance = pow(max(attenuationColor, 0.0001), float3(transmissionDistance / attenuationDistance, transmissionDistance / attenuationDistance, transmissionDistance / attenuationDistance));
+        return transmittance * radiance;
+    }
+}
+
 #if defined(FORWARD_TRANSPARENT)
 float4 Forward_PSMain(VSOut input) : SV_TARGET
 #elif defined(ALPHA_TEST)
@@ -403,62 +426,47 @@ GBufferOut GBuffer_PSMain(VSOut input)
     float3 ibl = iblComp.ibl;
     ibl *= float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
 
-    float3 color = directLighting.diffuse + directLighting.specular + ibl + emissive;
+    float3 color = directLighting.diffuse + directLighting.specular + ibl;
 
 #if defined(FORWARD_TRANSPARENT)
     // Refraction logic
     if (mat.m_TransmissionFactor > 0.0)
     {
-        float3 refractedColor = 0;
+        // Get model scale for world-space thickness
+        float3 modelScale = float3(
+            length(inst.m_World[0].xyz),
+            length(inst.m_World[1].xyz),
+            length(inst.m_World[2].xyz)
+        );
 
-        // --- Valid refraction (not TIR) ---
-        // float3 R_refract = refract(-V, N, 1.0 / mat.m_IOR);
-        // if (any(R_refract))
-        // {
-        //     float3 refractWorldPos = input.worldPos + R_refract * mat.m_ThicknessFactor;
-        //     float4 refractClipPos = mul(g_PerFrame.m_ViewProj, float4(refractWorldPos, 1.0));
-        //     float2 refractUV = (refractClipPos.xy / refractClipPos.w) * float2(0.5, -0.5) + 0.5;
-            
-        //     refractedColor = g_OpaqueColor.SampleLevel(g_SamplerAnisoClamp, refractUV, 0).rgb;
-            
-        //     // --- Beer–Lambert absorption (KHR_materials_volume) ---
-        //     if (mat.m_ThicknessFactor > 0.0 && mat.m_AttenuationDistance > 0.0)
-        //     {
-        //         float3 attenuationCoeff = -log(max(mat.m_AttenuationColor, 0.001)) / mat.m_AttenuationDistance;
-        //         float3 transmittance = exp(-attenuationCoeff * mat.m_ThicknessFactor);
-        //         refractedColor *= transmittance;
-        //     }
-        // }
-        // else
-        {
-            float2 screenDim = g_PerFrame.m_OpaqueColorDimensions;
-            float2 screenUV = input.Position.xy / screenDim;
+        // --- Refraction ray tracing ---
+        float3 transmissionRay = GetVolumeTransmissionRay(N, V, mat.m_ThicknessFactor, mat.m_IOR, modelScale);
+        float3 refractedRayExit = input.worldPos + transmissionRay;
 
-            // Fallback: no refraction ray
-            refractedColor = g_OpaqueColor.SampleLevel(g_SamplerAnisoClamp, screenUV, 0).rgb;
-        }
+        // Project to screen space
+        float4 refractClipPos = mul(g_PerFrame.m_ViewProj, float4(refractedRayExit, 1.0));
+        float2 refractUV = (refractClipPos.xy / refractClipPos.w) * float2(0.5, -0.5) + 0.5;
+
+        // Sample background with roughness-based LOD
+        float lod = log2(g_PerFrame.m_OpaqueColorDimensions.x) * roughness * clamp(mat.m_IOR * 2.0 - 2.0, 0.0, 1.0);
+        float3 refractedColor = g_OpaqueColor.SampleLevel(g_SamplerAnisoClamp, refractUV, lod).rgb;
+
+        // --- Volume Attenuation (Beer-Lambert) ---
+        refractedColor = ApplyVolumeAttenuation(refractedColor, length(transmissionRay), mat.m_AttenuationColor, mat.m_AttenuationDistance);
+
+        // --- Base Color Filter (glTF Spec) ---
+        refractedColor *= baseColor;
 
         // --- Fresnel split ---
-        float3 F = lightingInputs.F;
-        float fresnelScalar = saturate(dot(F, float3(0.2126, 0.7152, 0.0722))); // scalar Fresnel (Schlick)
-        float3 transmitted = refractedColor * (1.0 - fresnelScalar);
+        // We use the same view-dependent Fresnel for the background blend
+        float3 transmitted = refractedColor * (1.0 - lightingInputs.F);
+        float3 reflected = directLighting.specular + iblComp.radiance * float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
 
-        // --- Reflection (always present) ---
-        float3 specularReflection = directLighting.specular + iblComp.radiance * float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
+        float3 transmissionLighting = reflected + transmitted;
 
-        // --- Final transmission lighting ---
-        float3 transmissionLighting = specularReflection + transmitted;
-
-        // --- Blend opaque <-> transmission ---
-        color = lerp(
-                    // Opaque path (diffuse + specular)
-                    directLighting.diffuse + specularReflection,
-                    // Transmission path (NO diffuse)
-                    transmissionLighting,
-                    mat.m_TransmissionFactor
-                );
-
-        // Emissive always adds
+        // Blend based on transmission factor (diffuse is replaced)
+        color = lerp(color, transmissionLighting, mat.m_TransmissionFactor);
+        
         color += emissive;
     }
 #endif

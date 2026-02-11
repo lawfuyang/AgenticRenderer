@@ -3,6 +3,17 @@
 #include "Config.h"
 #include "CommonResources.h"
 
+#define FFX_CPU
+#define FFX_STATIC static
+using FfxUInt32 = uint32_t;
+using FfxInt32 = int32_t;
+using FfxFloat32 = float;
+using FfxUInt32x2 = uint32_t[2];
+using FfxUInt32x4 = uint32_t[4];
+#define ffxMax(a, b) std::max(a, b)
+#define ffxMin(a, b) std::min(a, b)
+#include "shaders/ffx_spd.h"
+
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
@@ -1165,6 +1176,65 @@ void Renderer::AddComputePass(const RenderPassParams& params)
     }
 }
 
+void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType)
+{
+    nvrhi::utils::ScopedMarker spdMarker{ commandList, markerName };
+
+    const uint32_t numMips = texture->getDesc().mipLevels;
+
+    // We generate mips 1..N. SPD will be configured to take mip 0 as source.
+    // So SPD "mips" count is numMips - 1. 
+    // Note: SPD refers to how many downsample steps to take.
+    const uint32_t spdmips = numMips - 1;
+
+    FfxUInt32x2 dispatchThreadGroupCountXY;
+    FfxUInt32x2 workGroupOffset;
+    FfxUInt32x2 numWorkGroupsAndMips;
+    FfxUInt32x4 rectInfo = { 0, 0, texture->getDesc().width, texture->getDesc().height };
+
+    ffxSpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo, spdmips);
+
+    // Constant buffer matching HZBDownsampleSPD.hlsl
+    SpdConstants spdData;
+    spdData.m_Mips = numWorkGroupsAndMips[1];
+    spdData.m_NumWorkGroups = numWorkGroupsAndMips[0];
+    spdData.m_WorkGroupOffset.x = workGroupOffset[0];
+    spdData.m_WorkGroupOffset.y = workGroupOffset[1];
+    spdData.m_ReductionType = reductionType;
+
+    // Clear atomic counter
+    commandList->clearBufferUInt(m_SPDAtomicCounter, 0);
+
+    nvrhi::BindingSetDesc spdBset;
+    spdBset.bindings.push_back(nvrhi::BindingSetItem::PushConstants(0, sizeof(SpdConstants)));
+    spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_SRV(0, texture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ 0, 1, 0, 1 }));
+
+    // Bind mips 1..N to UAV slots 0..N-1
+    for (uint32_t i = 1; i < numMips; ++i)
+    {
+        spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, texture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ i, 1, 0, 1 }));
+    }
+    for (uint32_t i = numMips; i <= 12; ++i)
+    {
+        // Fill remaining UAV slots with a dummy to satisfy binding layout
+        spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, CommonResources::GetInstance().DummyUAVTexture));
+    }
+
+    // Atomic counter always at slot 12
+    spdBset.bindings.push_back(nvrhi::BindingSetItem::StructuredBuffer_UAV(12, m_SPDAtomicCounter));
+
+    Renderer::RenderPassParams params{
+        .commandList = commandList,
+        .shaderName = "HZBDownsampleSPD_HZBDownsampleSPD_CSMain",
+        .bindingSetDesc = spdBset,
+        .pushConstants = &spdData,
+        .pushConstantsSize = sizeof(spdData),
+        .dispatchParams = { .x = dispatchThreadGroupCountXY[0], .y = dispatchThreadGroupCountXY[1], .z = 1 }
+    };
+
+    AddComputePass(params);
+}
+
 nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerName, bool bImmediatelyQueue)
 {
     SINGLE_THREAD_GUARD();
@@ -1376,9 +1446,20 @@ void Renderer::CreateSceneResources()
     {
         nvrhi::TextureDesc opaqueColorDesc = hdrDesc;
         opaqueColorDesc.debugName = "OpaqueColorTexture";
+        opaqueColorDesc.isUAV = true;
         opaqueColorDesc.isRenderTarget = false;
         opaqueColorDesc.useClearValue = false; // this needs to be false because its no longer a render target
         opaqueColorDesc.initialState = nvrhi::ResourceStates::CopyDest;
+
+        // Calculate mip levels for transmission LOD sampling
+        uint32_t maxDim = std::max(opaqueColorDesc.width, opaqueColorDesc.height);
+        uint32_t mipLevels = 0;
+        while (maxDim > 0) {
+            mipLevels++;
+            maxDim >>= 1;
+        }
+        opaqueColorDesc.mipLevels = mipLevels;
+
         m_OpaqueColorTexture = m_RHI->m_NvrhiDevice->createTexture(opaqueColorDesc);
         if (!m_OpaqueColorTexture)
         {

@@ -130,6 +130,7 @@ struct Renderer
 
     void AddComputePass(const RenderPassParams& params);
     void AddFullScreenPass(const RenderPassParams& params);
+    void GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType);
     nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
 
     // Global Bindless Texture System

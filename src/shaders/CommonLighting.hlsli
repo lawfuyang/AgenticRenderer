@@ -158,9 +158,6 @@ struct IBLComponents
 
 void PrepareLightingByproducts(inout LightingInputs inputs)
 {
-    inputs.F0 = ComputeF0(inputs.baseColor, inputs.metallic, inputs.ior);
-    inputs.kD = (1.0f - inputs.metallic);
-
     inputs.NdotV = saturate(dot(inputs.N, inputs.V));
     inputs.NdotL = saturate(dot(inputs.N, inputs.L));
 
@@ -170,6 +167,8 @@ void PrepareLightingByproducts(inout LightingInputs inputs)
     inputs.LdotV = saturate(dot(inputs.L, inputs.V));
     inputs.LdotH = saturate(dot(inputs.L, H));
 
+    inputs.F0 = ComputeF0(inputs.baseColor, inputs.metallic, inputs.ior);
+    inputs.kD = (1.0f - inputs.metallic);
     inputs.F = F_Schlick(inputs.F0, inputs.VdotH);
 }
 

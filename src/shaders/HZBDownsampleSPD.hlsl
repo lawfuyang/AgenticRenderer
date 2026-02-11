@@ -1,5 +1,9 @@
 #include "ShaderShared.h"
 
+#define SPD_REDUCTION_MIN 0
+#define SPD_REDUCTION_MAX 1
+#define SPD_REDUCTION_AVERAGE 2
+
 typedef uint   FfxUInt32;
 typedef uint2  FfxUInt32x2;
 typedef uint3  FfxUInt32x3;
@@ -118,7 +122,12 @@ void SpdStoreIntermediate(FfxUInt32 x, FfxUInt32 y, FfxFloat32x4 value)
 
 FfxFloat32x4 SpdReduce4(FfxFloat32x4 v0, FfxFloat32x4 v1, FfxFloat32x4 v2, FfxFloat32x4 v3)
 {
-    return min(min(v0, v1), min(v2, v3));
+    if (g_SpdConstants.m_ReductionType == SPD_REDUCTION_MIN)
+        return min(min(v0, v1), min(v2, v3));
+    else if (g_SpdConstants.m_ReductionType == SPD_REDUCTION_MAX)
+        return max(max(v0, v1), max(v2, v3));
+    else // SPD_REDUCTION_AVERAGE
+        return (v0 + v1 + v2 + v3) * 0.25;
 }
 
 void SpdIncreaseAtomicCounter(FfxUInt32 slice)

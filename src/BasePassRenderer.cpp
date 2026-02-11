@@ -6,17 +6,6 @@
 
 #include "shaders/ShaderShared.h"
 
-#define FFX_CPU
-#define FFX_STATIC static
-using FfxUInt32 = uint32_t;
-using FfxInt32 = int32_t;
-using FfxFloat32 = float;
-using FfxUInt32x2 = uint32_t[2];
-using FfxUInt32x4 = uint32_t[4];
-#define ffxMax(a, b) std::max(a, b)
-#define ffxMin(a, b) std::min(a, b)
-#include "shaders/ffx_spd.h"
-
 class BasePassRendererBase : public IRenderer
 {
 public:
@@ -429,61 +418,7 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         renderer->AddComputePass(params);
     }
 
-    // Generate HZB mips using SPD downsample
-    nvrhi::utils::ScopedMarker spdMarker{ commandList, "HZB Downsample SPD" };
-
-    const uint32_t numMips = renderer->m_HZBTexture->getDesc().mipLevels;
-
-    // We generate mips 1..N. SPD will be configured to take mip 0 as source.
-    // So SPD "mips" count is numMips - 1. 
-    // Note: SPD refers to how many downsample steps to take.
-    const uint32_t spdmips = numMips - 1;
-
-    FfxUInt32x2 dispatchThreadGroupCountXY;
-    FfxUInt32x2 workGroupOffset;
-    FfxUInt32x2 numWorkGroupsAndMips;
-    FfxUInt32x4 rectInfo = { 0, 0, renderer->m_HZBTexture->getDesc().width, renderer->m_HZBTexture->getDesc().height };
-
-    ffxSpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo, spdmips);
-
-    // Constant buffer matching HZBDownsampleSPD.hlsl
-    SpdConstants spdData;
-    spdData.m_Mips = numWorkGroupsAndMips[1];
-    spdData.m_NumWorkGroups = numWorkGroupsAndMips[0];
-    spdData.m_WorkGroupOffset.x = workGroupOffset[0];
-    spdData.m_WorkGroupOffset.y = workGroupOffset[1];
-
-    // Clear atomic counter
-    commandList->clearBufferUInt(renderer->m_SPDAtomicCounter, 0);
-
-    nvrhi::BindingSetDesc spdBset;
-    spdBset.bindings.push_back(nvrhi::BindingSetItem::PushConstants(0, sizeof(SpdConstants)));
-    spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ 0, 1, 0, 1 }));
-
-    // Bind mips 1..N to UAV slots 0..N-1
-    for (uint32_t i = 1; i < numMips; ++i)
-    {
-        spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, renderer->m_HZBTexture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{ i, 1, 0, 1 }));
-    }
-    for (uint32_t i = numMips; i <= 12; ++i)
-    {
-        // Fill remaining UAV slots with a dummy to satisfy binding layout
-        spdBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(i - 1, CommonResources::GetInstance().DummyUAVTexture));
-    }
-
-    // Atomic counter always at slot 12
-    spdBset.bindings.push_back(nvrhi::BindingSetItem::StructuredBuffer_UAV(12, renderer->m_SPDAtomicCounter));
-
-    Renderer::RenderPassParams params{
-        .commandList = commandList,
-        .shaderName = "HZBDownsampleSPD_HZBDownsampleSPD_CSMain",
-        .bindingSetDesc = spdBset,
-        .pushConstants = &spdData,
-        .pushConstantsSize = sizeof(spdData),
-        .dispatchParams = { .x = dispatchThreadGroupCountXY[0], .y = dispatchThreadGroupCountXY[1], .z = 1 }
-    };
-
-    renderer->AddComputePass(params);
+    renderer->GenerateMipsUsingSPD(renderer->m_HZBTexture, commandList, "Generate HZB Mips", SPD_REDUCTION_MIN);
 }
 
 class OpaquePhase1Renderer : public BasePassRendererBase
@@ -619,7 +554,9 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList)
     if (numTransparent == 0) return;
 
     // Capture the opaque scene for refraction
-    commandList->copyTexture(renderer->m_OpaqueColorTexture.Get(), nvrhi::TextureSlice(), renderer->m_HDRColorTexture.Get(), nvrhi::TextureSlice());
+    commandList->copyTexture(renderer->m_OpaqueColorTexture, nvrhi::TextureSlice(), renderer->m_HDRColorTexture, nvrhi::TextureSlice());
+
+    renderer->GenerateMipsUsingSPD(renderer->m_OpaqueColorTexture, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
 
     Matrix view, viewProjForCulling;
     Vector4 frustumPlanes[5];
