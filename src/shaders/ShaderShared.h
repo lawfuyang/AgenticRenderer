@@ -120,7 +120,8 @@ struct ForwardLightingPerFrameData
   uint32_t m_EnableIBL;
   float m_IBLIntensity;
   uint32_t m_RadianceMipCount;
-  uint32_t pad0;
+  Vector2 m_OpaqueColorDimensions;
+  uint32_t pad0[2];
 };
 
 struct DeferredLightingConstants
@@ -158,7 +159,12 @@ struct MaterialConstants
   uint32_t m_EmissiveSamplerIndex;
   uint32_t m_AlphaMode;
   float m_AlphaCutoff;
-  uint32_t pad0[2];
+  float m_IOR;
+  float m_TransmissionFactor;
+  float m_ThicknessFactor;
+  float m_AttenuationDistance;
+  Vector3 m_AttenuationColor;
+  uint32_t pad0;
 };
 
 struct MeshData

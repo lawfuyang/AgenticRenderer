@@ -276,6 +276,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_IndexBuffer),
+        nvrhi::BindingSetItem::Texture_SRV(11, renderer->m_OpaqueColorTexture),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
         nvrhi::BindingSetItem::Sampler(2, CommonResources::GetInstance().MinReductionClamp)
@@ -317,6 +318,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     cb.m_EnableIBL = renderer->m_EnableIBL ? 1 : 0;
     cb.m_IBLIntensity = renderer->m_IBLIntensity;
     cb.m_RadianceMipCount = CommonResources::GetInstance().RadianceTexture->getDesc().mipLevels;
+    cb.m_OpaqueColorDimensions = Vector2{ (float)renderer->m_OpaqueColorTexture->getDesc().width, (float)renderer->m_OpaqueColorTexture->getDesc().height };
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     nvrhi::RenderState renderState;
@@ -615,6 +617,9 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList)
     Renderer* renderer = Renderer::GetInstance();
     const uint32_t numTransparent = renderer->m_Scene.m_TransparentBucket.m_Count;
     if (numTransparent == 0) return;
+
+    // Capture the opaque scene for refraction
+    commandList->copyTexture(renderer->m_OpaqueColorTexture.Get(), nvrhi::TextureSlice(), renderer->m_HDRColorTexture.Get(), nvrhi::TextureSlice());
 
     Matrix view, viewProjForCulling;
     Vector4 frustumPlanes[5];

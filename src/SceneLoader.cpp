@@ -617,7 +617,23 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 		if (data->materials[i].has_transmission)
 		{
 			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_BLEND;
-			scene.m_Materials.back().m_BaseColorFactor.w = 1.0f - data->materials[i].transmission.transmission_factor;
+			scene.m_Materials.back().m_TransmissionFactor = data->materials[i].transmission.transmission_factor;
+		}
+
+		if (data->materials[i].has_ior)
+		{
+			scene.m_Materials.back().m_IOR = data->materials[i].ior.ior;
+		}
+
+		if (data->materials[i].has_volume)
+		{
+			scene.m_Materials.back().m_ThicknessFactor = data->materials[i].volume.thickness_factor;
+			scene.m_Materials.back().m_AttenuationDistance = data->materials[i].volume.attenuation_distance;
+			scene.m_Materials.back().m_AttenuationColor = Vector3{
+				data->materials[i].volume.attenuation_color[0],
+				data->materials[i].volume.attenuation_color[1],
+				data->materials[i].volume.attenuation_color[2]
+			};
 		}
 	}
 
@@ -755,6 +771,11 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* rend
 		mc.m_EmissiveTextureIndex = mat.m_EmissiveTextureIndex;
 		mc.m_AlphaMode = mat.m_AlphaMode;
 		mc.m_AlphaCutoff = mat.m_AlphaCutoff;
+		mc.m_IOR = mat.m_IOR;
+		mc.m_TransmissionFactor = mat.m_TransmissionFactor;
+		mc.m_ThicknessFactor = mat.m_ThicknessFactor;
+		mc.m_AttenuationDistance = mat.m_AttenuationDistance;
+		mc.m_AttenuationColor = mat.m_AttenuationColor;
 		// Per-texture sampler indices (do not assume they are the same)
 		if (mat.m_BaseColorTexture != -1)
 			mc.m_AlbedoSamplerIndex = (uint32_t)scene.m_Textures[mat.m_BaseColorTexture].m_Sampler;

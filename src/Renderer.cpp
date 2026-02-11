@@ -1373,6 +1373,20 @@ void Renderer::CreateSceneResources()
         return;
     }
 
+    {
+        nvrhi::TextureDesc opaqueColorDesc = hdrDesc;
+        opaqueColorDesc.debugName = "OpaqueColorTexture";
+        opaqueColorDesc.isRenderTarget = false;
+        opaqueColorDesc.useClearValue = false; // this needs to be false because its no longer a render target
+        opaqueColorDesc.initialState = nvrhi::ResourceStates::CopyDest;
+        m_OpaqueColorTexture = m_RHI->m_NvrhiDevice->createTexture(opaqueColorDesc);
+        if (!m_OpaqueColorTexture)
+        {
+            SDL_LOG_ASSERT_FAIL("Failed to create opaque color texture", "[Init] Failed to create opaque color texture");
+            return;
+        }
+    }
+
     // Luminance Histogram: 256 bins, each uint32_t
     nvrhi::BufferDesc histDesc;
     histDesc.structStride = sizeof(uint32_t);
@@ -1420,6 +1434,7 @@ void Renderer::DestroySceneResources()
     SDL_Log("[Shutdown] Destroying HDR resources");
 
     m_HDRColorTexture = nullptr;
+    m_OpaqueColorTexture = nullptr;
     m_LuminanceHistogram = nullptr;
     m_ExposureBuffer = nullptr;
     m_BloomDownPyramid = nullptr;

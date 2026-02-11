@@ -19,6 +19,7 @@ StructuredBuffer<MeshData> g_MeshData : register(t7, space1);
 StructuredBuffer<uint> g_Indices : register(t10, space1);
 Texture2D<float> g_HZB : register(t8, space1);
 RaytracingAccelerationStructure g_SceneAS : register(t9, space1);
+Texture2D g_OpaqueColor : register(t11, space1);
 SamplerState g_SamplerAnisoClamp : register(s0, space1);
 SamplerState g_SamplerAnisoWrap  : register(s1, space1);
 SamplerState g_MinReductionSampler : register(s2, space1);
@@ -353,6 +354,9 @@ GBufferOut GBuffer_PSMain(VSOut input)
         metallic = ormSample.z;
     }
 
+    // Prevent perfectly smooth surfaces to avoid artifacts
+    roughness = max(roughness, 0.05f);
+
     // Emissive
     float3 emissive = mat.m_EmissiveFactor.xyz;
     if (hasEmissive)
@@ -361,13 +365,11 @@ GBufferOut GBuffer_PSMain(VSOut input)
     }
 
 #if defined(FORWARD_TRANSPARENT)
-    // Simple forward lighting for transparency
     float3 V = normalize(g_PerFrame.m_CameraPos.xyz - input.worldPos);
     
-    // Flip normals for backfaces to light them properly
     if (dot(N, V) < 0.0f)
     {
-        N = -N;
+        N = -N; // Shading normals must always face the viewer
     }
 
     float3 L = g_PerFrame.m_LightDirection;
@@ -379,6 +381,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     lightingInputs.baseColor = baseColor;
     lightingInputs.roughness = roughness;
     lightingInputs.metallic = metallic;
+    lightingInputs.ior = mat.m_IOR;
     lightingInputs.lightIntensity = g_PerFrame.m_LightIntensity;
     lightingInputs.worldPos = input.worldPos;
     lightingInputs.radianceMipCount = g_PerFrame.m_RadianceMipCount;
@@ -394,13 +397,71 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
     PrepareLightingByproducts(lightingInputs);
 
-    float3 light = ComputeDirectionalLighting(lightingInputs);
+    LightingComponents directLighting = ComputeDirectionalLighting(lightingInputs);
 
     IBLComponents iblComp = ComputeIBL(lightingInputs);
     float3 ibl = iblComp.ibl;
     ibl *= float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
 
-    float3 color = light + ibl + emissive;
+    float3 color = directLighting.diffuse + directLighting.specular + ibl + emissive;
+
+#if defined(FORWARD_TRANSPARENT)
+    // Refraction logic
+    if (mat.m_TransmissionFactor > 0.0)
+    {
+        float3 refractedColor = 0;
+
+        // --- Valid refraction (not TIR) ---
+        // float3 R_refract = refract(-V, N, 1.0 / mat.m_IOR);
+        // if (any(R_refract))
+        // {
+        //     float3 refractWorldPos = input.worldPos + R_refract * mat.m_ThicknessFactor;
+        //     float4 refractClipPos = mul(g_PerFrame.m_ViewProj, float4(refractWorldPos, 1.0));
+        //     float2 refractUV = (refractClipPos.xy / refractClipPos.w) * float2(0.5, -0.5) + 0.5;
+            
+        //     refractedColor = g_OpaqueColor.SampleLevel(g_SamplerAnisoClamp, refractUV, 0).rgb;
+            
+        //     // --- Beer–Lambert absorption (KHR_materials_volume) ---
+        //     if (mat.m_ThicknessFactor > 0.0 && mat.m_AttenuationDistance > 0.0)
+        //     {
+        //         float3 attenuationCoeff = -log(max(mat.m_AttenuationColor, 0.001)) / mat.m_AttenuationDistance;
+        //         float3 transmittance = exp(-attenuationCoeff * mat.m_ThicknessFactor);
+        //         refractedColor *= transmittance;
+        //     }
+        // }
+        // else
+        {
+            float2 screenDim = g_PerFrame.m_OpaqueColorDimensions;
+            float2 screenUV = input.Position.xy / screenDim;
+
+            // Fallback: no refraction ray
+            refractedColor = g_OpaqueColor.SampleLevel(g_SamplerAnisoClamp, screenUV, 0).rgb;
+        }
+
+        // --- Fresnel split ---
+        float3 F = lightingInputs.F;
+        float fresnelScalar = saturate(dot(F, float3(0.2126, 0.7152, 0.0722))); // scalar Fresnel (Schlick)
+        float3 transmitted = refractedColor * (1.0 - fresnelScalar);
+
+        // --- Reflection (always present) ---
+        float3 specularReflection = directLighting.specular + iblComp.radiance * float(g_PerFrame.m_EnableIBL) * g_PerFrame.m_IBLIntensity;
+
+        // --- Final transmission lighting ---
+        float3 transmissionLighting = specularReflection + transmitted;
+
+        // --- Blend opaque <-> transmission ---
+        color = lerp(
+                    // Opaque path (diffuse + specular)
+                    directLighting.diffuse + specularReflection,
+                    // Transmission path (NO diffuse)
+                    transmissionLighting,
+                    mat.m_TransmissionFactor
+                );
+
+        // Emissive always adds
+        color += emissive;
+    }
+#endif
 
     // Debug visualizations
     if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)

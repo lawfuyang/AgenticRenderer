@@ -28,9 +28,10 @@ float3 DecodeNormal(float2 f)
 }
 
 // PBR Helper functions
-float3 ComputeF0(float3 baseColor, float metallic)
+float3 ComputeF0(float3 baseColor, float metallic, float ior)
 {
-    return lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    float dielectricF0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+    return lerp(float3(dielectricF0, dielectricF0, dielectricF0), baseColor, metallic);
 }
 
 float DistributionGGX(float NdotH, float roughness)
@@ -65,10 +66,13 @@ float GeometrySmith(float NdotV, float NdotL, float roughness)
     return ggx1 * ggx2;
 }
 
-float3 F_Schlick(float3 f0, float VdotH)
+// [Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"]
+float3 F_Schlick(float3 SpecularColor, float VDotH)
 {
-    float f90 = saturate(dot(f0, 50.0 * 0.33));
-    return f0 + (f90 - f0) * pow(1.0 - VdotH, 5.0);
+	float Fc = pow(1.0 - VDotH, 5);
+	
+	// Anything less than 2% is physically impossible and is instead considered to be shadowing
+	return saturate( 50.0 * SpecularColor.g ) * Fc + (1 - Fc) * SpecularColor;
 }
 
 float OrenNayar(float NdotL, float NdotV, float LdotV, float roughness)
@@ -118,6 +122,7 @@ struct LightingInputs
     float3 baseColor;
     float roughness;
     float metallic;
+    float ior;
     float lightIntensity;
     float3 worldPos;
     uint radianceMipCount;
@@ -133,9 +138,15 @@ struct LightingInputs
 
     // Derived values
     float3 F0;       // Base reflectivity at normal incidence
-    float3 F;        // Fresnel term, precomputed using F_Schlick with NdotV
     float3 kD;       // Diffuse coefficient, (1 - metallic)
-    float NdotV;     // Dot product of surface normal and view direction
+    float3 F;        // Fresnel term for the current view angle
+
+    float NdotV; // Dot product of surface normal and view direction
+    float NdotL; // Dot product of surface normal and light direction   
+    float NdotH; // Dot product of surface normal and half vector
+    float VdotH; // Dot product of view direction and half vector
+    float LdotV; // Dot product of light direction and view direction
+    float LdotH; // Dot product of light direction and half vector
 };
 
 struct IBLComponents
@@ -147,32 +158,41 @@ struct IBLComponents
 
 void PrepareLightingByproducts(inout LightingInputs inputs)
 {
-    inputs.NdotV = saturate(dot(inputs.N, inputs.V));
-    inputs.F0 = ComputeF0(inputs.baseColor, inputs.metallic);
-    inputs.F = F_Schlick(inputs.F0, inputs.NdotV);
+    inputs.F0 = ComputeF0(inputs.baseColor, inputs.metallic, inputs.ior);
     inputs.kD = (1.0f - inputs.metallic);
+
+    inputs.NdotV = saturate(dot(inputs.N, inputs.V));
+    inputs.NdotL = saturate(dot(inputs.N, inputs.L));
+
+    float3 H = normalize(inputs.V + inputs.L);
+    inputs.NdotH = saturate(dot(inputs.N, H));
+    inputs.VdotH = saturate(dot(inputs.V, H));
+    inputs.LdotV = saturate(dot(inputs.L, inputs.V));
+    inputs.LdotH = saturate(dot(inputs.L, H));
+
+    inputs.F = F_Schlick(inputs.F0, inputs.VdotH);
 }
 
-float3 ComputeDirectionalLighting(LightingInputs inputs)
+struct LightingComponents
 {
-    float3 H = normalize(inputs.V + inputs.L);
+    float3 diffuse;
+    float3 specular;
+};
 
-    float NdotL = saturate(dot(inputs.N, inputs.L));
-    float NdotH = saturate(dot(inputs.N, H));
-    float VdotH = saturate(dot(inputs.V, H));
-    float LdotV = saturate(dot(inputs.L, inputs.V));
-    float LdotH = saturate(dot(inputs.L, H));
+LightingComponents ComputeDirectionalLighting(LightingInputs inputs)
+{
+    LightingComponents components;
 
     //float diffuseTerm = OrenNayar(NdotL, inputs.NdotV, LdotV, inputs.roughness);
-    float diffuseTerm = DisneyBurleyDiffuse(NdotL, inputs.NdotV, LdotH, inputs.roughness);
+    float diffuseTerm = DisneyBurleyDiffuse(inputs.NdotL, inputs.NdotV, inputs.LdotH, inputs.roughness);
     float3 diffuse = diffuseTerm * inputs.kD * inputs.baseColor;
 
-    float NDF = DistributionGGX(NdotH, inputs.roughness);
-    float G = GeometrySmith(inputs.NdotV, NdotL, inputs.roughness);
+    float NDF = DistributionGGX(inputs.NdotH, inputs.roughness);
+    float G = GeometrySmith(inputs.NdotV, inputs.NdotL, inputs.roughness);
     float3 F = inputs.F;
 
     float3 numerator = NDF * G * F; 
-    float denominator = 4.0 * inputs.NdotV * NdotL + 0.0001; // + 0.0001 to prevent divide by zero
+    float denominator = 4.0 * inputs.NdotV * inputs.NdotL + 0.0001; // + 0.0001 to prevent divide by zero
     float3 spec = numerator / denominator;
 
     float3 radiance = float3(inputs.lightIntensity, inputs.lightIntensity, inputs.lightIntensity);
@@ -275,7 +295,10 @@ float3 ComputeDirectionalLighting(LightingInputs inputs)
         }
     }
 
-    return (diffuse + spec) * NdotL * radiance * shadow;
+    components.diffuse = diffuse * inputs.NdotL * radiance * shadow;
+    components.specular = spec * inputs.NdotL * radiance * shadow;
+
+    return components;
 }
 
 IBLComponents ComputeIBL(LightingInputs inputs)

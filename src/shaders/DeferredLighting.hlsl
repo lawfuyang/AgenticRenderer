@@ -66,6 +66,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.baseColor = baseColor;
     lightingInputs.roughness = roughness;
     lightingInputs.metallic = metallic;
+    lightingInputs.ior = 1.5f; // Default IOR for opaque
     lightingInputs.lightIntensity = g_Deferred.m_LightIntensity;
     lightingInputs.worldPos = worldPos;
     lightingInputs.radianceMipCount = g_Deferred.m_RadianceMipCount;
@@ -81,7 +82,8 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 
     PrepareLightingByproducts(lightingInputs);
 
-    float3 color = ComputeDirectionalLighting(lightingInputs);
+    LightingComponents directLight = ComputeDirectionalLighting(lightingInputs);
+    float3 color = directLight.diffuse + directLight.specular;
     
     IBLComponents iblComp = ComputeIBL(lightingInputs);
     float3 ibl = iblComp.ibl;

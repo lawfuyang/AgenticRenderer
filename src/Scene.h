@@ -107,6 +107,15 @@ public:
         uint32_t m_EmissiveTextureIndex = DEFAULT_TEXTURE_BLACK;
         uint32_t m_AlphaMode = ALPHA_MODE_OPAQUE;
         float m_AlphaCutoff = 0.5f;
+
+        // KHR_materials_ior
+        float m_IOR = 1.5f;
+        // KHR_materials_transmission
+        float m_TransmissionFactor = 0.0f;
+        // KHR_materials_volume
+        float m_ThicknessFactor = 0.0f;
+        float m_AttenuationDistance = FLT_MAX;
+        Vector3 m_AttenuationColor = Vector3{ 1.0f, 1.0f, 1.0f };
     };
 
     struct Texture
