@@ -310,7 +310,10 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 							std::filesystem::path parent = envMapPath.parent_path();
 
 							scene.m_IrradianceTexturePath = (parent / (stem + "_irradiance.dds")).string();
+							SDL_assert(std::filesystem::exists(scene.m_IrradianceTexturePath));
+
 							scene.m_RadianceTexturePath = (parent / (stem + "_radiance.dds")).string();
+							SDL_assert(std::filesystem::exists(scene.m_RadianceTexturePath));
 						}
 					}
 					else if (type == "PerspectiveCamera" || type == "PerspectiveCameraEx")
@@ -426,6 +429,10 @@ void SceneLoader::ApplyEnvironmentLights(Scene& scene)
 	{
 		return;
 	}
+
+	SDL_assert(std::filesystem::exists(scene.m_IrradianceTexturePath));
+	SDL_assert(std::filesystem::exists(scene.m_RadianceTexturePath));
+
 	scene.m_IrradianceTexture = ::LoadAndRegisterEnvMap(scene.m_IrradianceTexturePath, DEFAULT_TEXTURE_IRRADIANCE, "Upload Env Irradiance");
 	scene.m_RadianceTexture = ::LoadAndRegisterEnvMap(scene.m_RadianceTexturePath, DEFAULT_TEXTURE_RADIANCE, "Upload Env Radiance");
 }
