@@ -3,16 +3,39 @@
 #include "Utilities.h"
 #include "shaders/ShaderShared.h"
 
+extern RGTextureHandle g_RG_DepthTexture;
+extern RGTextureHandle g_RG_GBufferAlbedo;
+extern RGTextureHandle g_RG_GBufferNormals;
+extern RGTextureHandle g_RG_GBufferORM;
+extern RGTextureHandle g_RG_GBufferEmissive;
+extern RGTextureHandle g_RG_GBufferMotionVectors;
+
 class DeferredRenderer : public IRenderer
 {
 public:
-    void Initialize() override {}
-    void PostSceneLoad() override {}
+    
+    void Setup(RenderGraph& renderGraph) override
+    {        
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+        renderGraph.ReadTexture(g_RG_GBufferAlbedo);
+        renderGraph.ReadTexture(g_RG_GBufferNormals);
+        renderGraph.ReadTexture(g_RG_GBufferORM);
+        renderGraph.ReadTexture(g_RG_GBufferEmissive);
+        renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
+    }
+    
     void Render(nvrhi::CommandListHandle commandList) override
     {
         PROFILE_FUNCTION();
         Renderer* renderer = Renderer::GetInstance();
         nvrhi::utils::ScopedMarker marker(commandList, "Deferred Lighting");
+
+        nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+        nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
+        nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
+        nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
+        nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
+        nvrhi::TextureHandle gbufferMotionVectors = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
 
         nvrhi::BindingSetDesc bset;
         
@@ -36,12 +59,12 @@ public:
 
         bset.bindings = {
             nvrhi::BindingSetItem::ConstantBuffer(1, deferredCB),
-            nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_GBufferAlbedo),
-            nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_GBufferNormals),
-            nvrhi::BindingSetItem::Texture_SRV(2, renderer->m_GBufferORM),
-            nvrhi::BindingSetItem::Texture_SRV(3, renderer->m_GBufferEmissive),
-            nvrhi::BindingSetItem::Texture_SRV(7, renderer->m_GBufferMotionVectors),
-            nvrhi::BindingSetItem::Texture_SRV(4, renderer->m_DepthTexture),
+            nvrhi::BindingSetItem::Texture_SRV(0, gbufferAlbedo),
+            nvrhi::BindingSetItem::Texture_SRV(1, gbufferNormals),
+            nvrhi::BindingSetItem::Texture_SRV(2, gbufferORM),
+            nvrhi::BindingSetItem::Texture_SRV(3, gbufferEmissive),
+            nvrhi::BindingSetItem::Texture_SRV(7, gbufferMotionVectors),
+            nvrhi::BindingSetItem::Texture_SRV(4, depthTexture),
             nvrhi::BindingSetItem::RayTracingAccelStruct(5, renderer->m_Scene.m_TLAS),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_InstanceDataBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(11, renderer->m_Scene.m_MaterialConstantsBuffer),

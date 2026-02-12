@@ -34,8 +34,7 @@ public:
         renderer->m_BloomUpPyramid = device->createTexture(desc);
     }
 
-    void PostSceneLoad() override {}
-
+    
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();

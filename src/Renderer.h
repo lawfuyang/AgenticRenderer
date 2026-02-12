@@ -6,6 +6,7 @@
 #include "Scene.h"
 #include "Camera.h"
 #include "BasePassCommon.h"
+#include "RenderGraph.h"
 
 #include <thread>
 #include <atomic>
@@ -18,8 +19,9 @@ class IRenderer
 {
 public:
     virtual ~IRenderer() = default;
-    virtual void Initialize() = 0;
-    virtual void PostSceneLoad() = 0;
+    virtual void Initialize() {}
+    virtual void PostSceneLoad() {}
+    virtual void Setup(RenderGraph& renderGraph) {}
     virtual void Render(nvrhi::CommandListHandle commandList) = 0;
     virtual const char* GetName() const = 0;
 
@@ -151,15 +153,8 @@ struct Renderer
     uint32_t m_AcquiredSwapchainImageIdx = 0;
     uint32_t m_SwapChainImageIdx = 0;
 
-    // Depth buffer
-    nvrhi::TextureHandle m_DepthTexture;
-
-    // G-Buffer resources
-    nvrhi::TextureHandle m_GBufferAlbedo;
-    nvrhi::TextureHandle m_GBufferNormals;
-    nvrhi::TextureHandle m_GBufferORM;
-    nvrhi::TextureHandle m_GBufferEmissive;
-    nvrhi::TextureHandle m_GBufferMotionVectors;
+    // Render Graph
+    RenderGraph m_RenderGraph;
 
     // HDR resources
     nvrhi::TextureHandle m_HDRColorTexture;

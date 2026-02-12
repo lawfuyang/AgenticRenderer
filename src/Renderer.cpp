@@ -17,27 +17,106 @@ using FfxUInt32x4 = uint32_t[4];
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
+// ============================================================================
+// Global Render Graph Handles for Transient Resources
+// ============================================================================
+
+// Depth & GBuffer textures (transient, frame-local)
+RGTextureHandle g_RG_DepthTexture;
+RGTextureHandle g_RG_GBufferAlbedo;
+RGTextureHandle g_RG_GBufferNormals;
+RGTextureHandle g_RG_GBufferORM;
+RGTextureHandle g_RG_GBufferEmissive;
+RGTextureHandle g_RG_GBufferMotionVectors;
+
+// ============================================================================
+// Renderer Implementations
+// ============================================================================
+
 class ClearRenderer : public IRenderer
 {
 public:
-    void Initialize() override {}
-    void PostSceneLoad() override {}
+    
+    void Setup(RenderGraph& renderGraph) override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
+        const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+        
+        // Declare transient depth texture
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = nvrhi::Format::D32;
+            desc.m_NvrhiDesc.isRenderTarget = true;
+            desc.m_NvrhiDesc.debugName = "DepthBuffer_RG";
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::DepthWrite;
+            desc.m_NvrhiDesc.keepInitialState = true;
+            desc.m_NvrhiDesc.setClearValue(nvrhi::Color{ Renderer::DEPTH_FAR, 0.0f, 0.0f, 0.0f });
+            
+            g_RG_DepthTexture = renderGraph.DeclareTexture(desc, g_RG_DepthTexture);
+        }
+        
+        // Declare transient GBuffer textures
+        RGTextureDesc gbufferDesc;
+        gbufferDesc.m_NvrhiDesc.width = width;
+        gbufferDesc.m_NvrhiDesc.height = height;
+        gbufferDesc.m_NvrhiDesc.isRenderTarget = true;
+        gbufferDesc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+        gbufferDesc.m_NvrhiDesc.keepInitialState = true;
+        gbufferDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{});
+        
+        // Albedo: RGBA8
+        gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RGBA8_UNORM;
+        gbufferDesc.m_NvrhiDesc.debugName = "GBufferAlbedo_RG";
+        g_RG_GBufferAlbedo = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferAlbedo);
+        
+        // Normals: RG16_FLOAT
+        gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RG16_FLOAT;
+        gbufferDesc.m_NvrhiDesc.debugName = "GBufferNormals_RG";
+        g_RG_GBufferNormals = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferNormals);
+        
+        // ORM: RGBA8
+        gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RGBA8_UNORM;
+        gbufferDesc.m_NvrhiDesc.debugName = "GBufferORM_RG";
+        g_RG_GBufferORM = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferORM);
+        
+        // Emissive: RGBA8
+        gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RGBA8_UNORM;
+        gbufferDesc.m_NvrhiDesc.debugName = "GBufferEmissive_RG";
+        g_RG_GBufferEmissive = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferEmissive);
+        
+        // Motion Vectors: RG16_FLOAT
+        gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RG16_FLOAT;
+        gbufferDesc.m_NvrhiDesc.debugName = "GBufferMotion_RG";
+        g_RG_GBufferMotionVectors = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferMotionVectors);
+    }
+    
     void Render(nvrhi::CommandListHandle commandList) override
     {
         Renderer* renderer = Renderer::GetInstance();
+
+        // Get transient resources from render graph
+        nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+        nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
+        nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
+        nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
+        nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
+        nvrhi::TextureHandle gbufferMotion = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
 
         // Clear color
         commandList->clearTextureFloat(renderer->m_HDRColorTexture, nvrhi::AllSubresources, Renderer::kHDROutputClearColor);
 
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
-        commandList->clearDepthStencilTexture(renderer->m_DepthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
+        commandList->clearDepthStencilTexture(depthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
 
         // clear gbuffers
-        commandList->clearTextureFloat(renderer->m_GBufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(renderer->m_GBufferNormals, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(renderer->m_GBufferORM, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(renderer->m_GBufferEmissive, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(renderer->m_GBufferMotionVectors, nvrhi::AllSubresources, nvrhi::Color{});
+        commandList->clearTextureFloat(gbufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
+        commandList->clearTextureFloat(gbufferNormals, nvrhi::AllSubresources, nvrhi::Color{});
+        commandList->clearTextureFloat(gbufferORM, nvrhi::AllSubresources, nvrhi::Color{});
+        commandList->clearTextureFloat(gbufferEmissive, nvrhi::AllSubresources, nvrhi::Color{});
+        commandList->clearTextureFloat(gbufferMotion, nvrhi::AllSubresources, nvrhi::Color{});
     }
     const char* GetName() const override { return "Clear"; }
 };
@@ -45,8 +124,6 @@ public:
 class TLASRenderer : public IRenderer
 {
 public:
-    void Initialize() override {}
-    void PostSceneLoad() override {}
 
     void Render(nvrhi::CommandListHandle commandList) override
     {
@@ -648,11 +725,15 @@ void Renderer::Run()
             m_RHI->m_NvrhiDevice->resetTimerQuery(m_GPUQueries[readIndex]);
             scopedCmd->beginTimerQuery(m_GPUQueries[writeIndex]);
         }
+        
+        m_RenderGraph.Reset();
 
         #define ADD_RENDER_PASS(rendererName) \
         { \
             extern IRenderer* rendererName; \
             IRenderer* pRenderer = rendererName; \
+            m_RenderGraph.BeginPass(); \
+            pRenderer->Setup(m_RenderGraph); \
             nvrhi::CommandListHandle cmd = AcquireCommandList(pRenderer->GetName()); \
             m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex]() { \
                 PROFILE_SCOPED(pRenderer->GetName()) \
@@ -684,6 +765,10 @@ void Renderer::Run()
         ADD_RENDER_PASS(g_ImGuiRenderer);
 
         #undef ADD_RENDER_PASS
+
+        // Compile render graph: compute lifetimes and allocate resources
+        m_RenderGraph.Compile();
+        m_RenderGraph.Execute();
 
         // Wait for all render passes to finish recording
         m_TaskScheduler->ExecuteAllScheduledTasks();
@@ -1394,25 +1479,7 @@ void Renderer::ExecutePendingCommandLists()
 void Renderer::CreateSceneResources()
 {
     SDL_Log("[Init] Creating Depth textures");
-
-    // Create a depth texture for the main framebuffer
-    nvrhi::TextureDesc depthDesc;
-    depthDesc.width = m_RHI->m_SwapchainExtent.x;
-    depthDesc.height = m_RHI->m_SwapchainExtent.y;
-    depthDesc.format = nvrhi::Format::D32;
-    depthDesc.debugName = "DepthBuffer";
-    depthDesc.isRenderTarget = true;
-    depthDesc.isUAV = false;
-    depthDesc.initialState = nvrhi::ResourceStates::DepthWrite;
-    depthDesc.setClearValue(nvrhi::Color{ DEPTH_FAR, 0.0f, 0.0f, 0.0f });
-
-    m_DepthTexture = m_RHI->m_NvrhiDevice->createTexture(depthDesc);
-    if (!m_DepthTexture)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to create depth texture", "[Init] Failed to create depth texture");
-        return;
-    }
-
+    
     // Calculate HZB resolution - use next lower power of 2 for each dimension
     uint32_t sw = m_RHI->m_SwapchainExtent.x;
     uint32_t sh = m_RHI->m_SwapchainExtent.y;
@@ -1464,44 +1531,6 @@ void Renderer::CreateSceneResources()
     scopedCmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);
-
-    SDL_Log("[Init] Creating G-Buffer resources");
-
-    nvrhi::TextureDesc desc;
-    desc.width = m_RHI->m_SwapchainExtent.x;
-    desc.height = m_RHI->m_SwapchainExtent.y;
-    desc.isRenderTarget = true;
-    desc.initialState = nvrhi::ResourceStates::RenderTarget;
-    desc.setClearValue(nvrhi::Color{});
-
-    // Albedo: RGBA8
-    desc.format = nvrhi::Format::RGBA8_UNORM;
-    desc.debugName = "GBufferAlbedo";
-    m_GBufferAlbedo = m_RHI->m_NvrhiDevice->createTexture(desc);
-
-    // Normals: RG16_FLOAT (for octahedral encoding)
-    desc.format = nvrhi::Format::RG16_FLOAT;
-    desc.debugName = "GBufferNormals";
-    m_GBufferNormals = m_RHI->m_NvrhiDevice->createTexture(desc);
-
-    // ORM: RGBA8 (Occlusion, Roughness, Metallic)
-    desc.format = nvrhi::Format::RGBA8_UNORM;
-    desc.debugName = "GBufferORM";
-    m_GBufferORM = m_RHI->m_NvrhiDevice->createTexture(desc);
-
-    // Emissive: RGBA8
-    desc.format = nvrhi::Format::RGBA8_UNORM;
-    desc.debugName = "GBufferEmissive";
-    m_GBufferEmissive = m_RHI->m_NvrhiDevice->createTexture(desc);
-
-    desc.format = nvrhi::Format::RG16_FLOAT;
-    desc.debugName = "GBufferMotionVectors";
-    m_GBufferMotionVectors = m_RHI->m_NvrhiDevice->createTexture(desc);
-
-    if (!m_GBufferAlbedo || !m_GBufferNormals || !m_GBufferORM || !m_GBufferEmissive || !m_GBufferMotionVectors)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to create G-Buffer textures", "[Init] Failed to create G-Buffer textures");
-    }
 
     SDL_Log("[Init] Creating HDR resources");
 
@@ -1580,17 +1609,8 @@ void Renderer::DestroySceneResources()
 {
     SDL_Log("[Shutdown] Destroying Depth textures");
 
-    m_DepthTexture = nullptr;
     m_HZBTexture = nullptr;
     m_SPDAtomicCounter = nullptr;
-
-    SDL_Log("[Shutdown] Destroying G-Buffer resources");
-
-    m_GBufferAlbedo = nullptr;
-    m_GBufferNormals = nullptr;
-    m_GBufferORM = nullptr;
-    m_GBufferEmissive = nullptr;
-    m_GBufferMotionVectors = nullptr;
 
     SDL_Log("[Shutdown] Destroying HDR resources");
 

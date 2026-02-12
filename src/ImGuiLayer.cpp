@@ -264,6 +264,9 @@ void ImGuiLayer::UpdateFrame()
             ImGui::Text("Mesh Shader Primitives: %llu", stats.MSPrimitives);
             ImGui::TreePop();
         }
+
+        // Render Graph debug UI
+        renderer->m_RenderGraph.RenderDebugUI();
     }
     ImGui::End();
 

@@ -59,16 +59,12 @@ void TaskScheduler::ParallelFor(uint32_t count, const std::function<void(uint32_
 
 void TaskScheduler::ScheduleTask(std::function<void()> func)
 {
-    {
-        std::lock_guard<std::mutex> lock(m_QueueMutex);
-        m_RemainingTasks.fetch_add(1);
-        m_Tasks.push_back([func](uint32_t)
-            {
-                func();
-            });
-    }
-    m_Condition.notify_one();
-    m_CompletionCondition.notify_all();
+    std::lock_guard<std::mutex> lock(m_QueueMutex);
+    m_RemainingTasks.fetch_add(1);
+    m_Tasks.push_back([func](uint32_t)
+        {
+            func();
+        });
 }
 
 void TaskScheduler::ExecuteAllScheduledTasks()

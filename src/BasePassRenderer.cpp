@@ -6,11 +6,27 @@
 
 #include "shaders/ShaderShared.h"
 
+extern RGTextureHandle g_RG_DepthTexture;
+extern RGTextureHandle g_RG_GBufferAlbedo;
+extern RGTextureHandle g_RG_GBufferNormals;
+extern RGTextureHandle g_RG_GBufferORM;
+extern RGTextureHandle g_RG_GBufferEmissive;
+extern RGTextureHandle g_RG_GBufferMotionVectors;
+
 class BasePassRendererBase : public IRenderer
 {
 public:
-    void Initialize() override { }
-    void PostSceneLoad() override { }
+    
+    void Setup(RenderGraph& renderGraph) override
+    {
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
+        renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferORM);
+        renderGraph.WriteTexture(g_RG_GBufferEmissive);
+        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+    }
+    
     virtual void Render(nvrhi::CommandListHandle commandList) override = 0;
 
 protected:
@@ -202,6 +218,13 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
 
     Renderer* renderer = Renderer::GetInstance();
     BasePassResources& res = renderer->m_BasePassResources;
+    
+    nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+    nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
+    nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
+    nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
+    nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
+    nvrhi::TextureHandle gbufferMotionVectors = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
 
     char marker[256];
     sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
@@ -211,15 +234,15 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     const bool bUseAlphaBlend = (args.m_AlphaMode == ALPHA_MODE_BLEND);
 
     const nvrhi::FramebufferHandle framebuffer = bUseAlphaBlend ? 
-        renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture).setDepthAttachment(renderer->m_DepthTexture)) :
+        renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture).setDepthAttachment(depthTexture)) :
         renderer->m_RHI->m_NvrhiDevice->createFramebuffer(
         nvrhi::FramebufferDesc()
-        .addColorAttachment(renderer->m_GBufferAlbedo)
-        .addColorAttachment(renderer->m_GBufferNormals)
-        .addColorAttachment(renderer->m_GBufferORM)
-        .addColorAttachment(renderer->m_GBufferEmissive)
-        .addColorAttachment(renderer->m_GBufferMotionVectors)
-        .setDepthAttachment(renderer->m_DepthTexture));
+        .addColorAttachment(gbufferAlbedo)
+        .addColorAttachment(gbufferNormals)
+        .addColorAttachment(gbufferORM)
+        .addColorAttachment(gbufferEmissive)
+        .addColorAttachment(gbufferMotionVectors)
+        .setDepthAttachment(depthTexture));
 
     nvrhi::FramebufferInfoEx fbInfo;
     if (bUseAlphaBlend)
@@ -388,6 +411,9 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         return;
     }
 
+    // Get transient depth texture from render graph
+    nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+
     nvrhi::utils::ScopedMarker commandListMarker{ commandList, "Generate HZB Mips" };
 
     // First, build HZB mip 0 from depth texture
@@ -402,7 +428,7 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         hzbFromDepthBset.bindings =
         {
             nvrhi::BindingSetItem::PushConstants(0, sizeof(HZBFromDepthConstants)),
-            nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_DepthTexture),
+            nvrhi::BindingSetItem::Texture_SRV(0, depthTexture),
             nvrhi::BindingSetItem::Texture_UAV(0, renderer->m_HZBTexture,  nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
             nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
         };

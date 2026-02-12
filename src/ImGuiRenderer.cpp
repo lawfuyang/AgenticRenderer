@@ -10,7 +10,7 @@ class ImGuiRenderer : public IRenderer
 {
 public:
     void Initialize() override;
-    void PostSceneLoad() override {}
+    
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "ImGui"; }
 
