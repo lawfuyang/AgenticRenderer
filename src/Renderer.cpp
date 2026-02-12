@@ -41,7 +41,34 @@ public:
     const char* GetName() const override { return "Clear"; }
 };
 
+class TLASRenderer : public IRenderer
+{
+public:
+    void Initialize() override {}
+    void PostSceneLoad() override {}
+
+    void Render(nvrhi::CommandListHandle commandList) override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        Scene& scene = renderer->m_Scene;
+
+        if (!scene.m_TLAS || !scene.m_RTInstanceDescBuffer || scene.m_RTInstanceDescs.empty())
+            return;
+
+        // Perform GPU TLAS update
+        commandList->buildTopLevelAccelStructFromBuffer(
+            scene.m_TLAS,
+            scene.m_RTInstanceDescBuffer,
+            0, // offset
+            scene.m_RTInstanceDescs.size()
+        );
+    }
+
+    const char* GetName() const override { return "TLAS Update"; }
+};
+
 REGISTER_RENDERER(ClearRenderer);
+REGISTER_RENDERER(TLASRenderer);
 
 namespace
 {
@@ -586,14 +613,15 @@ void Renderer::Run()
                     &m_Scene.m_InstanceData[startIdx],
                     count * sizeof(PerInstanceData),
                     startIdx * sizeof(PerInstanceData));
-            }
 
-            nvrhi::CommandListHandle cmd = AcquireCommandList("Update TLAS");
-            m_TaskScheduler->ScheduleTask([this, cmd]()
-            {
-                ScopedCommandList scopedCmd{ cmd };
-                m_Scene.UpdateTLAS(scopedCmd);
-            });
+                if (m_Scene.m_RTInstanceDescBuffer)
+                {
+                    scopedCmd->writeBuffer(m_Scene.m_RTInstanceDescBuffer,
+                        &m_Scene.m_RTInstanceDescs[startIdx],
+                        count * sizeof(nvrhi::rt::InstanceDesc),
+                        startIdx * sizeof(nvrhi::rt::InstanceDesc));
+                }
+            }
         }
 
         // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
@@ -636,6 +664,7 @@ void Renderer::Run()
             }); \
         }
 
+        ADD_RENDER_PASS(g_TLASRenderer);
         ADD_RENDER_PASS(g_ClearRenderer);
         ADD_RENDER_PASS(g_OpaquePhase1Renderer);
         ADD_RENDER_PASS(g_HZBGenerator);

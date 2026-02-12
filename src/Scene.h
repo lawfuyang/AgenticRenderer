@@ -206,6 +206,7 @@ public:
     std::vector<uint32_t> m_MeshletVertices;
     std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
+    nvrhi::BufferHandle m_RTInstanceDescBuffer;
     nvrhi::rt::AccelStructHandle m_TLAS;
     std::vector<nvrhi::rt::InstanceDesc> m_RTInstanceDescs;
 
@@ -218,7 +219,6 @@ public:
     void FinalizeLoadedScene();
 
     void BuildAccelerationStructures();
-    void UpdateTLAS(nvrhi::ICommandList* commandList);
 
     // Per-frame update for animations
     void Update(float deltaTime);

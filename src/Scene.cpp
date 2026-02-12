@@ -137,7 +137,6 @@ void Scene::BuildAccelerationStructures()
     tlasDesc.topLevelMaxInstances =  (uint32_t)m_InstanceData.size();
     tlasDesc.debugName = "Scene TLAS";
     tlasDesc.isTopLevel = true;
-    tlasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::AllowUpdate;
     m_TLAS = device->createAccelStruct(tlasDesc);
 
 	SDL_assert(m_RTInstanceDescs.empty());
@@ -157,26 +156,32 @@ void Scene::BuildAccelerationStructures()
 		transform[8] = world._13; transform[9] = world._23; transform[10] = world._33; transform[11] = world._43;
 		instanceDesc.setTransform(transform);
 
-        nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::TriangleFrontCounterclockwise;
+        nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::None;
         instanceFlags = instanceFlags | ((alphaMode == ALPHA_MODE_OPAQUE) ? nvrhi::rt::InstanceFlags::ForceOpaque : nvrhi::rt::InstanceFlags::ForceNonOpaque);
 
         instanceDesc.instanceID = instanceID;
         instanceDesc.instanceMask = 1;
         instanceDesc.instanceContributionToHitGroupIndex = 0;
         instanceDesc.flags = instanceFlags;
-        instanceDesc.bottomLevelAS = primitive->m_BLAS;
+        instanceDesc.blasDeviceAddress = primitive->m_BLAS->getDeviceAddress();
     }
 
-    scopedCmd->buildTopLevelAccelStruct(m_TLAS, m_RTInstanceDescs.data(), (uint32_t)m_RTInstanceDescs.size());
-}
+    // Create RT instance desc buffer
+    if (!m_RTInstanceDescs.empty())
+    {
+        nvrhi::BufferDesc rtInstDesc;
+        rtInstDesc.byteSize = (uint32_t)(m_RTInstanceDescs.size() * sizeof(nvrhi::rt::InstanceDesc));
+        rtInstDesc.debugName = "RTInstanceDescBuffer";
+        rtInstDesc.isAccelStructBuildInput = true;
+        rtInstDesc.initialState = nvrhi::ResourceStates::AccelStructBuildInput;
+        rtInstDesc.keepInitialState = true;
+        m_RTInstanceDescBuffer = device->createBuffer(rtInstDesc);
 
-void Scene::UpdateTLAS(nvrhi::ICommandList* commandList)
-{
-    if (!m_TLAS || m_RTInstanceDescs.empty()) return;
+        // Initial upload
+        scopedCmd->writeBuffer(m_RTInstanceDescBuffer, m_RTInstanceDescs.data(), rtInstDesc.byteSize);
 
-	PROFILE_FUNCTION();
-
-    commandList->buildTopLevelAccelStruct(m_TLAS, m_RTInstanceDescs.data(), (uint32_t)m_RTInstanceDescs.size(), nvrhi::rt::AccelStructBuildFlags::PerformUpdate);
+        scopedCmd->buildTopLevelAccelStructFromBuffer(m_TLAS, m_RTInstanceDescBuffer, 0, (uint32_t)m_RTInstanceDescs.size());
+    }
 }
 
 void Scene::FinalizeLoadedScene()
@@ -419,6 +424,7 @@ void Scene::Shutdown()
 	m_MeshletVerticesBuffer = nullptr;
 	m_MeshletTrianglesBuffer = nullptr;
 	m_TLAS = nullptr;
+	m_RTInstanceDescBuffer = nullptr;
 	m_RTInstanceDescs.clear();
 
 	// Release environment texture handles
