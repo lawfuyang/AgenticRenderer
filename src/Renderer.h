@@ -221,8 +221,8 @@ struct Renderer
     std::string m_RadianceTexture = "radiance.dds";
     std::string m_BRDFLutTexture = "brdf_lut.dds";
 
-    float m_ExposureKeyValue = 0.18f;
     float m_AdaptationSpeed = 5.0f;
+    bool m_EnableAutoExposure = true;
 
     bool m_EnableBloom = true;
     bool m_DebugBloom = false;

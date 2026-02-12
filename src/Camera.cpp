@@ -104,6 +104,11 @@ void Camera::Update()
     // Retrieve frame time from renderer (ms -> seconds)
     Renderer* renderer = Renderer::GetInstance();
     float dt = static_cast<float>(renderer->GetFrameTimeMs() * 0.001);
+
+    // Compute exposure multiplier (manual mode)
+    float finalEV = m_ExposureValue - m_ExposureCompensation;
+    m_Exposure = 1.0f / (powf(2.0f, finalEV) * 1.2f);
+
     if (dt <= 0.0f)
         return;
 

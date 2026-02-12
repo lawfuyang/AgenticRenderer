@@ -4,8 +4,8 @@
 #include "CommonResources.h"
 #include "shaders/ShaderShared.h"
 
-static constexpr float kMinLogLuminance = -12.47393f;
-static constexpr float kMaxLogLuminance = 4.026069f;
+static constexpr float kMinLogLuminance = -10.0f;
+static constexpr float kMaxLogLuminance = 20.0f;
 
 class HDRRenderer : public IRenderer
 {
@@ -67,31 +67,41 @@ public:
         {
             nvrhi::utils::ScopedMarker adaptMarker(commandList, "Exposure Adaptation");
 
-            AdaptationConstants consts;
-            consts.m_DeltaTime = (float)renderer->m_FrameTime / 1000.0f;
-            consts.m_KeyValue = renderer->m_ExposureKeyValue;
-            consts.m_AdaptationSpeed = renderer->m_AdaptationSpeed;
-            consts.m_NumPixels = renderer->m_RHI->m_SwapchainExtent.x * renderer->m_RHI->m_SwapchainExtent.y;
-            consts.m_MinLogLuminance = kMinLogLuminance;
-            consts.m_MaxLogLuminance = kMaxLogLuminance;
+            if (renderer->m_EnableAutoExposure)
+            {
+                AdaptationConstants consts;
+                consts.m_DeltaTime = (float)renderer->m_FrameTime / 1000.0f;
+                consts.m_AdaptationSpeed = renderer->m_AdaptationSpeed;
+                consts.m_NumPixels = renderer->m_RHI->m_SwapchainExtent.x * renderer->m_RHI->m_SwapchainExtent.y;
+                consts.m_MinLogLuminance = kMinLogLuminance;
+                consts.m_MaxLogLuminance = kMaxLogLuminance;
+                consts.m_ExposureValueMin = renderer->m_Camera.m_ExposureValueMin;
+                consts.m_ExposureValueMax = renderer->m_Camera.m_ExposureValueMax;
+                consts.m_ExposureCompensation = renderer->m_Camera.m_ExposureCompensation;
 
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(AdaptationConstants)),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, renderer->m_ExposureBuffer),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_LuminanceHistogram)
-            };
+                nvrhi::BindingSetDesc bset;
+                bset.bindings = {
+                    nvrhi::BindingSetItem::PushConstants(0, sizeof(AdaptationConstants)),
+                    nvrhi::BindingSetItem::StructuredBuffer_UAV(0, renderer->m_ExposureBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_LuminanceHistogram)
+                };
 
-            Renderer::RenderPassParams params{
-                .commandList = commandList,
-                .shaderName = "ExposureAdaptation_ExposureAdaptation_CSMain",
-                .bindingSetDesc = bset,
-                .pushConstants = &consts,
-                .pushConstantsSize = sizeof(consts),
-                .dispatchParams = { .x = 1, .y = 1, .z = 1 }
-            };
+                Renderer::RenderPassParams params{
+                    .commandList = commandList,
+                    .shaderName = "ExposureAdaptation_ExposureAdaptation_CSMain",
+                    .bindingSetDesc = bset,
+                    .pushConstants = &consts,
+                    .pushConstantsSize = sizeof(consts),
+                    .dispatchParams = { .x = 1, .y = 1, .z = 1 }
+                };
 
-            renderer->AddComputePass(params);
+                renderer->AddComputePass(params);
+            }
+            else
+            {
+                // Manual mode: just update the buffer from CPU
+                commandList->writeBuffer(renderer->m_ExposureBuffer, &renderer->m_Camera.m_Exposure, sizeof(float));
+            }
         }
 
         // 3. Tonemapping Pass

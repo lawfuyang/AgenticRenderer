@@ -330,6 +330,10 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 						{
 							if (json_strcmp(ctx, ct, "verticalFov")) cam.m_Projection.fovY = json_get_float(ctx, ct + 1);
 							else if (json_strcmp(ctx, ct, "zNear")) cam.m_Projection.nearZ = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "exposureValue")) cam.m_ExposureValue = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "exposureCompensation")) cam.m_ExposureCompensation = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "exposureValueMin")) cam.m_ExposureValueMin = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "exposureValueMax")) cam.m_ExposureValueMax = json_get_float(ctx, ct + 1);
 							ct = cgltf_skip_json(tokens.data(), ct + 1);
 						}
 					}

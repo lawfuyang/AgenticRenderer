@@ -30,7 +30,18 @@ void ExposureAdaptation_CSMain(uint threadIdx : SV_GroupIndex)
         float avgLogLum = SharedWeights[0] / max(float(AdaptationCB.m_NumPixels), 1.0f);
         float avgLum = exp2(avgLogLum);
         
-        float targetExposure = AdaptationCB.m_KeyValue / max(avgLum, 0.0001f);
+        // Convert Luminance -> EV100
+        // EV100 = log2(L * S / K) where S=100, K=12.5
+        float EV100 = log2(avgLum * 100.0f / 12.5f);
+        
+        // Clamp EV instead of luminance
+        EV100 = clamp(EV100, AdaptationCB.m_ExposureValueMin, AdaptationCB.m_ExposureValueMax);
+        
+        // Add exposure compensation (subtract because lower EV = more exposure)
+        EV100 -= AdaptationCB.m_ExposureCompensation;
+        
+        // Convert EV -> Multiplier (using 1.2 calibration factor)
+        float targetExposure = 1.0f / (pow(2.0f, EV100) * 1.2f);
         
         float currentExposure = Exposure[0];
         float exposure = currentExposure + (targetExposure - currentExposure) * (1.0f - exp(-AdaptationCB.m_DeltaTime * AdaptationCB.m_AdaptationSpeed));

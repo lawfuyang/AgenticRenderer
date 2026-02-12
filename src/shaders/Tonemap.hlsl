@@ -57,8 +57,8 @@ float4 Tonemap_PSMain(FullScreenVertexOut input) : SV_Target
         return float4(bloom, 1.0f);
     }
 
-    color *= exposure;
-    color += bloom;
+    // Apply exposure to both HDR color and bloom
+    color = (color + bloom) * exposure;
     
     float3 tonemapped = PBRNeutralToneMapping(color);
 

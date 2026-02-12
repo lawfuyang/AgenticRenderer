@@ -796,6 +796,11 @@ void Renderer::SetCameraFromSceneCamera(const Scene::Camera& sceneCam)
         const Matrix& worldTransform = m_Scene.m_Nodes[sceneCam.m_NodeIndex].m_WorldTransform;
         m_Camera.SetFromMatrix(worldTransform);
         m_Camera.SetProjection(sceneCam.m_Projection);
+
+        m_Camera.m_ExposureValue = sceneCam.m_ExposureValue;
+        m_Camera.m_ExposureCompensation = sceneCam.m_ExposureCompensation;
+        m_Camera.m_ExposureValueMin = sceneCam.m_ExposureValueMin;
+        m_Camera.m_ExposureValueMax = sceneCam.m_ExposureValueMax;
     }
 }
 

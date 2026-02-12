@@ -112,8 +112,19 @@ void ImGuiLayer::UpdateFrame()
 
             ImGui::Separator();
 
-            ImGui::DragFloat("Exposure Key Value", &renderer->m_ExposureKeyValue, 0.01f, 0.0f, 10.0f);
-            ImGui::DragFloat("Adaptation Speed", &renderer->m_AdaptationSpeed, 0.01f, 0.0f, 10.0f);
+            ImGui::Checkbox("Auto Exposure", &renderer->m_EnableAutoExposure);
+            if (renderer->m_EnableAutoExposure)
+            {
+                ImGui::DragFloat("EV Min", &renderer->m_Camera.m_ExposureValueMin, 0.1f, -20.0f, 20.0f);
+                ImGui::DragFloat("EV Max", &renderer->m_Camera.m_ExposureValueMax, 0.1f, -20.0f, 20.0f);
+                ImGui::DragFloat("Adaptation Speed", &renderer->m_AdaptationSpeed, 0.1f, 0.0f, 20.0f);
+            }
+            else
+            {
+                ImGui::DragFloat("Exposure Value (EV100)", &renderer->m_Camera.m_ExposureValue, 0.1f, -20.0f, 20.0f);
+            }
+            ImGui::DragFloat("Exposure Compensation", &renderer->m_Camera.m_ExposureCompensation, 0.1f, -10.0f, 10.0f);
+            ImGui::Text("Current Multiplier: %.4f", renderer->m_Camera.m_Exposure);
 
             ImGui::TreePop();
         }

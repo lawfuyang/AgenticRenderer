@@ -303,11 +303,13 @@ struct HistogramConstants
 struct AdaptationConstants
 {
     float m_DeltaTime;
-    float m_KeyValue;
     float m_AdaptationSpeed;
     uint32_t m_NumPixels;
     float m_MinLogLuminance;
     float m_MaxLogLuminance;
+    float m_ExposureValueMin;     // EV clamp
+    float m_ExposureValueMax;     // EV clamp
+    float m_ExposureCompensation; // EV bias
 };
 
 struct TonemapConstants
