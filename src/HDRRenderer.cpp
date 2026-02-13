@@ -4,20 +4,42 @@
 #include "CommonResources.h"
 #include "shaders/ShaderShared.h"
 
+extern RGTextureHandle g_RG_HDRColor;
+extern RGTextureHandle g_RG_BloomUpPyramid;
+RGBufferHandle g_RG_LuminanceHistogram;
+RGBufferHandle g_RG_ExposureBuffer;
+
 static constexpr float kMinLogLuminance = -10.0f;
 static constexpr float kMaxLogLuminance = 20.0f;
 
 class HDRRenderer : public IRenderer
 {
 public:
-    void Initialize() override
+    void Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
+        
+        // Luminance Histogram
+        {
+            RGBufferDesc desc;
+            desc.m_NvrhiDesc.structStride = sizeof(uint32_t);
+            desc.m_NvrhiDesc.byteSize = 256 * sizeof(uint32_t);
+            desc.m_NvrhiDesc.debugName = "LuminanceHistogram_RG";
+            desc.m_NvrhiDesc.canHaveUAVs = true;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+            g_RG_LuminanceHistogram = renderGraph.DeclareBuffer(desc, g_RG_LuminanceHistogram);
+        }
 
-        float initialExposure = 1.0f;
-        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Initialize HDR Exposure Buffer");
-        ScopedCommandList scopedCmd{ cmd };
-        scopedCmd->writeBuffer(renderer->m_ExposureBuffer, &initialExposure, sizeof(float));
+        // Exposure Buffer
+        {
+            RGBufferDesc desc;
+            desc.m_NvrhiDesc.structStride = sizeof(float);
+            desc.m_NvrhiDesc.byteSize = sizeof(float);
+            desc.m_NvrhiDesc.debugName = "ExposureBuffer_RG";
+            desc.m_NvrhiDesc.canHaveUAVs = true;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+            g_RG_ExposureBuffer = renderGraph.DeclareBuffer(desc, g_RG_ExposureBuffer);
+        }
     }
 
     
@@ -27,12 +49,17 @@ public:
 
         nvrhi::utils::ScopedMarker marker(commandList, "HDR Post-Processing");
 
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
+        nvrhi::BufferHandle luminanceHistogram = renderer->m_RenderGraph.GetBuffer(g_RG_LuminanceHistogram);
+        nvrhi::BufferHandle exposureBuffer = renderer->m_RenderGraph.GetBuffer(g_RG_ExposureBuffer);
+        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid);
+
         // 1. Histogram Pass
         {
             nvrhi::utils::ScopedMarker histMarker(commandList, "Luminance Histogram");
             
             // Clear histogram buffer
-            commandList->clearBufferUInt(renderer->m_LuminanceHistogram, 0);
+            commandList->clearBufferUInt(luminanceHistogram, 0);
 
             HistogramConstants consts;
             consts.m_Width = renderer->m_RHI->m_SwapchainExtent.x;
@@ -43,8 +70,8 @@ public:
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(HistogramConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HDRColorTexture),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, renderer->m_LuminanceHistogram)
+                nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
+                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, luminanceHistogram)
             };
 
             const uint32_t dispatchX = DivideAndRoundUp(consts.m_Width, 16);
@@ -81,8 +108,8 @@ public:
                 nvrhi::BindingSetDesc bset;
                 bset.bindings = {
                     nvrhi::BindingSetItem::PushConstants(0, sizeof(AdaptationConstants)),
-                    nvrhi::BindingSetItem::StructuredBuffer_UAV(0, renderer->m_ExposureBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_LuminanceHistogram)
+                    nvrhi::BindingSetItem::StructuredBuffer_UAV(0, exposureBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, luminanceHistogram)
                 };
 
                 Renderer::RenderPassParams params{
@@ -99,7 +126,7 @@ public:
             else
             {
                 // Manual mode: just update the buffer from CPU
-                commandList->writeBuffer(renderer->m_ExposureBuffer, &renderer->m_Camera.m_Exposure, sizeof(float));
+                commandList->writeBuffer(exposureBuffer, &renderer->m_Camera.m_Exposure, sizeof(float));
             }
         }
 
@@ -111,15 +138,15 @@ public:
             consts.m_Width = renderer->m_RHI->m_SwapchainExtent.x;
             consts.m_Height = renderer->m_RHI->m_SwapchainExtent.y;
             consts.m_BloomIntensity = renderer->m_BloomIntensity;
-            consts.m_EnableBloom = (renderer->m_EnableBloom && renderer->m_BloomUpPyramid) ? 1 : 0;
+            consts.m_EnableBloom = (renderer->m_EnableBloom && bloomUpPyramid) ? 1 : 0;
             consts.m_DebugBloom = (renderer->m_DebugBloom) ? 1 : 0;
 
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(TonemapConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HDRColorTexture),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, renderer->m_ExposureBuffer),
-                nvrhi::BindingSetItem::Texture_SRV(2, renderer->m_BloomUpPyramid),
+                nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
+                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, exposureBuffer),
+                nvrhi::BindingSetItem::Texture_SRV(2, bloomUpPyramid),
                 nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 

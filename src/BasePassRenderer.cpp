@@ -12,16 +12,18 @@ extern RGTextureHandle g_RG_GBufferNormals;
 extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferEmissive;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
+extern RGTextureHandle g_RG_HDRColor;
+RGTextureHandle g_RG_OpaqueColor;
 
 class BasePassRendererBase : public IRenderer
 {
 public:
-    
     void Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         renderer->m_BasePassResources.DeclareResources(renderGraph);
 
+        // ... existing buffer writes ...
         renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleIndirectBuffer);
         renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedCountBuffer);
@@ -37,6 +39,7 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+        renderGraph.WriteTexture(g_RG_HDRColor);
     }
     
     virtual void Render(nvrhi::CommandListHandle commandList) override = 0;
@@ -242,6 +245,8 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
     nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
     nvrhi::TextureHandle gbufferMotionVectors = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
+    nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
+    nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? renderer->m_RenderGraph.GetTexture(g_RG_OpaqueColor) : CommonResources::GetInstance().DefaultTextureBlack;
 
     char marker[256];
     sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
@@ -251,7 +256,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     const bool bUseAlphaBlend = (args.m_AlphaMode == ALPHA_MODE_BLEND);
 
     const nvrhi::FramebufferHandle framebuffer = bUseAlphaBlend ? 
-        renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture).setDepthAttachment(depthTexture)) :
+        renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(hdrColor).setDepthAttachment(depthTexture)) :
         renderer->m_RHI->m_NvrhiDevice->createFramebuffer(
         nvrhi::FramebufferDesc()
         .addColorAttachment(gbufferAlbedo)
@@ -309,7 +314,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_IndexBuffer),
-        nvrhi::BindingSetItem::Texture_SRV(11, renderer->m_OpaqueColorTexture),
+        nvrhi::BindingSetItem::Texture_SRV(11, opaqueColor),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().AnisotropicClamp),
         nvrhi::BindingSetItem::Sampler(1, CommonResources::GetInstance().AnisotropicWrap),
         nvrhi::BindingSetItem::Sampler(2, CommonResources::GetInstance().MinReductionClamp)
@@ -350,7 +355,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     cb.m_EnableIBL = renderer->m_EnableIBL ? 1 : 0;
     cb.m_IBLIntensity = renderer->m_IBLIntensity;
     cb.m_RadianceMipCount = CommonResources::GetInstance().RadianceTexture->getDesc().mipLevels;
-    cb.m_OpaqueColorDimensions = Vector2{ (float)renderer->m_OpaqueColorTexture->getDesc().width, (float)renderer->m_OpaqueColorTexture->getDesc().height };
+    cb.m_OpaqueColorDimensions = Vector2{ (float)opaqueColor->getDesc().width, (float)opaqueColor->getDesc().height };
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
     nvrhi::RenderState renderState;
@@ -589,6 +594,38 @@ public:
 class TransparentPassRenderer : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+
+        Renderer* renderer = Renderer::GetInstance();
+        const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
+        const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+
+        // Opaque Color Texture (used for transmission/refraction)
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = Renderer::HDR_COLOR_FORMAT;
+            desc.m_NvrhiDesc.debugName = "OpaqueColorTexture_RG";
+            desc.m_NvrhiDesc.isUAV = true;
+            desc.m_NvrhiDesc.isRenderTarget = false;
+            desc.m_NvrhiDesc.useClearValue = false;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::CopyDest;
+
+            // Calculate mip levels for transmission LOD sampling
+            uint32_t maxDim = std::max(width, height);
+            uint32_t mipLevels = 0;
+            while (maxDim > 0) {
+                mipLevels++;
+                maxDim >>= 1;
+            }
+            desc.m_NvrhiDesc.mipLevels = mipLevels;
+            g_RG_OpaqueColor = renderGraph.DeclareTexture(desc, g_RG_OpaqueColor);
+        }
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "TransparentPass"; }
 };
@@ -599,10 +636,13 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList)
     const uint32_t numTransparent = renderer->m_Scene.m_TransparentBucket.m_Count;
     if (numTransparent == 0) return;
 
-    // Capture the opaque scene for refraction
-    commandList->copyTexture(renderer->m_OpaqueColorTexture, nvrhi::TextureSlice(), renderer->m_HDRColorTexture, nvrhi::TextureSlice());
+    nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
+    nvrhi::TextureHandle opaqueColor = renderer->m_RenderGraph.GetTexture(g_RG_OpaqueColor);
 
-    renderer->GenerateMipsUsingSPD(renderer->m_OpaqueColorTexture, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
+    // Capture the opaque scene for refraction
+    commandList->copyTexture(opaqueColor, nvrhi::TextureSlice(), hdrColor, nvrhi::TextureSlice());
+
+    renderer->GenerateMipsUsingSPD(opaqueColor, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
 
     Matrix view, viewProjForCulling;
     Vector4 frustumPlanes[5];

@@ -155,14 +155,6 @@ struct Renderer
     // Render Graph
     RenderGraph m_RenderGraph;
 
-    // HDR resources
-    nvrhi::TextureHandle m_HDRColorTexture;
-    nvrhi::TextureHandle m_OpaqueColorTexture;
-    nvrhi::TextureHandle m_BloomDownPyramid;
-    nvrhi::TextureHandle m_BloomUpPyramid;
-    nvrhi::BufferHandle m_LuminanceHistogram;
-    nvrhi::BufferHandle m_ExposureBuffer;
-
     // Shader cache
     std::unordered_map<std::string, nvrhi::ShaderHandle> m_ShaderCache;
 

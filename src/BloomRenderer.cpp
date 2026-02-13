@@ -4,36 +4,39 @@
 #include "CommonResources.h"
 #include "shaders/ShaderShared.h"
 
+extern RGTextureHandle g_RG_HDRColor;
+RGTextureHandle g_RG_BloomDownPyramid;
+RGTextureHandle g_RG_BloomUpPyramid;
+
 static constexpr uint32_t kBloomMipCount = 6;
 
 class BloomRenderer : public IRenderer
 {
 public:
-    
-    void Initialize() override
+
+    void Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
+        if (!renderer->m_EnableBloom) return;
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
         // Create Bloom textures
-        nvrhi::TextureDesc desc;
-        desc.width = width / 2;
-        desc.height = height / 2;
-        desc.format = nvrhi::Format::R11G11B10_FLOAT;
-        desc.mipLevels = kBloomMipCount;
-        desc.isRenderTarget = true;
-        desc.debugName = "Bloom_DownPyramid";
-        desc.initialState = nvrhi::ResourceStates::ShaderResource;
-        desc.setClearValue(nvrhi::Color{});
-        renderer->m_BloomDownPyramid = device->createTexture(desc);
+        RGTextureDesc desc;
+        desc.m_NvrhiDesc.width = width / 2;
+        desc.m_NvrhiDesc.height = height / 2;
+        desc.m_NvrhiDesc.format = nvrhi::Format::R11G11B10_FLOAT;
+        desc.m_NvrhiDesc.mipLevels = kBloomMipCount;
+        desc.m_NvrhiDesc.isRenderTarget = true;
+        desc.m_NvrhiDesc.debugName = "Bloom_DownPyramid_RG";
+        desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+        desc.m_NvrhiDesc.setClearValue(nvrhi::Color{});
+        g_RG_BloomDownPyramid = renderGraph.DeclareTexture(desc, g_RG_BloomDownPyramid);
 
-        desc.debugName = "Bloom_UpPyramid";
-        renderer->m_BloomUpPyramid = device->createTexture(desc);
+        desc.m_NvrhiDesc.debugName = "Bloom_UpPyramid_RG";
+        g_RG_BloomUpPyramid = renderGraph.DeclareTexture(desc, g_RG_BloomUpPyramid);
     }
-
     
     void Render(nvrhi::CommandListHandle commandList) override
     {
@@ -45,6 +48,10 @@ public:
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+        
+        nvrhi::TextureHandle bloomDownPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomDownPyramid);
+        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
 
         // 1. Prefilter (HDR -> Down[0])
         {
@@ -57,13 +64,13 @@ public:
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_HDRColorTexture),
+                nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
                 nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 
-            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_BloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1)));
+            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1)));
 
-            commandList->clearTextureFloat(renderer->m_BloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
+            commandList->clearTextureFloat(bloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
                 .commandList = commandList,
@@ -90,13 +97,13 @@ public:
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_BloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i - 1, 1, 0, 1)),
+                nvrhi::BindingSetItem::Texture_SRV(0, bloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i - 1, 1, 0, 1)),
                 nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 
-            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_BloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
+            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
 
-            commandList->clearTextureFloat(renderer->m_BloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
+            commandList->clearTextureFloat(bloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
                 .commandList = commandList,
@@ -115,7 +122,7 @@ public:
         nvrhi::TextureSlice slice;
         slice.mipLevel = kBloomMipCount - 1;
 
-        commandList->copyTexture(renderer->m_BloomUpPyramid, slice, renderer->m_BloomDownPyramid, slice);
+        commandList->copyTexture(bloomUpPyramid, slice, bloomDownPyramid, slice);
 
         for (int i = kBloomMipCount - 2; i >= 0; --i)
         {
@@ -130,14 +137,14 @@ public:
             nvrhi::BindingSetDesc bset;
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, renderer->m_BloomUpPyramid,   nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i + 1, 1, 0, 1)),
-                nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_BloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i,     1, 0, 1)),
+                nvrhi::BindingSetItem::Texture_SRV(0, bloomUpPyramid,   nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i + 1, 1, 0, 1)),
+                nvrhi::BindingSetItem::Texture_SRV(1, bloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i,     1, 0, 1)),
                 nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 
-            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_BloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
+            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
 
-            commandList->clearTextureFloat(renderer->m_BloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
+            commandList->clearTextureFloat(bloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
                 .commandList = commandList,

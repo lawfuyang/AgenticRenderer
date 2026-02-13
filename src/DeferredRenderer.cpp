@@ -9,19 +9,23 @@ extern RGTextureHandle g_RG_GBufferNormals;
 extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferEmissive;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
+extern RGTextureHandle g_RG_HDRColor;
 
 class DeferredRenderer : public IRenderer
 {
 public:
-    
+
     void Setup(RenderGraph& renderGraph) override
-    {        
+    {
+        Renderer* renderer = Renderer::GetInstance();
+
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);
         renderGraph.ReadTexture(g_RG_GBufferNormals);
         renderGraph.ReadTexture(g_RG_GBufferORM);
         renderGraph.ReadTexture(g_RG_GBufferEmissive);
         renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
+        renderGraph.WriteTexture(g_RG_HDRColor);
     }
     
     void Render(nvrhi::CommandListHandle commandList) override
@@ -36,9 +40,10 @@ public:
         nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
         nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
         nvrhi::TextureHandle gbufferMotionVectors = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
 
         nvrhi::BindingSetDesc bset;
-        
+        // ... rest of the bindings ...
         const Vector3 camPos = renderer->m_Camera.GetPosition();
 
         // Deferred CB
@@ -80,7 +85,7 @@ public:
             .shaderName = "DeferredLighting_DeferredLighting_PSMain",
             .bindingSetDesc = bset,
             .useBindlessTextures = true,
-            .framebuffer = renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(renderer->m_HDRColorTexture))
+            .framebuffer = renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(hdrColor))
         };
 
         renderer->AddFullScreenPass(params);

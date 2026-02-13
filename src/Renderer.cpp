@@ -28,6 +28,7 @@ RGTextureHandle g_RG_GBufferNormals;
 RGTextureHandle g_RG_GBufferORM;
 RGTextureHandle g_RG_GBufferEmissive;
 RGTextureHandle g_RG_GBufferMotionVectors;
+RGTextureHandle g_RG_HDRColor;
 
 // ============================================================================
 // Renderer Implementations
@@ -36,7 +37,6 @@ RGTextureHandle g_RG_GBufferMotionVectors;
 class ClearRenderer : public IRenderer
 {
 public:
-    
     void Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
@@ -56,6 +56,19 @@ public:
             desc.m_NvrhiDesc.setClearValue(nvrhi::Color{ Renderer::DEPTH_FAR, 0.0f, 0.0f, 0.0f });
             
             g_RG_DepthTexture = renderGraph.DeclareTexture(desc, g_RG_DepthTexture);
+        }
+
+        // HDR Color Texture
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = Renderer::HDR_COLOR_FORMAT;
+            desc.m_NvrhiDesc.debugName = "HDRColorTexture_RG";
+            desc.m_NvrhiDesc.isRenderTarget = true;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+            desc.m_NvrhiDesc.setClearValue(Renderer::kHDROutputClearColor);
+            g_RG_HDRColor = renderGraph.DeclareTexture(desc, g_RG_HDRColor);
         }
         
         // Declare transient GBuffer textures
@@ -91,6 +104,14 @@ public:
         gbufferDesc.m_NvrhiDesc.format = nvrhi::Format::RG16_FLOAT;
         gbufferDesc.m_NvrhiDesc.debugName = "GBufferMotion_RG";
         g_RG_GBufferMotionVectors = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferMotionVectors);
+
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_HDRColor);
+        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
+        renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferORM);
+        renderGraph.WriteTexture(g_RG_GBufferEmissive);
+        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
     }
     
     void Render(nvrhi::CommandListHandle commandList) override
@@ -99,17 +120,18 @@ public:
 
         // Get transient resources from render graph
         nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
         nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
         nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
         nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
         nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
         nvrhi::TextureHandle gbufferMotion = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
 
-        // Clear color
-        commandList->clearTextureFloat(renderer->m_HDRColorTexture, nvrhi::AllSubresources, Renderer::kHDROutputClearColor);
-
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
         commandList->clearDepthStencilTexture(depthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
+
+        // Clear HDR color
+        commandList->clearTextureFloat(hdrColor, nvrhi::AllSubresources, Renderer::kHDROutputClearColor);
 
         // clear gbuffers
         commandList->clearTextureFloat(gbufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
@@ -1527,78 +1549,6 @@ void Renderer::CreateSceneResources()
     scopedCmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);
-
-    SDL_Log("[Init] Creating HDR resources");
-
-    // HDR Color Texture
-    nvrhi::TextureDesc hdrDesc;
-    hdrDesc.width = m_RHI->m_SwapchainExtent.x;
-    hdrDesc.height = m_RHI->m_SwapchainExtent.y;
-    hdrDesc.format = HDR_COLOR_FORMAT;
-    hdrDesc.debugName = "HDRColorTexture";
-    hdrDesc.isRenderTarget = true;
-    hdrDesc.initialState = nvrhi::ResourceStates::RenderTarget;
-    hdrDesc.setClearValue(kHDROutputClearColor);
-
-    m_HDRColorTexture = m_RHI->m_NvrhiDevice->createTexture(hdrDesc);
-    if (!m_HDRColorTexture)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to create HDR color texture", "[Init] Failed to create HDR color texture");
-        return;
-    }
-
-    {
-        nvrhi::TextureDesc opaqueColorDesc = hdrDesc;
-        opaqueColorDesc.debugName = "OpaqueColorTexture";
-        opaqueColorDesc.isUAV = true;
-        opaqueColorDesc.isRenderTarget = false;
-        opaqueColorDesc.useClearValue = false; // this needs to be false because its no longer a render target
-        opaqueColorDesc.initialState = nvrhi::ResourceStates::CopyDest;
-
-        // Calculate mip levels for transmission LOD sampling
-        uint32_t maxDim = std::max(opaqueColorDesc.width, opaqueColorDesc.height);
-        uint32_t mipLevels = 0;
-        while (maxDim > 0) {
-            mipLevels++;
-            maxDim >>= 1;
-        }
-        opaqueColorDesc.mipLevels = mipLevels;
-
-        m_OpaqueColorTexture = m_RHI->m_NvrhiDevice->createTexture(opaqueColorDesc);
-        if (!m_OpaqueColorTexture)
-        {
-            SDL_LOG_ASSERT_FAIL("Failed to create opaque color texture", "[Init] Failed to create opaque color texture");
-            return;
-        }
-    }
-
-    // Luminance Histogram: 256 bins, each uint32_t
-    nvrhi::BufferDesc histDesc;
-    histDesc.structStride = sizeof(uint32_t);
-    histDesc.byteSize = 256 * sizeof(uint32_t);
-    histDesc.debugName = "LuminanceHistogram";
-    histDesc.canHaveUAVs = true;
-    histDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-    m_LuminanceHistogram = m_RHI->m_NvrhiDevice->createBuffer(histDesc);
-    if (!m_LuminanceHistogram)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to create luminance histogram buffer", "[Init] Failed to create luminance histogram buffer");
-        return;
-    }
-
-    // Exposure Buffer: stores current exposure (float)
-    nvrhi::BufferDesc expDesc;
-    expDesc.structStride = sizeof(float);
-    expDesc.byteSize = sizeof(float);
-    expDesc.debugName = "ExposureBuffer";
-    expDesc.canHaveUAVs = true;
-    expDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-    m_ExposureBuffer = m_RHI->m_NvrhiDevice->createBuffer(expDesc);
-    if (!m_ExposureBuffer)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to create exposure buffer", "[Init] Failed to create exposure buffer");
-        return;
-    }
 }
 
 void Renderer::DestroySceneResources()
@@ -1607,15 +1557,6 @@ void Renderer::DestroySceneResources()
 
     m_HZBTexture = nullptr;
     m_SPDAtomicCounter = nullptr;
-
-    SDL_Log("[Shutdown] Destroying HDR resources");
-
-    m_HDRColorTexture = nullptr;
-    m_OpaqueColorTexture = nullptr;
-    m_LuminanceHistogram = nullptr;
-    m_ExposureBuffer = nullptr;
-    m_BloomDownPyramid = nullptr;
-    m_BloomUpPyramid = nullptr;
 }
 
 int main(int argc, char* argv[])
