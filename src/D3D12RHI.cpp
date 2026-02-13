@@ -26,6 +26,7 @@ public:
     ComPtr<ID3D12CommandQueue> m_CommandQueue;
     ComPtr<IDXGISwapChain3> m_SwapChain;
     bool m_bTearingSupported = false;
+    bool m_bTightAlignmentSupported = false;
 
     ~D3D12GraphicRHI() override { Shutdown(); }
 
@@ -116,6 +117,8 @@ public:
             BOOL tearingSupported{};
             m_Factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearingSupported, sizeof(tearingSupported));
             m_bTearingSupported = tearingSupported;
+
+            m_bTightAlignmentSupported = (featureSupport.TightAlignmentSupportTier() != D3D12_TIGHT_ALIGNMENT_TIER_NOT_SUPPORTED);
         }
         else
         {
@@ -332,8 +335,8 @@ public:
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
 
-    uint64_t GetBufferAlignment() const override { return D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
-    uint64_t GetTextureAlignment() const override { return D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
+    uint64_t GetBufferAlignment() const override { return m_bTightAlignmentSupported ? D3D12_TIGHT_ALIGNMENT_MIN_PLACED_RESOURCE_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
+    uint64_t GetTextureAlignment() const override { return m_bTightAlignmentSupported ? D3D12_TIGHT_ALIGNMENT_MIN_PLACED_RESOURCE_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
 };
 
 std::unique_ptr<GraphicRHI> CreateD3D12GraphicRHI()
