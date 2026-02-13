@@ -131,9 +131,8 @@ struct TransientBuffer : public TransientResourceBase
 class RenderGraph
 {
 public:
-    RenderGraph() = default;
-    ~RenderGraph() = default;
-    
+    void Shutdown();
+
     // Reset graph for new frame (doesn't free physical resources)
     void Reset();
     

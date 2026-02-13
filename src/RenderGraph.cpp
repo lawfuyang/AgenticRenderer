@@ -71,6 +71,13 @@ size_t RGBufferDesc::GetMemorySize() const
 // RenderGraph - Resource Declaration
 // ============================================================================
 
+void RenderGraph::Shutdown()
+{
+    m_Textures.clear();
+    m_Buffers.clear();
+    m_Heaps.clear();
+}
+
 void RenderGraph::Reset()
 {
     const uint32_t kMaxTransientResourceLifetimeFrames = 3;
