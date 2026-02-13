@@ -702,17 +702,6 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
 }
 
 // ============================================================================
-// RenderGraph - Execution & Cleanup
-// ============================================================================
-
-void RenderGraph::Execute()
-{
-    SDL_assert(m_IsCompiled && "RenderGraph must be compiled before execution");
-    // Physical resources are already allocated in Compile()
-    // This is here for future extensions (e.g., resource barriers)
-}
-
-// ============================================================================
 // RenderGraph - Resource Retrieval
 // ============================================================================
 

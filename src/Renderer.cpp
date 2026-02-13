@@ -789,7 +789,6 @@ void Renderer::Run()
 
         // Compile render graph: compute lifetimes and allocate resources
         m_RenderGraph.Compile();
-        m_RenderGraph.Execute();
 
         // Wait for all render passes to finish recording
         m_TaskScheduler->ExecuteAllScheduledTasks();

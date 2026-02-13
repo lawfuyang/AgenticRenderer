@@ -156,9 +156,7 @@ public:
     // Pass management (internal use by render loop)
     void BeginPass(const char* name);
     
-    // Compilation & Execution
     void Compile();
-    void Execute();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)
     nvrhi::TextureHandle GetTexture(RGTextureHandle handle) const;
