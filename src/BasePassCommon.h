@@ -1,21 +1,22 @@
 #pragma once
 
 #include "pch.h"
+#include "RenderGraph.h"
 
 struct BasePassResources
 {
-    nvrhi::BufferHandle m_MeshletJobBuffer;
-    nvrhi::BufferHandle m_MeshletJobCountBuffer;
-    nvrhi::BufferHandle m_MeshletIndirectBuffer;
+    RGBufferHandle m_MeshletJobBuffer;
+    RGBufferHandle m_MeshletJobCountBuffer;
+    RGBufferHandle m_MeshletIndirectBuffer;
 
-    nvrhi::BufferHandle m_VisibleIndirectBuffer;
-    nvrhi::BufferHandle m_VisibleCountBuffer;
-    nvrhi::BufferHandle m_OccludedIndicesBuffer;
-    nvrhi::BufferHandle m_OccludedCountBuffer;
-    nvrhi::BufferHandle m_OccludedIndirectBuffer;
+    RGBufferHandle m_VisibleIndirectBuffer;
+    RGBufferHandle m_VisibleCountBuffer;
+    RGBufferHandle m_OccludedIndicesBuffer;
+    RGBufferHandle m_OccludedCountBuffer;
+    RGBufferHandle m_OccludedIndirectBuffer;
 
     nvrhi::PipelineStatisticsQueryHandle m_PipelineQueries[2];
 
     void Initialize();
-    void PostSceneLoad();
+    void DeclareResources(RenderGraph& rg);
 };

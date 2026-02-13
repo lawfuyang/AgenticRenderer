@@ -601,8 +601,6 @@ void Renderer::Initialize()
     // Load scene (if configured) after all renderer resources are ready
     m_Scene.LoadScene();
 
-    m_BasePassResources.PostSceneLoad();
-
     // Initialize renderers with scene-dependent resources
     for (const auto& renderer : m_Renderers)
     {

@@ -19,6 +19,18 @@ public:
     
     void Setup(RenderGraph& renderGraph) override
     {
+        Renderer* renderer = Renderer::GetInstance();
+        renderer->m_BasePassResources.DeclareResources(renderGraph);
+
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleCountBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleIndirectBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedCountBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedIndicesBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedIndirectBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletJobBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletJobCountBuffer);
+        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletIndirectBuffer);
+
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
         renderGraph.WriteTexture(g_RG_GBufferNormals);
@@ -53,11 +65,13 @@ protected:
     {
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
+        RenderGraph& rg = renderer->m_RenderGraph;
+        
         nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear Visible Counters" };
-        commandList->clearBufferUInt(res.m_VisibleCountBuffer, 0);
+        commandList->clearBufferUInt(rg.GetBuffer(res.m_VisibleCountBuffer), 0);
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(res.m_MeshletJobCountBuffer, 0);
+            commandList->clearBufferUInt(rg.GetBuffer(res.m_MeshletJobCountBuffer), 0);
         }
     }
 
@@ -65,12 +79,14 @@ protected:
     {
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
+        RenderGraph& rg = renderer->m_RenderGraph;
+
         nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear All Counters" };
-        commandList->clearBufferUInt(res.m_VisibleCountBuffer, 0);
-        commandList->clearBufferUInt(res.m_OccludedCountBuffer, 0);
+        commandList->clearBufferUInt(rg.GetBuffer(res.m_VisibleCountBuffer), 0);
+        commandList->clearBufferUInt(rg.GetBuffer(res.m_OccludedCountBuffer), 0);
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(res.m_MeshletJobCountBuffer, 0);
+            commandList->clearBufferUInt(rg.GetBuffer(res.m_MeshletJobCountBuffer), 0);
         }
     }
 };
@@ -111,11 +127,11 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
     else if (args.m_CullingPhase == 1)
     {
         // Clear visible count buffer for Phase 2
-        commandList->clearBufferUInt(res.m_VisibleCountBuffer, 0);
+        commandList->clearBufferUInt(renderer->m_RenderGraph.GetBuffer(res.m_VisibleCountBuffer), 0);
 
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(res.m_MeshletJobCountBuffer, 0);
+            commandList->clearBufferUInt(renderer->m_RenderGraph.GetBuffer(res.m_MeshletJobCountBuffer), 0);
         }
     }
 
@@ -141,6 +157,7 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
     cullData.m_InstanceBaseIndex = args.m_InstanceBaseIndex;
     commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
 
+    RenderGraph& rg = renderer->m_RenderGraph;
     nvrhi::BindingSetDesc cullBset;
     cullBset.bindings =
     {
@@ -148,14 +165,14 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(2, renderer->m_Scene.m_MeshDataBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, res.m_VisibleIndirectBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(1, res.m_VisibleCountBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, res.m_OccludedIndicesBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(3, res.m_OccludedCountBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? res.m_OccludedIndirectBuffer : CommonResources::GetInstance().DummyUAVBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, res.m_MeshletJobBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, res.m_MeshletJobCountBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, res.m_MeshletIndirectBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, rg.GetBuffer(res.m_VisibleIndirectBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(1, rg.GetBuffer(res.m_VisibleCountBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, rg.GetBuffer(res.m_OccludedIndicesBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(3, rg.GetBuffer(res.m_OccludedCountBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? rg.GetBuffer(res.m_OccludedIndirectBuffer) : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, rg.GetBuffer(res.m_MeshletJobBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, rg.GetBuffer(res.m_MeshletJobCountBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, rg.GetBuffer(res.m_MeshletIndirectBuffer)),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
     };
 
@@ -175,7 +192,7 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
         params.commandList = commandList;
         params.shaderName = "GPUCulling_Culling_CSMain";
         params.bindingSetDesc = cullBset;
-        params.dispatchParams = { .indirectBuffer = res.m_OccludedIndirectBuffer, .indirectOffsetBytes = 0 };
+        params.dispatchParams = { .indirectBuffer = rg.GetBuffer(res.m_OccludedIndirectBuffer), .indirectOffsetBytes = 0 };
         renderer->AddComputePass(params);
     }
 
@@ -276,6 +293,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
     const nvrhi::BufferHandle perFrameCB = renderer->m_RHI->m_NvrhiDevice->createBuffer(cbd);
 
+    RenderGraph& rg = renderer->m_RenderGraph;
     nvrhi::BindingSetDesc bset;
     bset.bindings =
     {
@@ -286,7 +304,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         nvrhi::BindingSetItem::StructuredBuffer_SRV(3, renderer->m_Scene.m_MeshletBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(4, renderer->m_Scene.m_MeshletVerticesBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_MeshletTrianglesBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, res.m_MeshletJobBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, rg.GetBuffer(res.m_MeshletJobBuffer)),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(7, renderer->m_Scene.m_MeshDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
@@ -370,8 +388,8 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         meshState.pipeline = meshPipeline;
         meshState.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
         meshState.viewport = viewportState;
-        meshState.indirectParams = res.m_MeshletIndirectBuffer;
-        meshState.indirectCountBuffer = res.m_MeshletJobCountBuffer;
+        meshState.indirectParams = rg.GetBuffer(res.m_MeshletIndirectBuffer);
+        meshState.indirectCountBuffer = rg.GetBuffer(res.m_MeshletJobCountBuffer);
 
         commandList->setMeshletState(meshState);
         commandList->dispatchMeshIndirectCount(0, 0, args.m_NumInstances);
@@ -392,8 +410,8 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         state.indexBuffer = nvrhi::IndexBufferBinding{ renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
         state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
         state.pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
-        state.indirectParams = res.m_VisibleIndirectBuffer;
-        state.indirectCountBuffer = res.m_VisibleCountBuffer;
+        state.indirectParams = rg.GetBuffer(res.m_VisibleIndirectBuffer);
+        state.indirectCountBuffer = rg.GetBuffer(res.m_VisibleCountBuffer);
         commandList->setGraphicsState(state);
 
         commandList->drawIndexedIndirectCount(0, 0, args.m_NumInstances);
