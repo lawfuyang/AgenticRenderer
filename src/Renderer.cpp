@@ -828,6 +828,8 @@ void Renderer::Shutdown()
     m_RHI->m_NvrhiDevice->waitForIdle();
     m_RHI->m_NvrhiDevice->runGarbageCollection();
 
+    m_RenderGraph.Shutdown();
+
     m_InFlightCommandLists.clear();
     m_PendingCommandLists.clear();
     m_CommandListFreeList.clear();
