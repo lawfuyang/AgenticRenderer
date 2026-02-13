@@ -354,6 +354,9 @@ public:
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::VULKAN; }
 
+    uint64_t GetBufferAlignment() const override { return 65536; }
+    uint64_t GetTextureAlignment() const override { return 65536; }
+
     bool CreateInstance()
     {
         SDL_Log("[Init] Creating Vulkan instance");

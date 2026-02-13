@@ -100,8 +100,13 @@ void RenderGraph::Reset()
         if (texture.m_PhysicalTexture && (m_FrameIndex - texture.m_LastFrameUsed > kMaxTransientResourceLifetimeFrames))
         {
             SDL_Log("[RenderGraph] Freeing texture '%s' due to inactivity", texture.m_Desc.m_NvrhiDesc.debugName.c_str());
+            if (texture.m_IsPhysicalOwner)
+            {
+                FreeBlock(texture.m_HeapIndex, texture.m_BlockOffset);
+            }
             texture.m_PhysicalTexture = nullptr;
             texture.m_Heap = nullptr;
+            texture.m_HeapIndex = UINT32_MAX;
             texture.m_IsAllocated = false;
             texture.m_Desc.m_CachedMemorySize = 0;
         }
@@ -116,24 +121,27 @@ void RenderGraph::Reset()
         if (buffer.m_PhysicalBuffer && (m_FrameIndex - buffer.m_LastFrameUsed > kMaxTransientResourceLifetimeFrames))
         {
             SDL_Log("[RenderGraph] Freeing buffer '%s' due to inactivity", buffer.m_Desc.m_NvrhiDesc.debugName.c_str());
+            if (buffer.m_IsPhysicalOwner)
+            {
+                FreeBlock(buffer.m_HeapIndex, buffer.m_BlockOffset);
+            }
             buffer.m_PhysicalBuffer = nullptr;
             buffer.m_Heap = nullptr;
+            buffer.m_HeapIndex = UINT32_MAX;
             buffer.m_IsAllocated = false;
             buffer.m_Desc.m_CachedMemorySize = 0;
         }
     }
 
-    // Heaps can be fully removed from vector since they aren't indexed by external handles
-    auto itHeap = m_Heaps.begin();
-    while (itHeap != m_Heaps.end())
+    // Heaps are kept in the vector for index stability
+    for (HeapEntry& heapEntry : m_Heaps)
     {
-        if (m_FrameIndex - itHeap->m_LastFrameUsed > kMaxTransientResourceLifetimeFrames)
+        if (heapEntry.m_Heap && (m_FrameIndex - heapEntry.m_LastFrameUsed > kMaxTransientResourceLifetimeFrames))
         {
-            itHeap = m_Heaps.erase(itHeap);
-        }
-        else
-        {
-            ++itHeap;
+            SDL_Log("[RenderGraph] Freeing heap slot %u due to inactivity", heapEntry.m_HeapIdx);
+            heapEntry.m_Heap = nullptr;
+            heapEntry.m_Blocks.clear();
+            heapEntry.m_Size = 0;
         }
     }
 }
@@ -347,22 +355,19 @@ void RenderGraph::Compile()
 
     nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
 
-    ComputeLifetimes();
-
     m_Stats.m_NumTextures = m_Stats.m_NumBuffers = 0;
     for (const TransientTexture& tex : m_Textures) if (tex.m_IsDeclaredThisFrame) m_Stats.m_NumTextures++;
     for (const TransientBuffer& buf : m_Buffers) if (buf.m_IsDeclaredThisFrame) m_Stats.m_NumBuffers++;
 
     AllocateResourcesInternal(
         false,  // bIsBuffer
-        [this, device](uint32_t idx)
+        [this, device](uint32_t idx, nvrhi::HeapHandle heap, uint64_t offset)
         {
             TransientTexture& texture = m_Textures[idx];
-            nvrhi::HeapHandle heap = GetOrCreateHeap(texture.m_Desc.GetMemorySize(), texture.m_Desc.m_NvrhiDesc.debugName);
 
-            if (texture.m_PhysicalTexture && texture.m_Heap == heap)
+            if (texture.m_PhysicalTexture && texture.m_Heap == heap && texture.m_Offset == offset)
             {
-                // Already bound correctly to the right heap
+                // Already bound correctly to the right heap at the right offset
                 texture.m_IsPhysicalOwner = true;
                 return;
             }
@@ -371,23 +376,22 @@ void RenderGraph::Compile()
 
             texture.m_Desc.m_NvrhiDesc.isVirtual = true;
             texture.m_PhysicalTexture = device->createTexture(texture.m_Desc.m_NvrhiDesc);
-            device->bindTextureMemory(texture.m_PhysicalTexture, heap, 0);
+            device->bindTextureMemory(texture.m_PhysicalTexture, heap, offset);
             texture.m_Heap = heap;
+            texture.m_Offset = offset;
             texture.m_IsPhysicalOwner = true;
         }
     );
 
     AllocateResourcesInternal(
         true,  // bIsBuffer
-        [this, device](uint32_t idx)
+        [this, device](uint32_t idx, nvrhi::HeapHandle heap, uint64_t offset)
         {
             TransientBuffer& buffer = m_Buffers[idx];
-            size_t size = buffer.m_Desc.GetMemorySize();
-            nvrhi::HeapHandle heap = GetOrCreateHeap(size, buffer.m_Desc.m_NvrhiDesc.debugName);
 
-            if (buffer.m_PhysicalBuffer && buffer.m_Heap == heap)
+            if (buffer.m_PhysicalBuffer && buffer.m_Heap == heap && buffer.m_Offset == offset)
             {
-                // Already bound correctly to the right heap
+                // Already bound correctly to the right heap at the right offset
                 buffer.m_IsPhysicalOwner = true;
                 return;
             }
@@ -396,8 +400,9 @@ void RenderGraph::Compile()
 
             buffer.m_Desc.m_NvrhiDesc.isVirtual = true;
             buffer.m_PhysicalBuffer = device->createBuffer(buffer.m_Desc.m_NvrhiDesc);
-            device->bindBufferMemory(buffer.m_PhysicalBuffer, heap, 0);
+            device->bindBufferMemory(buffer.m_PhysicalBuffer, heap, offset);
             buffer.m_Heap = heap;
+            buffer.m_Offset = offset;
             buffer.m_IsPhysicalOwner = true;
         }
     );
@@ -405,54 +410,159 @@ void RenderGraph::Compile()
     m_IsCompiled = true;
 }
 
-void RenderGraph::ComputeLifetimes()
-{
-    // Lifetimes are already computed during resource access registration
-    // This is a no-op, but kept for future extensions
-}
-
 // ============================================================================
 // RenderGraph - Memory Management
 // ============================================================================
 
-nvrhi::HeapHandle RenderGraph::GetOrCreateHeap(size_t size, const std::string& debugName)
+nvrhi::HeapHandle RenderGraph::CreateHeap(size_t size)
 {
     PROFILE_FUNCTION();
 
     nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
-    int bestHeapIdx = -1;
-    size_t bestSize = std::numeric_limits<size_t>::max();
-    
-    for (int i = 0; i < (int)m_Heaps.size(); ++i)
-    {
-        // Find best fitting heap that hasn't been used this frame
-        if (m_Heaps[i].m_Size >= size && m_Heaps[i].m_Size < bestSize && m_Heaps[i].m_LastFrameUsed < m_FrameIndex)
-        {
-            bestSize = m_Heaps[i].m_Size;
-            bestHeapIdx = i;
-        }
-    }
-    
-    if (bestHeapIdx != -1)
-    {
-        m_Heaps[bestHeapIdx].m_LastFrameUsed = m_FrameIndex;
-        return m_Heaps[bestHeapIdx].m_Heap;
-    }
     
     nvrhi::HeapDesc heapDesc;
     heapDesc.capacity = size;
-    heapDesc.debugName = debugName;
+    heapDesc.debugName = "RenderGraph Managed Heap";
     heapDesc.type = nvrhi::HeapType::DeviceLocal;
     
+    nvrhi::HeapHandle heap = device->createHeap(heapDesc);
+
+    // Try to reuse an empty slot
+    for (uint32_t i = 0; i < m_Heaps.size(); ++i)
+    {
+        if (!m_Heaps[i].m_Heap)
+        {
+            m_Heaps[i].m_Heap = heap;
+            m_Heaps[i].m_Size = size;
+            m_Heaps[i].m_LastFrameUsed = m_FrameIndex;
+            m_Heaps[i].m_HeapIdx = i;
+            
+            HeapBlock block;
+            block.m_Offset = 0;
+            block.m_Size = size;
+            block.m_IsFree = true;
+            m_Heaps[i].m_Blocks.push_back(block);
+            
+            SDL_Log("[RenderGraph] Reused heap slot %u for new heap of size %.2f MB", i, size / (1024.0 * 1024.0));
+            return heap;
+        }
+    }
+
     HeapEntry entry;
-    entry.m_Heap = device->createHeap(heapDesc);
+    entry.m_Heap = heap;
     entry.m_Size = size;
     entry.m_LastFrameUsed = m_FrameIndex;
+    entry.m_HeapIdx = static_cast<uint32_t>(m_Heaps.size());
+    
+    HeapBlock block;
+    block.m_Offset = 0;
+    block.m_Size = size;
+    block.m_IsFree = true;
+    entry.m_Blocks.push_back(block);
+    
     m_Heaps.push_back(entry);
     
     SDL_Log("[RenderGraph] Allocated new heap of size %.2f MB", size / (1024.0 * 1024.0));
     
-    return entry.m_Heap;
+    return heap;
+}
+
+void RenderGraph::SubAllocateResource(RenderGraphInternal::TransientResourceBase* resource, uint64_t alignment)
+{
+    size_t size = resource->GetMemorySize();
+
+    // 1. Try to find a free block in existing heaps
+    for (HeapEntry& heapEntry : m_Heaps)
+    {
+        if (!heapEntry.m_Heap) continue;
+
+        for (size_t i = 0; i < heapEntry.m_Blocks.size(); ++i)
+        {
+            HeapBlock& block = heapEntry.m_Blocks[i];
+            if (block.m_IsFree)
+            {
+                uint64_t alignedOffset = (block.m_Offset + alignment - 1) & ~(alignment - 1);
+                uint64_t blockEnd = block.m_Offset + block.m_Size;
+
+                if (alignedOffset + size <= blockEnd)
+                {
+                    uint64_t blockOriginalOffset = block.m_Offset;
+                    uint64_t blockOriginalSize = block.m_Size;
+
+                    // Prefix block if needed
+                    if (alignedOffset > blockOriginalOffset)
+                    {
+                        HeapBlock prefix;
+                        prefix.m_Offset = blockOriginalOffset;
+                        prefix.m_Size = alignedOffset - blockOriginalOffset;
+                        prefix.m_IsFree = true;
+                        heapEntry.m_Blocks.insert(heapEntry.m_Blocks.begin() + i, prefix);
+                        i++; // Current block is now at i+1
+                    }
+
+                    heapEntry.m_Blocks[i].m_Offset = alignedOffset;
+                    heapEntry.m_Blocks[i].m_Size = size;
+                    heapEntry.m_Blocks[i].m_IsFree = false;
+
+                    resource->m_Heap = heapEntry.m_Heap;
+                    resource->m_HeapIndex = heapEntry.m_HeapIdx;
+                    resource->m_Offset = alignedOffset;
+                    resource->m_BlockOffset = alignedOffset;
+
+                    // Suffix block if needed
+                    uint64_t suffixStart = alignedOffset + size;
+                    if (suffixStart < blockEnd)
+                    {
+                        HeapBlock suffix;
+                        suffix.m_Offset = suffixStart;
+                        suffix.m_Size = blockEnd - suffixStart;
+                        suffix.m_IsFree = true;
+                        heapEntry.m_Blocks.insert(heapEntry.m_Blocks.begin() + i + 1, suffix);
+                    }
+
+                    heapEntry.m_LastFrameUsed = m_FrameIndex;
+                    return;
+                }
+            }
+        }
+    }
+
+    // 2. No fit found, create a new heap
+    size_t heapSize = std::max(size_t(1024 * 1024), size + alignment);
+    CreateHeap(heapSize);
+
+    // Retry allocation now that we have a new heap
+    SubAllocateResource(resource, alignment);
+}
+
+void RenderGraph::FreeBlock(uint32_t heapIdx, uint64_t blockOffset)
+{
+    if (heapIdx >= m_Heaps.size()) return;
+
+    HeapEntry& heapEntry = m_Heaps[heapIdx];
+    for (size_t i = 0; i < heapEntry.m_Blocks.size(); ++i)
+    {
+        if (heapEntry.m_Blocks[i].m_Offset == blockOffset)
+        {
+            heapEntry.m_Blocks[i].m_IsFree = true;
+
+            // Coalesce with next block if free
+            if (i + 1 < heapEntry.m_Blocks.size() && heapEntry.m_Blocks[i + 1].m_IsFree)
+            {
+                heapEntry.m_Blocks[i].m_Size += heapEntry.m_Blocks[i + 1].m_Size;
+                heapEntry.m_Blocks.erase(heapEntry.m_Blocks.begin() + i + 1);
+            }
+
+            // Coalesce with previous block if free
+            if (i > 0 && heapEntry.m_Blocks[i - 1].m_IsFree)
+            {
+                heapEntry.m_Blocks[i - 1].m_Size += heapEntry.m_Blocks[i].m_Size;
+                heapEntry.m_Blocks.erase(heapEntry.m_Blocks.begin() + i);
+            }
+
+            return;
+        }
+    }
 }
 
 // ============================================================================
@@ -460,7 +570,7 @@ nvrhi::HeapHandle RenderGraph::GetOrCreateHeap(size_t size, const std::string& d
 // ============================================================================
 
 // Helper for generic resource allocation - abstracts over textures and buffers
-void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(uint32_t)> createAndBindResource)
+void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(uint32_t, nvrhi::HeapHandle, uint64_t)> createAndBindResource)
 {
     nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
 
@@ -484,27 +594,23 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
     {
         TransientResourceBase* resource = bIsBuffer ? (TransientResourceBase*)&m_Buffers[idx] : (TransientResourceBase*)&m_Textures[idx];
         
-        // Trivial reuse: if already allocated and was an owner, skip heavy logic
-        if (resource->m_IsAllocated && resource->m_IsPhysicalOwner && resource->m_Heap)
+        // Trivial reuse: if already allocated and was an owner, skip logic
+        if (resource->m_IsAllocated && resource->m_IsPhysicalOwner && resource->m_HeapIndex != UINT32_MAX)
         {
-            auto itHeap = std::find_if(m_Heaps.begin(), m_Heaps.end(), [&](const HeapEntry& entry) {
-                return entry.m_Heap == resource->m_Heap;
-            });
+            HeapEntry& heapEntry = m_Heaps[resource->m_HeapIndex];
+            SDL_assert(heapEntry.m_Heap == resource->m_Heap);
 
-            if (itHeap != m_Heaps.end())
-            {
-                itHeap->m_LastFrameUsed = m_FrameIndex;
-                
-                if (bIsBuffer) m_Stats.m_NumAllocatedBuffers++;
-                else m_Stats.m_NumAllocatedTextures++;
+            heapEntry.m_LastFrameUsed = m_FrameIndex;
 
-                const size_t bufferMemory = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : 0;
-                const size_t textureMemory = !bIsBuffer ? m_Textures.at(idx).m_Desc.GetMemorySize() : 0;
+            if (bIsBuffer) m_Stats.m_NumAllocatedBuffers++;
+            else m_Stats.m_NumAllocatedTextures++;
 
-                m_Stats.m_TotalBufferMemory += bufferMemory;
-                m_Stats.m_TotalTextureMemory += textureMemory;
-                continue;
-            }
+            const size_t bufferMemory = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : 0;
+            const size_t textureMemory = !bIsBuffer ? m_Textures.at(idx).m_Desc.GetMemorySize() : 0;
+
+            m_Stats.m_TotalBufferMemory += bufferMemory;
+            m_Stats.m_TotalTextureMemory += textureMemory;
+            continue;
         }
 
         bool aliased = false;
@@ -537,6 +643,8 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
                         m_Stats.m_NumAliasedTextures++;
                     }
                     resource->m_Heap = candidate->m_Heap;
+                    resource->m_Offset = candidate->m_Offset;
+                    resource->m_BlockOffset = candidate->m_BlockOffset;
                     resource->m_AliasedFromIndex = candidateIdx;
                     resource->m_IsAllocated = true;
                     resource->m_IsPhysicalOwner = false;
@@ -548,7 +656,9 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
         
         if (!aliased)
         {
-            createAndBindResource(idx);
+            const uint64_t alignment = bIsBuffer ? Renderer::GetInstance()->m_RHI->GetBufferAlignment() : Renderer::GetInstance()->m_RHI->GetTextureAlignment();
+            SubAllocateResource(resource, alignment);
+            createAndBindResource(idx, resource->m_Heap, resource->m_Offset);
             resource->m_IsAllocated = true;
             if (bIsBuffer)
                 m_Stats.m_NumAllocatedBuffers++;
@@ -597,13 +707,6 @@ void RenderGraph::Execute()
     SDL_assert(m_IsCompiled && "RenderGraph must be compiled before execution");
     // Physical resources are already allocated in Compile()
     // This is here for future extensions (e.g., resource barriers)
-}
-
-void RenderGraph::Cleanup()
-{
-    // Transient resources are freed when their handles go out of scope
-    // We keep the allocations for next frame (deterministic reuse)
-    m_IsCompiled = false;
 }
 
 // ============================================================================
@@ -691,7 +794,7 @@ void RenderGraph::RenderDebugUI()
         
         if (ImGui::TreeNode("Textures"))
         {
-            if (ImGui::BeginTable("Textures", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            if (ImGui::BeginTable("Textures", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
             {
                 ImGui::TableSetupColumn("Name");
                 ImGui::TableSetupColumn("Size");
@@ -699,6 +802,7 @@ void RenderGraph::RenderDebugUI()
                 ImGui::TableSetupColumn("First Pass");
                 ImGui::TableSetupColumn("Last Pass");
                 ImGui::TableSetupColumn("Memory (MB)");
+                ImGui::TableSetupColumn("Offset");
                 ImGui::TableSetupColumn("Aliased From");
                 ImGui::TableHeadersRow();
                 
@@ -708,7 +812,7 @@ void RenderGraph::RenderDebugUI()
                     
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    ImGui::Text("%s", texture.m_Desc.m_NvrhiDesc.debugName);
+                    ImGui::Text("%s", texture.m_Desc.m_NvrhiDesc.debugName.c_str());
                     
                     ImGui::TableNextColumn();
                     ImGui::Text("%ux%u", texture.m_Desc.m_NvrhiDesc.width, texture.m_Desc.m_NvrhiDesc.height);
@@ -730,10 +834,13 @@ void RenderGraph::RenderDebugUI()
                     
                     ImGui::TableNextColumn();
                     ImGui::Text("%.2f", texture.m_Desc.GetMemorySize() / (1024.0 * 1024.0));
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%llu", texture.m_Offset);
                     
                     ImGui::TableNextColumn();
                     if (texture.m_AliasedFromIndex != UINT32_MAX)
-                        ImGui::Text("%s", m_Textures[texture.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName);
+                        ImGui::Text("%s", m_Textures[texture.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName.c_str());
                     else
                         ImGui::Text("-");
                 }
@@ -745,12 +852,13 @@ void RenderGraph::RenderDebugUI()
         
         if (ImGui::TreeNode("Buffers"))
         {
-            if (ImGui::BeginTable("Buffers", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            if (ImGui::BeginTable("Buffers", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
             {
                 ImGui::TableSetupColumn("Name");
                 ImGui::TableSetupColumn("Size (MB)");
                 ImGui::TableSetupColumn("First Pass");
                 ImGui::TableSetupColumn("Last Pass");
+                ImGui::TableSetupColumn("Offset");
                 ImGui::TableSetupColumn("Aliased From");
                 ImGui::TableHeadersRow();
                 
@@ -760,7 +868,7 @@ void RenderGraph::RenderDebugUI()
                     
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    ImGui::Text("%s", buffer.m_Desc.m_NvrhiDesc.debugName);
+                    ImGui::Text("%s", buffer.m_Desc.m_NvrhiDesc.debugName.c_str());
                     
                     ImGui::TableNextColumn();
                     ImGui::Text("%.2f", buffer.m_Desc.GetMemorySize() / (1024.0 * 1024.0));
@@ -776,15 +884,51 @@ void RenderGraph::RenderDebugUI()
                         ImGui::Text("%u", buffer.m_Lifetime.m_LastPass);
                     else
                         ImGui::Text("N/A");
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%llu", buffer.m_Offset);
                     
                     ImGui::TableNextColumn();
                     if (buffer.m_AliasedFromIndex != UINT32_MAX)
-                        ImGui::Text("%s", m_Buffers[buffer.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName);
+                        ImGui::Text("%s", m_Buffers[buffer.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName.c_str());
                     else
                         ImGui::Text("-");
                 }
                 
                 ImGui::EndTable();
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Heaps"))
+        {
+            for (size_t i = 0; i < m_Heaps.size(); ++i)
+            {
+                const HeapEntry& heap = m_Heaps[i];
+                if (!heap.m_Heap) continue;
+
+                if (ImGui::TreeNode((void*)(intptr_t)i, "Heap %zu (%.2f MB)", i, heap.m_Size / (1024.0 * 1024.0)))
+                {
+                    if (ImGui::BeginTable("HeapBlocks", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+                    {
+                        ImGui::TableSetupColumn("Offset");
+                        ImGui::TableSetupColumn("Size");
+                        ImGui::TableSetupColumn("Status");
+                        ImGui::TableHeadersRow();
+                        for (const HeapBlock& block : heap.m_Blocks)
+                        {
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%llu", block.m_Offset);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.2f KB", block.m_Size / 1024.0);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", block.m_IsFree ? "Free" : "Allocated");
+                        }
+                        ImGui::EndTable();
+                    }
+                    ImGui::TreePop();
+                }
             }
             ImGui::TreePop();
         }

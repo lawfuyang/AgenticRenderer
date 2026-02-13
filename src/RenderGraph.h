@@ -94,6 +94,9 @@ struct TransientResourceBase
     ResourceLifetime m_Lifetime;
     uint32_t m_AliasedFromIndex = UINT32_MAX;
     uint64_t m_LastFrameUsed = 0;
+    uint64_t m_Offset = 0;
+    uint64_t m_BlockOffset = 0;
+    uint32_t m_HeapIndex = UINT32_MAX;
     bool m_IsAllocated = false;
     bool m_IsDeclaredThisFrame = false;
     bool m_IsPhysicalOwner = false;
@@ -156,7 +159,6 @@ public:
     // Compilation & Execution
     void Compile();
     void Execute();
-    void Cleanup();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)
     nvrhi::TextureHandle GetTexture(RGTextureHandle handle) const;
@@ -180,22 +182,29 @@ public:
     void RenderDebugUI();
     
 private:
-    // Lifetime computation
-    void ComputeLifetimes();
-    
     // Generic resource allocation helper (avoids code duplication)
-    void AllocateResourcesInternal(bool bIsBuffer, std::function<void(uint32_t)> createAndBindResource);
+    void AllocateResourcesInternal(bool bIsBuffer, std::function<void(uint32_t, nvrhi::HeapHandle, uint64_t)> createAndBindResource);
     
     // Heap management
+    struct HeapBlock
+    {
+        size_t m_Offset = 0;
+        size_t m_Size = 0;
+        bool m_IsFree = true;
+    };
+
     struct HeapEntry
     {
         nvrhi::HeapHandle m_Heap;
         size_t m_Size = 0;
-        size_t m_UsedSize = 0;
         uint64_t m_LastFrameUsed = 0;
+        uint32_t m_HeapIdx = UINT32_MAX;
+        std::vector<HeapBlock> m_Blocks;
     };
     std::vector<HeapEntry> m_Heaps;
-    nvrhi::HeapHandle GetOrCreateHeap(size_t size, const std::string& debugName);
+    nvrhi::HeapHandle CreateHeap(size_t size);
+    void SubAllocateResource(RenderGraphInternal::TransientResourceBase* resource, uint64_t alignment);
+    void FreeBlock(uint32_t heapIdx, uint64_t blockOffset);
     
     // Helper for updating resource lifetimes
     void UpdateResourceLifetime(RenderGraphInternal::ResourceLifetime& lifetime, uint16_t currentPass);

@@ -331,6 +331,9 @@ public:
     }
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
+
+    uint64_t GetBufferAlignment() const override { return D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
+    uint64_t GetTextureAlignment() const override { return D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
 };
 
 std::unique_ptr<GraphicRHI> CreateD3D12GraphicRHI()

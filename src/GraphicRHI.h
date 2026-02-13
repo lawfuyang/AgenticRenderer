@@ -57,6 +57,9 @@ public:
     virtual float GetVRAMUsageMB() const = 0;
 
     virtual nvrhi::GraphicsAPI GetGraphicsAPI() const = 0;
+
+    virtual uint64_t GetBufferAlignment() const = 0;
+    virtual uint64_t GetTextureAlignment() const = 0;
 };
 
 inline std::unique_ptr<GraphicRHI> CreateGraphicRHI(nvrhi::GraphicsAPI api)
