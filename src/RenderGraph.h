@@ -36,9 +36,7 @@ struct RGBufferHandle
 struct RGResourceDescBase
 {
     virtual size_t ComputeHash() const = 0;
-    virtual size_t GetMemorySize() const = 0;
-
-    mutable size_t m_CachedMemorySize = 0;
+    virtual nvrhi::MemoryRequirements GetMemoryRequirements() const = 0;
 };
 
 struct RGTextureDesc : public RGResourceDescBase
@@ -46,7 +44,7 @@ struct RGTextureDesc : public RGResourceDescBase
     nvrhi::TextureDesc m_NvrhiDesc;
     
     size_t ComputeHash() const override;
-    size_t GetMemorySize() const override;
+    nvrhi::MemoryRequirements GetMemoryRequirements() const override;
 };
 
 struct RGBufferDesc : public RGResourceDescBase
@@ -54,7 +52,7 @@ struct RGBufferDesc : public RGResourceDescBase
     nvrhi::BufferDesc m_NvrhiDesc;
     
     size_t ComputeHash() const override;
-    size_t GetMemorySize() const override;
+    nvrhi::MemoryRequirements GetMemoryRequirements() const override;
 };
 
 // ============================================================================
@@ -104,7 +102,7 @@ struct TransientResourceBase
     nvrhi::HeapHandle m_Heap;
     std::string m_LastBoundName;
 
-    virtual size_t GetMemorySize() const = 0;
+    virtual nvrhi::MemoryRequirements GetMemoryRequirements() const = 0;
     virtual ~TransientResourceBase() = default;
 };
 
@@ -113,9 +111,9 @@ struct TransientTexture : public TransientResourceBase
     RGTextureDesc m_Desc;
     nvrhi::TextureHandle m_PhysicalTexture;
 
-    size_t GetMemorySize() const override
+    nvrhi::MemoryRequirements GetMemoryRequirements() const override
     {
-        return m_Desc.GetMemorySize();
+        return m_Desc.GetMemoryRequirements();
     }
 };
 
@@ -124,9 +122,9 @@ struct TransientBuffer : public TransientResourceBase
     RGBufferDesc m_Desc;
     nvrhi::BufferHandle m_PhysicalBuffer;
 
-    size_t GetMemorySize() const override
+    nvrhi::MemoryRequirements GetMemoryRequirements() const override
     {
-        return m_Desc.GetMemorySize();
+        return m_Desc.GetMemoryRequirements();
     }
 };
 
@@ -177,8 +175,6 @@ public:
         uint32_t m_NumAliasedBuffers = 0;
         size_t m_TotalTextureMemory = 0;
         size_t m_TotalBufferMemory = 0;
-        size_t m_PeakTextureMemory = 0;
-        size_t m_PeakBufferMemory = 0;
     };
     
     void RenderDebugUI();

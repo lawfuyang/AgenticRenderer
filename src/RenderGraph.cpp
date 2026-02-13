@@ -51,30 +51,20 @@ size_t RGBufferDesc::ComputeHash() const
     return seed;
 }
 
-size_t RGTextureDesc::GetMemorySize() const
+nvrhi::MemoryRequirements RGTextureDesc::GetMemoryRequirements() const
 {
-    if (m_CachedMemorySize == 0)
-    {
-        nvrhi::TextureDesc tempDesc = m_NvrhiDesc;
-        tempDesc.isVirtual = true;
-        nvrhi::TextureHandle tempTex = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->createTexture(tempDesc);
-        nvrhi::MemoryRequirements memReq = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->getTextureMemoryRequirements(tempTex);
-        m_CachedMemorySize = memReq.size;
-    }
-    return m_CachedMemorySize;
+    nvrhi::TextureDesc tempDesc = m_NvrhiDesc;
+    tempDesc.isVirtual = true;
+    nvrhi::TextureHandle tempTex = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->createTexture(tempDesc);
+    return Renderer::GetInstance()->m_RHI->m_NvrhiDevice->getTextureMemoryRequirements(tempTex);
 }
 
-size_t RGBufferDesc::GetMemorySize() const
+nvrhi::MemoryRequirements RGBufferDesc::GetMemoryRequirements() const
 {
-    if (m_CachedMemorySize == 0)
-    {
-        nvrhi::BufferDesc tempDesc = m_NvrhiDesc;
-        tempDesc.isVirtual = true;
-        nvrhi::BufferHandle tempBuf = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->createBuffer(tempDesc);
-        nvrhi::MemoryRequirements memReq = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->getBufferMemoryRequirements(tempBuf);
-        m_CachedMemorySize = memReq.size;
-    }
-    return m_CachedMemorySize;
+    nvrhi::BufferDesc tempDesc = m_NvrhiDesc;
+    tempDesc.isVirtual = true;
+    nvrhi::BufferHandle tempBuf = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->createBuffer(tempDesc);
+    return Renderer::GetInstance()->m_RHI->m_NvrhiDevice->getBufferMemoryRequirements(tempBuf);
 }
 
 // ============================================================================
@@ -120,7 +110,6 @@ void RenderGraph::Reset()
             texture.m_Heap = nullptr;
             texture.m_HeapIndex = UINT32_MAX;
             texture.m_IsAllocated = false;
-            texture.m_Desc.m_CachedMemorySize = 0;
         }
     }
 
@@ -142,7 +131,6 @@ void RenderGraph::Reset()
             buffer.m_Heap = nullptr;
             buffer.m_HeapIndex = UINT32_MAX;
             buffer.m_IsAllocated = false;
-            buffer.m_Desc.m_CachedMemorySize = 0;
         }
     }
 
@@ -179,7 +167,6 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
             SDL_Log("[RenderGraph] Texture desc mismatch for handle %u, freeing old resource", existing.m_Index);
             texture.m_PhysicalTexture = nullptr;
             texture.m_IsAllocated = false;
-            texture.m_Desc.m_CachedMemorySize = 0;
         }
 
         texture.m_Desc = desc;
@@ -231,7 +218,6 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
             SDL_Log("[RenderGraph] Buffer desc mismatch for handle %u, freeing old resource", existing.m_Index);
             buffer.m_PhysicalBuffer = nullptr;
             buffer.m_IsAllocated = false;
-            buffer.m_Desc.m_CachedMemorySize = 0;
         }
 
         buffer.m_Desc = desc;
@@ -490,7 +476,8 @@ nvrhi::HeapHandle RenderGraph::CreateHeap(size_t size)
 
 void RenderGraph::SubAllocateResource(RenderGraphInternal::TransientResourceBase* resource, uint64_t alignment)
 {
-    size_t size = resource->GetMemorySize();
+    const nvrhi::MemoryRequirements memReq = resource->GetMemoryRequirements();
+    size_t size = memReq.size;
 
     // 1. Try to find a free block in existing heaps
     for (HeapEntry& heapEntry : m_Heaps)
@@ -548,8 +535,8 @@ void RenderGraph::SubAllocateResource(RenderGraphInternal::TransientResourceBase
         }
     }
 
-    // 2. No fit found, create a new heap
-    size_t heapSize = std::max(size_t(1024 * 1024), size + alignment);
+    // 2. No fit found, create a new heap (at least 1 MB)
+    size_t heapSize = NextPow2(std::max(size_t(1024 * 1024), memReq.size));
     CreateHeap(heapSize);
 
     // Retry allocation now that we have a new heap
@@ -614,6 +601,7 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
     for (uint32_t idx : sortedIndices)
     {
         TransientResourceBase* resource = bIsBuffer ? (TransientResourceBase*)&m_Buffers[idx] : (TransientResourceBase*)&m_Textures[idx];
+        const nvrhi::MemoryRequirements memReq = resource->GetMemoryRequirements();
         
         // Trivial reuse: if already allocated and was an owner, skip logic
         if (resource->m_IsAllocated && resource->m_IsPhysicalOwner && resource->m_HeapIndex != UINT32_MAX)
@@ -627,8 +615,8 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
             if (bIsBuffer) m_Stats.m_NumAllocatedBuffers++;
             else m_Stats.m_NumAllocatedTextures++;
 
-            const size_t bufferMemory = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : 0;
-            const size_t textureMemory = !bIsBuffer ? m_Textures.at(idx).m_Desc.GetMemorySize() : 0;
+            const size_t bufferMemory = bIsBuffer ? memReq.size : 0;
+            const size_t textureMemory = !bIsBuffer ? memReq.size : 0;
 
             m_Stats.m_TotalBufferMemory += bufferMemory;
             m_Stats.m_TotalTextureMemory += textureMemory;
@@ -642,12 +630,14 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
             {
                 if (candidateIdx == idx) break;
                 TransientResourceBase* candidate = bIsBuffer ? (TransientResourceBase*)&m_Buffers[candidateIdx] : (TransientResourceBase*)&m_Textures[candidateIdx];
-                
                 if (!candidate->m_IsAllocated || !candidate->m_IsPhysicalOwner)
                     continue;
 
                 bool bCanAlias = resource->m_Lifetime.m_FirstPass > candidate->m_PhysicalLastPass;
-                bCanAlias &= resource->GetMemorySize() <= candidate->GetMemorySize();
+                if (bCanAlias)
+                {
+                    bCanAlias = memReq.size <= candidate->GetMemoryRequirements().size;
+                }
                 
                 if (bCanAlias)
                 {
@@ -687,8 +677,7 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
         
         if (!aliased)
         {
-            const uint64_t alignment = bIsBuffer ? Renderer::GetInstance()->m_RHI->GetBufferAlignment() : Renderer::GetInstance()->m_RHI->GetTextureAlignment();
-            SubAllocateResource(resource, alignment);
+            SubAllocateResource(resource, memReq.alignment);
             
             resource->m_IsAllocated = true;
             resource->m_IsPhysicalOwner = true;
@@ -702,8 +691,8 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
             else
                 m_Stats.m_NumAllocatedTextures++;
 
-            const size_t bufferMemory = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : 0;
-            const size_t textureMemory = !bIsBuffer ? m_Textures.at(idx).m_Desc.GetMemorySize() : 0;
+            const size_t bufferMemory = bIsBuffer ? memReq.size : 0;
+            const size_t textureMemory = !bIsBuffer ? memReq.size : 0;
 
             m_Stats.m_TotalBufferMemory += bufferMemory;
             m_Stats.m_TotalTextureMemory += textureMemory;
@@ -741,30 +730,6 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
 
             createAndBindResource(targetIdx, target->m_Heap, target->m_Offset);
         }
-    }
-
-    // Memory events for peak calculation
-    std::vector<std::pair<uint16_t, int64_t>> memoryEvents;
-    for (uint32_t idx : sortedIndices)
-    {
-        TransientResourceBase* resource = bIsBuffer ? (TransientResourceBase*)&m_Buffers[idx] : (TransientResourceBase*)&m_Textures[idx];
-        if (!resource->m_IsAllocated || resource->m_AliasedFromIndex != UINT32_MAX)
-            continue;
-        
-        const size_t size = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : m_Textures.at(idx).m_Desc.GetMemorySize();
-        memoryEvents.push_back({ resource->m_Lifetime.m_FirstPass, static_cast<int64_t>(size) });
-        memoryEvents.push_back({ static_cast<uint16_t>(resource->m_PhysicalLastPass + 1), -static_cast<int64_t>(size) });
-    }
-    
-    std::sort(memoryEvents.begin(), memoryEvents.end());
-    
-    size_t currentMemory = 0;
-    size_t& peakMemory = bIsBuffer ? m_Stats.m_PeakBufferMemory : m_Stats.m_PeakTextureMemory;
-    peakMemory = 0;
-    for (const std::pair<uint16_t, int64_t>& event : memoryEvents)
-    {
-        currentMemory += event.second;
-        peakMemory = std::max(peakMemory, currentMemory);
     }
 }
 
@@ -830,7 +795,6 @@ void RenderGraph::InvalidateTransientResources()
             texture.m_Heap = nullptr;
             texture.m_HeapIndex = UINT32_MAX;
             texture.m_IsAllocated = false;
-            texture.m_Desc.m_CachedMemorySize = 0;
         }
     }
 
@@ -846,7 +810,6 @@ void RenderGraph::InvalidateTransientResources()
             buffer.m_Heap = nullptr;
             buffer.m_HeapIndex = UINT32_MAX;
             buffer.m_IsAllocated = false;
-            buffer.m_Desc.m_CachedMemorySize = 0;
         }
     }
 }
@@ -870,13 +833,11 @@ void RenderGraph::RenderDebugUI()
                    m_Stats.m_NumAllocatedBuffers, 
                    m_Stats.m_NumAliasedBuffers);
         
-        ImGui::Text("Texture Memory: %.2f MB (Peak: %.2f MB)", 
-                   m_Stats.m_TotalTextureMemory / (1024.0 * 1024.0),
-                   m_Stats.m_PeakTextureMemory / (1024.0 * 1024.0));
+        ImGui::Text("Texture Memory: %.2f MB", 
+                   m_Stats.m_TotalTextureMemory / (1024.0 * 1024.0));
         
-        ImGui::Text("Buffer Memory: %.2f MB (Peak: %.2f MB)", 
-                   m_Stats.m_TotalBufferMemory / (1024.0 * 1024.0),
-                   m_Stats.m_PeakBufferMemory / (1024.0 * 1024.0));
+        ImGui::Text("Buffer Memory: %.2f MB", 
+                   m_Stats.m_TotalBufferMemory / (1024.0 * 1024.0));
         
         ImGui::Separator();
         
@@ -943,7 +904,7 @@ void RenderGraph::RenderDebugUI()
                         ImGui::BeginTooltip();
                         ImGui::Text("Resource: %s", name.c_str());
                         ImGui::Text("Type: %s", typeName);
-                        ImGui::Text("Size: %.2f MB", resource.m_Desc.GetMemorySize() / (1024.0 * 1024.0));
+                        ImGui::Text("Size: %.2f MB", resource.m_Desc.GetMemoryRequirements().size / (1024.0 * 1024.0));
                         ImGui::Text("Lifetime: Pass %u to %u", resource.m_Lifetime.m_FirstPass, resource.m_Lifetime.m_LastPass);
                         
                         if (resource.m_Lifetime.m_FirstPass > 0 && resource.m_Lifetime.m_FirstPass <= m_PassNames.size())
@@ -1037,7 +998,7 @@ void RenderGraph::RenderDebugUI()
                         ImGui::Text("N/A");
                     
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2f", texture.m_Desc.GetMemorySize() / (1024.0 * 1024.0));
+                    ImGui::Text("%.2f", texture.m_Desc.GetMemoryRequirements().size / (1024.0 * 1024.0));
 
                     ImGui::TableNextColumn();
                     ImGui::Text("%d", texture.m_HeapIndex != UINT32_MAX ? (int)texture.m_HeapIndex : -1);
@@ -1059,12 +1020,14 @@ void RenderGraph::RenderDebugUI()
         
         if (ImGui::TreeNode("Buffers"))
         {
-            if (ImGui::BeginTable("Buffers", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            if (ImGui::BeginTable("Buffers", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
             {
                 ImGui::TableSetupColumn("Name");
-                ImGui::TableSetupColumn("Size (MB)");
+                ImGui::TableSetupColumn("Num Elements");
+                ImGui::TableSetupColumn("Element Size");
                 ImGui::TableSetupColumn("First Pass");
                 ImGui::TableSetupColumn("Last Pass");
+                ImGui::TableSetupColumn("Memory (MB)");
                 ImGui::TableSetupColumn("Heap Idx");
                 ImGui::TableSetupColumn("Offset");
                 ImGui::TableSetupColumn("Aliased From");
@@ -1079,7 +1042,13 @@ void RenderGraph::RenderDebugUI()
                     ImGui::Text("%s", buffer.m_Desc.m_NvrhiDesc.debugName.c_str());
                     
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2f", buffer.m_Desc.GetMemorySize() / (1024.0 * 1024.0));
+                    if (buffer.m_Desc.m_NvrhiDesc.structStride > 0)
+                        ImGui::Text("%u", buffer.m_Desc.m_NvrhiDesc.byteSize / buffer.m_Desc.m_NvrhiDesc.structStride);
+                    else
+                        ImGui::Text("N/A");
+                    
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%u", buffer.m_Desc.m_NvrhiDesc.structStride);
                     
                     ImGui::TableNextColumn();
                     if (buffer.m_Lifetime.IsValid())
@@ -1092,6 +1061,9 @@ void RenderGraph::RenderDebugUI()
                         ImGui::Text("%u", buffer.m_Lifetime.m_LastPass);
                     else
                         ImGui::Text("N/A");
+                    
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2f", buffer.m_Desc.GetMemoryRequirements().size / (1024.0 * 1024.0));
 
                     ImGui::TableNextColumn();
                     ImGui::Text("%d", buffer.m_HeapIndex != UINT32_MAX ? (int)buffer.m_HeapIndex : -1);
