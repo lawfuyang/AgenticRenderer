@@ -87,7 +87,6 @@ struct Renderer
 
     // Command List Management
     nvrhi::CommandListHandle AcquireCommandList(std::string_view markerName, bool bImmediatelyQueue = true);
-    void QueueCommandList(nvrhi::CommandListHandle commandList);
     void ExecutePendingCommandLists();
 
     // Swapchain / Backbuffer

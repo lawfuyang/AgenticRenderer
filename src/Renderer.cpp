@@ -1400,6 +1400,7 @@ void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::Command
 
 nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerName, bool bImmediatelyQueue)
 {
+    PROFILE_FUNCTION();
     SINGLE_THREAD_GUARD();
 
     nvrhi::CommandListHandle handle;
@@ -1421,16 +1422,10 @@ nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerNam
 
     if (bImmediatelyQueue)
     {
-        QueueCommandList(handle);
+        m_PendingCommandLists.push_back(handle);
     }
 
     return handle;
-}
-
-void Renderer::QueueCommandList(nvrhi::CommandListHandle commandList)
-{
-    SINGLE_THREAD_GUARD();
-    m_PendingCommandLists.push_back(commandList);
 }
 
 void Renderer::ExecutePendingCommandLists()

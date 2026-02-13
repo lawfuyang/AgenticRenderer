@@ -80,6 +80,8 @@ void RenderGraph::Shutdown()
 
 void RenderGraph::Reset()
 {
+    PROFILE_FUNCTION();
+    
     const uint32_t kMaxTransientResourceLifetimeFrames = 3;
 
     m_FrameIndex++;
@@ -99,6 +101,7 @@ void RenderGraph::Reset()
         {
             SDL_Log("[RenderGraph] Freeing texture '%s' due to inactivity", texture.m_Desc.m_NvrhiDesc.debugName.c_str());
             texture.m_PhysicalTexture = nullptr;
+            texture.m_Heap = nullptr;
             texture.m_IsAllocated = false;
             texture.m_Desc.m_CachedMemorySize = 0;
         }
@@ -114,6 +117,7 @@ void RenderGraph::Reset()
         {
             SDL_Log("[RenderGraph] Freeing buffer '%s' due to inactivity", buffer.m_Desc.m_NvrhiDesc.debugName.c_str());
             buffer.m_PhysicalBuffer = nullptr;
+            buffer.m_Heap = nullptr;
             buffer.m_IsAllocated = false;
             buffer.m_Desc.m_CachedMemorySize = 0;
         }
@@ -341,10 +345,63 @@ void RenderGraph::Compile()
 {
     PROFILE_FUNCTION();
 
+    nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
+
     ComputeLifetimes();
-    AllocateTextures();
-    AllocateBuffers();
-    
+
+    m_Stats.m_NumTextures = m_Stats.m_NumBuffers = 0;
+    for (const TransientTexture& tex : m_Textures) if (tex.m_IsDeclaredThisFrame) m_Stats.m_NumTextures++;
+    for (const TransientBuffer& buf : m_Buffers) if (buf.m_IsDeclaredThisFrame) m_Stats.m_NumBuffers++;
+
+    AllocateResourcesInternal(
+        false,  // bIsBuffer
+        [this, device](uint32_t idx)
+        {
+            TransientTexture& texture = m_Textures[idx];
+            nvrhi::HeapHandle heap = GetOrCreateHeap(texture.m_Desc.GetMemorySize(), texture.m_Desc.m_NvrhiDesc.debugName);
+
+            if (texture.m_PhysicalTexture && texture.m_Heap == heap)
+            {
+                // Already bound correctly to the right heap
+                texture.m_IsPhysicalOwner = true;
+                return;
+            }
+
+            PROFILE_SCOPED("CreateTextureAndBindMemory");
+
+            texture.m_Desc.m_NvrhiDesc.isVirtual = true;
+            texture.m_PhysicalTexture = device->createTexture(texture.m_Desc.m_NvrhiDesc);
+            device->bindTextureMemory(texture.m_PhysicalTexture, heap, 0);
+            texture.m_Heap = heap;
+            texture.m_IsPhysicalOwner = true;
+        }
+    );
+
+    AllocateResourcesInternal(
+        true,  // bIsBuffer
+        [this, device](uint32_t idx)
+        {
+            TransientBuffer& buffer = m_Buffers[idx];
+            size_t size = buffer.m_Desc.GetMemorySize();
+            nvrhi::HeapHandle heap = GetOrCreateHeap(size, buffer.m_Desc.m_NvrhiDesc.debugName);
+
+            if (buffer.m_PhysicalBuffer && buffer.m_Heap == heap)
+            {
+                // Already bound correctly to the right heap
+                buffer.m_IsPhysicalOwner = true;
+                return;
+            }
+
+            PROFILE_SCOPED("CreateBufferAndBindMemory");
+
+            buffer.m_Desc.m_NvrhiDesc.isVirtual = true;
+            buffer.m_PhysicalBuffer = device->createBuffer(buffer.m_Desc.m_NvrhiDesc);
+            device->bindBufferMemory(buffer.m_PhysicalBuffer, heap, 0);
+            buffer.m_Heap = heap;
+            buffer.m_IsPhysicalOwner = true;
+        }
+    );
+
     m_IsCompiled = true;
 }
 
@@ -398,49 +455,6 @@ nvrhi::HeapHandle RenderGraph::GetOrCreateHeap(size_t size, const std::string& d
     return entry.m_Heap;
 }
 
-void RenderGraph::AllocateTextures()
-{
-    nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
-    
-    m_Stats.m_NumTextures = 0;
-    for (const TransientTexture& tex : m_Textures) if (tex.m_IsDeclaredThisFrame) m_Stats.m_NumTextures++;
-    
-    AllocateResourcesInternal(
-        false,  // bIsBuffer
-        [this, device](uint32_t idx)
-        {
-            TransientTexture& texture = m_Textures[idx];
-            texture.m_Desc.m_NvrhiDesc.isVirtual = true;
-            texture.m_PhysicalTexture = device->createTexture(texture.m_Desc.m_NvrhiDesc);
-            
-            nvrhi::HeapHandle heap = GetOrCreateHeap(texture.m_Desc.GetMemorySize(), texture.m_Desc.m_NvrhiDesc.debugName);
-            device->bindTextureMemory(texture.m_PhysicalTexture, heap, 0);
-        }
-    );
-}
-
-void RenderGraph::AllocateBuffers()
-{
-    nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
-
-    m_Stats.m_NumBuffers = 0;
-    for (const TransientBuffer& buf : m_Buffers) if (buf.m_IsDeclaredThisFrame) m_Stats.m_NumBuffers++;
-
-    AllocateResourcesInternal(
-        true,  // bIsBuffer
-        [this, device](uint32_t idx)
-        {
-            TransientBuffer& buffer = m_Buffers[idx];
-            buffer.m_Desc.m_NvrhiDesc.isVirtual = true;
-            buffer.m_PhysicalBuffer = device->createBuffer(buffer.m_Desc.m_NvrhiDesc);
-
-            nvrhi::MemoryRequirements memReq = device->getBufferMemoryRequirements(buffer.m_PhysicalBuffer);
-            nvrhi::HeapHandle heap = GetOrCreateHeap(memReq.size, buffer.m_Desc.m_NvrhiDesc.debugName);
-            device->bindBufferMemory(buffer.m_PhysicalBuffer, heap, 0);
-        }
-    );
-}
-
 // ============================================================================
 // RenderGraph - Resource Aliasing & Allocation
 // ============================================================================
@@ -470,6 +484,29 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
     {
         TransientResourceBase* resource = bIsBuffer ? (TransientResourceBase*)&m_Buffers[idx] : (TransientResourceBase*)&m_Textures[idx];
         
+        // Trivial reuse: if already allocated and was an owner, skip heavy logic
+        if (resource->m_IsAllocated && resource->m_IsPhysicalOwner && resource->m_Heap)
+        {
+            auto itHeap = std::find_if(m_Heaps.begin(), m_Heaps.end(), [&](const HeapEntry& entry) {
+                return entry.m_Heap == resource->m_Heap;
+            });
+
+            if (itHeap != m_Heaps.end())
+            {
+                itHeap->m_LastFrameUsed = m_FrameIndex;
+                
+                if (bIsBuffer) m_Stats.m_NumAllocatedBuffers++;
+                else m_Stats.m_NumAllocatedTextures++;
+
+                const size_t bufferMemory = bIsBuffer ? m_Buffers.at(idx).m_Desc.GetMemorySize() : 0;
+                const size_t textureMemory = !bIsBuffer ? m_Textures.at(idx).m_Desc.GetMemorySize() : 0;
+
+                m_Stats.m_TotalBufferMemory += bufferMemory;
+                m_Stats.m_TotalTextureMemory += textureMemory;
+                continue;
+            }
+        }
+
         bool aliased = false;
         if (m_AliasingEnabled)
         {
@@ -499,8 +536,10 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
                         m_Textures[idx].m_PhysicalTexture = m_Textures[candidateIdx].m_PhysicalTexture;
                         m_Stats.m_NumAliasedTextures++;
                     }
+                    resource->m_Heap = candidate->m_Heap;
                     resource->m_AliasedFromIndex = candidateIdx;
                     resource->m_IsAllocated = true;
+                    resource->m_IsPhysicalOwner = false;
                     aliased = true;
                     break;
                 }

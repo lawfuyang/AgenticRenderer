@@ -96,8 +96,11 @@ struct TransientResourceBase
     uint64_t m_LastFrameUsed = 0;
     bool m_IsAllocated = false;
     bool m_IsDeclaredThisFrame = false;
+    bool m_IsPhysicalOwner = false;
+    nvrhi::HeapHandle m_Heap;
 
     virtual size_t GetMemorySize() const = 0;
+    virtual ~TransientResourceBase() = default;
 };
 
 struct TransientTexture : public TransientResourceBase
@@ -179,10 +182,6 @@ public:
 private:
     // Lifetime computation
     void ComputeLifetimes();
-    
-    // Memory allocation
-    void AllocateTextures();
-    void AllocateBuffers();
     
     // Generic resource allocation helper (avoids code duplication)
     void AllocateResourcesInternal(bool bIsBuffer, std::function<void(uint32_t)> createAndBindResource);
