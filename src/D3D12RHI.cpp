@@ -334,9 +334,6 @@ public:
     }
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
-
-    uint64_t GetBufferAlignment() const override { return m_bTightAlignmentSupported ? D3D12_TIGHT_ALIGNMENT_MIN_PLACED_RESOURCE_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
-    uint64_t GetTextureAlignment() const override { return m_bTightAlignmentSupported ? D3D12_TIGHT_ALIGNMENT_MIN_PLACED_RESOURCE_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT; }
 };
 
 std::unique_ptr<GraphicRHI> CreateD3D12GraphicRHI()
