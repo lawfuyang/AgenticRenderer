@@ -7,20 +7,22 @@ A 3D rendering engine built in C++20, featuring modern graphics techniques and s
 ### Core Rendering Pipeline
 - **Deferred Rendering**: Multi-pass architecture with G-Buffer containing albedo, normals, ORM (occlusion/roughness/metallic), emissive, and motion vector channels
 - **Physically-Based Rendering (PBR)**: Full PBR material support with metallic/roughness workflow, including transmission and thickness
+- **Transparency**: Forward rendering for transparent objects with transmission, IOR & Attenuation
 - **HDR Rendering**: High dynamic range pipeline with histogram-based automatic exposure adaptation (EV100) and tone mapping
 - **Ray-Traced Shadows**: Hardware-accelerated ray tracing for directional light shadows
 - **Bloom**: Multi-stage bloom post-processing with configurable intensity and knee parameters
 
-### Advanced Rendering Techniques
+### Rendering Techniques
 - **Meshlet Rendering**: GPU-driven rendering using meshlets for efficient geometry processing
 - **Bindless Textures**: Descriptor indexing for unlimited texture access without binding changes
 - **Hierarchical Z-Buffer (HZB)**: Multi-level depth buffer for efficient occlusion culling using AMD Single Pass Downsampler (SPD)
-- **GPU Culling**: Compute shader-based frustum, cone, and occlusion culling
+- **GPU Culling**: Compute shader-based frustum, cone, and two-phase occlusion culling
 - **Multi-threaded Rendering**: Parallel command list recording and task scheduling
-- **Image-Based Lighting (IBL)**: Environment lighting with irradiance and radiance cubemaps
+- **Image-Based Lighting (IBL)**: Environment lighting with irradiance and radiance cubemaps, including BRDF LUT
 
 ### Scene Management
 - **glTF 2.0 Support**: Complete scene loading with meshes, materials, textures, animations, lights, and cameras
+- **Animation Support**: Static animations with step/linear interpolation
 - **Scene Caching**: Binary scene cache for fast loading and reduced memory usage
 - **Dynamic Lighting**: Directional light support with PBR lighting models and attenuation
 - **Mesh Optimization**: Vertex quantization and mesh optimization using meshoptimizer
@@ -32,6 +34,7 @@ A 3D rendering engine built in C++20, featuring modern graphics techniques and s
 
 ### Developer Experience
 - **ImGui UI**: Real-time debugging interface with performance metrics, render settings, and visualization options
+- **Debug Visualization**: Multiple debug modes for inspecting G-Buffer contents, lighting components, and rendering stages
 - **Cross-API**: Windows support with Vulkan and Direct3D 12 backends
 - **Modern C++**: C++20 features with clean, maintainable architecture
 - **Shader Hot Reloading**: Runtime shader recompilation and reloading
@@ -52,6 +55,7 @@ Built on top of NVRHI (NVIDIA Rendering Hardware Interface) providing:
 - Unified API for Vulkan and Direct3D 12
 - Automatic resource state management
 - Cross-API shader compilation (SPIR-V/DXIL)
+- Render Graph system for automatic transient resource management
 
 ## Dependencies
 
@@ -98,6 +102,8 @@ Shaders are written in HLSL and compiled offline to both SPIR-V (Vulkan) and DXI
 
 Key shader features:
 - **Shader Model 6.8**: Latest HLSL features including mesh shaders and ray tracing
+- **Cross-compilation**: Automatic compilation to both SPIR-V and DXIL formats
+- **Offline Compilation**: Shaders compiled at build time for faster loading
 - **Bindless Resources**: Descriptor indexing for textures and buffers
 - **Ray Tracing**: Inline ray tracing for shadows
 - **Mesh Shaders**: GPU-driven geometry processing
