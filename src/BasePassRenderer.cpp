@@ -77,7 +77,10 @@ protected:
         Renderer* renderer = Renderer::GetInstance();
         nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear All Counters" };
         commandList->clearBufferUInt(handles.visibleCount, 0);
-        commandList->clearBufferUInt(handles.occludedCount, 0);
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            commandList->clearBufferUInt(handles.occludedCount, 0);
+        }
         if (renderer->m_UseMeshletRendering)
         {
             commandList->clearBufferUInt(handles.meshletJobCount, 0);
@@ -161,10 +164,10 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
         nvrhi::BindingSetItem::StructuredBuffer_UAV(1, handles.visibleCount),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(2, handles.occludedIndices ? handles.occludedIndices : CommonResources::GetInstance().DummyUAVBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_UAV(3, handles.occludedCount ? handles.occludedCount : CommonResources::GetInstance().DummyUAVBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? handles.occludedIndirect : CommonResources::GetInstance().DummyUAVBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, handles.meshletJob),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, handles.meshletJobCount),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, handles.meshletIndirect),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, (args.m_CullingPhase == 0 && handles.occludedIndirect) ? handles.occludedIndirect : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, handles.meshletJob ? handles.meshletJob : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, handles.meshletJobCount ? handles.meshletJobCount : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, handles.meshletIndirect ? handles.meshletIndirect : CommonResources::GetInstance().DummyUAVBuffer),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
     };
 
@@ -300,7 +303,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         nvrhi::BindingSetItem::StructuredBuffer_SRV(3, renderer->m_Scene.m_MeshletBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(4, renderer->m_Scene.m_MeshletVerticesBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_MeshletTrianglesBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, handles.meshletJob),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, handles.meshletJob ? handles.meshletJob : CommonResources::GetInstance().DummyUAVBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(7, renderer->m_Scene.m_MeshDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
@@ -474,12 +477,18 @@ public:
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        }
+        if (renderer->m_UseMeshletRendering)
+        {
+            renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        }
 
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
@@ -507,12 +516,12 @@ void OpaquePhase1Renderer::Render(nvrhi::CommandListHandle commandList, const Re
     BasePassResources& res = renderer->m_BasePassResources;
     handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
     handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-    handles.occludedCount = renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndices = renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndirect = renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write);
-    handles.meshletJob = renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write);
-    handles.meshletJobCount = renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write);
-    handles.meshletIndirect = renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write);
+    handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
     handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
     handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
@@ -542,11 +551,18 @@ class HZBGenerator : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        renderGraph.ReadTexture(g_RG_DepthTexture);
+        Renderer* renderer = Renderer::GetInstance();
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.ReadTexture(g_RG_DepthTexture);
+        }
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
+        Renderer* renderer = Renderer::GetInstance();
+        if (!renderer->m_EnableOcclusionCulling) return;
+
         ResourceHandles handles;
         handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
         GenerateHZBMips(commandList, handles);
@@ -562,13 +578,19 @@ public:
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
 
-        renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
+        }
         
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        if (renderer->m_UseMeshletRendering)
+        {
+            renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        }
 
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
@@ -598,10 +620,10 @@ void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList, const Re
     BasePassResources& res = renderer->m_BasePassResources;
     handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
     handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndirect = renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read);
-    handles.meshletJob = renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write);
-    handles.meshletJobCount = renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write);
-    handles.meshletIndirect = renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write);
+    handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read) : nullptr;
+    handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
     handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
     handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
@@ -634,12 +656,18 @@ public:
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        }
+        if (renderer->m_UseMeshletRendering)
+        {
+            renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        }
 
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
@@ -667,12 +695,12 @@ void MaskedPassRenderer::Render(nvrhi::CommandListHandle commandList, const Rend
     BasePassResources& res = renderer->m_BasePassResources;
     handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
     handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-    handles.occludedCount = renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndices = renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndirect = renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write);
-    handles.meshletJob =  renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write);
-    handles.meshletJobCount = renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write);
-    handles.meshletIndirect = renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write);
+    handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJob =  renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
     handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
     handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
@@ -702,11 +730,18 @@ class HZBGeneratorPhase2 : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        renderGraph.ReadTexture(g_RG_DepthTexture);
+        Renderer* renderer = Renderer::GetInstance();
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.ReadTexture(g_RG_DepthTexture);
+        }
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
+        Renderer* renderer = Renderer::GetInstance();
+        if (!renderer->m_EnableOcclusionCulling) return;
+
         ResourceHandles handles;
         handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
         GenerateHZBMips(commandList, handles);
@@ -753,12 +788,18 @@ public:
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
-        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
-        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        if (renderer->m_UseMeshletRendering)
+        {
+            renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+            renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        }
+        if (renderer->m_EnableOcclusionCulling)
+        {
+            renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+            renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        }
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;
@@ -775,12 +816,12 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList, const
     ResourceHandles handles;
     handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
     handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-    handles.occludedCount = renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndices = renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write);
-    handles.occludedIndirect = renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write);
-    handles.meshletJob = renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write);
-    handles.meshletJobCount = renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write);
-    handles.meshletIndirect = renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write);
+    handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
+    handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
     handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
     handles.hdr = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);

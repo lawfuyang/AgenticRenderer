@@ -31,6 +31,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
         m_VisibleCountBuffer = rg.DeclareBuffer(desc, m_VisibleCountBuffer);
     }
 
+    if (renderer->m_EnableOcclusionCulling)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(sizeof(uint32_t))
@@ -39,9 +40,11 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("OccludedCount");
+            
         m_OccludedCountBuffer = rg.DeclareBuffer(desc, m_OccludedCountBuffer);
     }
 
+    if (renderer->m_EnableOcclusionCulling)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(sizeof(DispatchIndirectArguments))
@@ -51,9 +54,12 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("OccludedIndirectBuffer");
+
         m_OccludedIndirectBuffer = rg.DeclareBuffer(desc, m_OccludedIndirectBuffer);
+
     }
 
+    if (renderer->m_UseMeshletRendering)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(sizeof(uint32_t))
@@ -63,6 +69,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("MeshletJobCount");
+
         m_MeshletJobCountBuffer = rg.DeclareBuffer(desc, m_MeshletJobCountBuffer);
     }
 
@@ -78,6 +85,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
         m_VisibleIndirectBuffer = rg.DeclareBuffer(desc, m_VisibleIndirectBuffer);
     }
 
+    if (renderer->m_EnableOcclusionCulling)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(numPrimitives * sizeof(uint32_t))
@@ -86,9 +94,11 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("OccludedIndices");
+
         m_OccludedIndicesBuffer = rg.DeclareBuffer(desc, m_OccludedIndicesBuffer);
     }
 
+    if (renderer->m_UseMeshletRendering)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(numPrimitives * sizeof(DispatchIndirectArguments))
@@ -98,9 +108,11 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("MeshletIndirectBuffer");
+            
         m_MeshletIndirectBuffer = rg.DeclareBuffer(desc, m_MeshletIndirectBuffer);
     }
 
+    if (renderer->m_UseMeshletRendering)
     {
         RGBufferDesc desc;
         desc.m_NvrhiDesc.setByteSize(numPrimitives * sizeof(MeshletJob))
@@ -109,6 +121,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
             .setDebugName("MeshletJobBuffer");
+            
         m_MeshletJobBuffer = rg.DeclareBuffer(desc, m_MeshletJobBuffer);
     }
 }

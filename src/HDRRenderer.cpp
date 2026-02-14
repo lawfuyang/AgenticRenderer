@@ -20,6 +20,7 @@ public:
         Renderer* renderer = Renderer::GetInstance();
         
         // Luminance Histogram
+        if (renderer->m_EnableAutoExposure)
         {
             RGBufferDesc desc;
             desc.m_NvrhiDesc.structStride = sizeof(uint32_t);
@@ -41,10 +42,16 @@ public:
             g_RG_ExposureBuffer = renderGraph.DeclareBuffer(desc, g_RG_ExposureBuffer);
         }
 
-        renderGraph.WriteBuffer(g_RG_LuminanceHistogram);
+        if (renderer->m_EnableAutoExposure)
+        {
+            renderGraph.WriteBuffer(g_RG_LuminanceHistogram);
+        }
         renderGraph.WriteBuffer(g_RG_ExposureBuffer);
         renderGraph.ReadTexture(g_RG_HDRColor);
-        renderGraph.ReadTexture(g_RG_BloomUpPyramid);
+        if (renderer->m_EnableBloom)
+        {
+            renderGraph.ReadTexture(g_RG_BloomUpPyramid);
+        }
     }
 
     
@@ -54,12 +61,13 @@ public:
 
         nvrhi::utils::ScopedMarker marker(commandList, "HDR Post-Processing");
 
-        nvrhi::BufferHandle luminanceHistogram = renderGraph.GetBuffer(g_RG_LuminanceHistogram, RGResourceAccessMode::Write);
+        nvrhi::BufferHandle luminanceHistogram = renderer->m_EnableAutoExposure ? renderGraph.GetBuffer(g_RG_LuminanceHistogram, RGResourceAccessMode::Write) : nullptr;
         nvrhi::BufferHandle exposureBuffer = renderGraph.GetBuffer(g_RG_ExposureBuffer, RGResourceAccessMode::Write);
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle bloomUpPyramid = renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle bloomUpPyramid = renderer->m_EnableBloom ? renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read) : nullptr;
 
         // 1. Histogram Pass
+        if (renderer->m_EnableAutoExposure)
         {
             nvrhi::utils::ScopedMarker histMarker(commandList, "Luminance Histogram");
             
@@ -76,7 +84,7 @@ public:
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(HistogramConstants)),
                 nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, luminanceHistogram)
+                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, luminanceHistogram ? luminanceHistogram : CommonResources::GetInstance().DummyUAVBuffer)
             };
 
             const uint32_t dispatchX = DivideAndRoundUp(consts.m_Width, 16);
@@ -114,7 +122,7 @@ public:
                 bset.bindings = {
                     nvrhi::BindingSetItem::PushConstants(0, sizeof(AdaptationConstants)),
                     nvrhi::BindingSetItem::StructuredBuffer_UAV(0, exposureBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, luminanceHistogram)
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, luminanceHistogram ? luminanceHistogram : CommonResources::GetInstance().DummyUAVBuffer)
                 };
 
                 Renderer::RenderPassParams params{
@@ -151,7 +159,7 @@ public:
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(TonemapConstants)),
                 nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
                 nvrhi::BindingSetItem::StructuredBuffer_SRV(1, exposureBuffer),
-                nvrhi::BindingSetItem::Texture_SRV(2, bloomUpPyramid),
+                nvrhi::BindingSetItem::Texture_SRV(2, bloomUpPyramid ? bloomUpPyramid : CommonResources::GetInstance().DefaultTextureBlack),
                 nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().LinearClamp)
             };
 
