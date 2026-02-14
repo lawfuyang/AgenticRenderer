@@ -38,11 +38,6 @@ public:
         nvrhi::TextureHandle hdr;
         nvrhi::TextureHandle opaque;
     };
-
-    void Setup(RenderGraph& renderGraph) override
-    {
-        Renderer::GetInstance()->m_BasePassResources.DeclareResources(renderGraph);
-    }
     
     virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override = 0;
 
@@ -473,9 +468,9 @@ class OpaquePhase1Renderer : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
+        res.DeclareResources(renderGraph);
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
@@ -547,7 +542,6 @@ class HZBGenerator : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
         renderGraph.ReadTexture(g_RG_DepthTexture);
     }
 
@@ -565,7 +559,6 @@ class OpaquePhase2Renderer : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
 
@@ -636,7 +629,6 @@ class MaskedPassRenderer : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
 
@@ -710,7 +702,6 @@ class HZBGeneratorPhase2 : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
         renderGraph.ReadTexture(g_RG_DepthTexture);
     }
 
@@ -728,8 +719,6 @@ class TransparentPassRenderer : public BasePassRendererBase
 public:
     void Setup(RenderGraph& renderGraph) override
     {
-        BasePassRendererBase::Setup(renderGraph);
-
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;

@@ -179,6 +179,8 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
     {
         TransientTexture& texture = m_Textures[existing.m_Index];
         
+        SDL_assert(!texture.m_IsDeclaredThisFrame && "Texture already declared this frame! Only one pass should declare a resource.");
+
         if (texture.m_Hash != hash)
         {
             SDL_Log("[RenderGraph] Texture desc mismatch for handle %u, freeing old resource", existing.m_Index);
@@ -230,6 +232,8 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
     {
         TransientBuffer& buffer = m_Buffers[existing.m_Index];
         
+        SDL_assert(!buffer.m_IsDeclaredThisFrame && "Buffer already declared this frame! Only one pass should declare a resource.");
+
         if (buffer.m_Hash != hash)
         {
             SDL_Log("[RenderGraph] Buffer desc mismatch for handle %u, freeing old resource", existing.m_Index);
