@@ -158,9 +158,12 @@ public:
     void Compile();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)
-    nvrhi::TextureHandle GetTexture(RGTextureHandle handle) const;
-    nvrhi::BufferHandle GetBuffer(RGBufferHandle handle) const;
+    nvrhi::TextureHandle GetTexture(RGTextureHandle handle, RGResourceAccessMode access) const;
+    nvrhi::BufferHandle GetBuffer(RGBufferHandle handle, RGResourceAccessMode access) const;
     
+    // Set the current active pass for validation (used during Render phase)
+    void SetActivePass(uint16_t passIndex);
+
     // Insert aliasing barriers for a given pass into the command list.
     // Must be called at the start of each pass's command list recording, before any GPU work.
     void InsertAliasBarriers(uint16_t passIndex, nvrhi::ICommandList* commandList) const;
@@ -222,6 +225,17 @@ private:
     std::vector<std::vector<AliasBarrierEntry>> m_PerPassAliasBarriers; // indexed by pass index
     
 private:
+    uint16_t GetActivePassIndex() const;
+
+    struct PassAccess
+    {
+        std::unordered_set<uint32_t> m_ReadTextures;
+        std::unordered_set<uint32_t> m_WriteTextures;
+        std::unordered_set<uint32_t> m_ReadBuffers;
+        std::unordered_set<uint32_t> m_WriteBuffers;
+    };
+    std::vector<PassAccess> m_PassAccesses;
+
     std::vector<RenderGraphInternal::TransientTexture> m_Textures;
     std::vector<RenderGraphInternal::TransientBuffer> m_Buffers;
     std::vector<const char*> m_PassNames;

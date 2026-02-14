@@ -6,6 +6,8 @@
 
 using namespace RenderGraphInternal;
 
+static thread_local uint16_t t_ActivePassIndex = 0;
+
 template <class T>
 inline void hash_combine(std::size_t& seed, const T& v)
 {
@@ -89,6 +91,7 @@ void RenderGraph::Reset()
     m_IsCompiled = false;
     m_Stats = Stats{};
     m_PassNames.clear();
+    m_PassAccesses.clear();
     m_PerPassAliasBarriers.clear();
 
     // Mark all resources as not declared this frame and reset lifetimes
@@ -153,6 +156,19 @@ void RenderGraph::BeginPass(const char* name)
     SDL_assert(name);
     m_CurrentPassIndex++;
     m_PassNames.push_back(name);
+    m_PassAccesses.push_back({}); // New entry for this pass (1-based index)
+}
+
+void RenderGraph::SetActivePass(uint16_t passIndex)
+{
+    t_ActivePassIndex = passIndex;
+}
+
+uint16_t RenderGraph::GetActivePassIndex() const
+{
+    // If t_ActivePassIndex is set, we use it (during Render phase).
+    // Otherwise, we use m_CurrentPassIndex (during Setup phase).
+    return (t_ActivePassIndex != 0) ? t_ActivePassIndex : m_CurrentPassIndex;
 }
 
 RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTextureHandle existing)
@@ -276,6 +292,7 @@ void RenderGraph::ReadTexture(RGTextureHandle handle)
         return;
     }
 
+    m_PassAccesses[m_CurrentPassIndex - 1].m_ReadTextures.insert(handle.m_Index);
     UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
 }
 
@@ -295,6 +312,7 @@ void RenderGraph::WriteTexture(RGTextureHandle handle)
         return;
     }
 
+    m_PassAccesses[m_CurrentPassIndex - 1].m_WriteTextures.insert(handle.m_Index);
     UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
 }
 
@@ -314,6 +332,7 @@ void RenderGraph::ReadBuffer(RGBufferHandle handle)
         return;
     }
 
+    m_PassAccesses[m_CurrentPassIndex - 1].m_ReadBuffers.insert(handle.m_Index);
     UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
 }
 
@@ -333,6 +352,7 @@ void RenderGraph::WriteBuffer(RGBufferHandle handle)
         return;
     }
 
+    m_PassAccesses[m_CurrentPassIndex - 1].m_WriteBuffers.insert(handle.m_Index);
     UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
 }
 
@@ -790,7 +810,7 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
 // RenderGraph - Resource Retrieval
 // ============================================================================
 
-nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle) const
+nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle, RGResourceAccessMode access) const
 {
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
@@ -805,13 +825,39 @@ nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle) const
         SDL_assert(false && "Texture not declared this frame");
         return nullptr;
     }
+
+    // Validate that the current pass declared this access
+    uint16_t activePassIdx = GetActivePassIndex();
+    if (activePassIdx > 0 && activePassIdx <= m_PassAccesses.size())
+    {
+        const PassAccess& passAccess = m_PassAccesses[activePassIdx - 1];
+        bool found = false;
+        
+        if (access == RGResourceAccessMode::Read)
+        {
+            found = passAccess.m_ReadTextures.count(handle.m_Index) > 0;
+        }
+        else if (access == RGResourceAccessMode::Write)
+        {
+            found = passAccess.m_WriteTextures.count(handle.m_Index) > 0;
+        }
+
+        if (!found)
+        {
+            SDL_Log("[RenderGraph] ERROR: Pass '%s' attempted to %s texture '%s' without declaring dependency in Setup()",
+                m_PassNames[activePassIdx - 1], (access == RGResourceAccessMode::Read ? "READ" : "WRITE"),
+                texture.m_Desc.m_NvrhiDesc.debugName.c_str());
+            SDL_assert(false && "Resource access dependency not declared");
+        }
+    }
+
     SDL_assert(texture.m_PhysicalTexture);
     SDL_assert(texture.m_IsAllocated && "Texture not allocated");
     
     return texture.m_PhysicalTexture;
 }
 
-nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle) const
+nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAccessMode access) const
 {
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {
@@ -826,6 +872,32 @@ nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle) const
         SDL_assert(false && "Buffer not declared this frame");
         return nullptr;
     }
+
+    // Validate that the current pass declared this access
+    uint16_t activePassIdx = GetActivePassIndex();
+    if (activePassIdx > 0 && activePassIdx <= m_PassAccesses.size())
+    {
+        const PassAccess& passAccess = m_PassAccesses[activePassIdx - 1];
+        bool found = false;
+
+        if (access == RGResourceAccessMode::Read)
+        {
+            found = passAccess.m_ReadBuffers.count(handle.m_Index) > 0;
+        }
+        else if (access == RGResourceAccessMode::Write)
+        {
+            found = passAccess.m_WriteBuffers.count(handle.m_Index) > 0;
+        }
+
+        if (!found)
+        {
+            SDL_Log("[RenderGraph] ERROR: Pass '%s' (index %u) attempted to %s buffer '%s' without declaring dependency in Setup()",
+                m_PassNames[activePassIdx - 1], activePassIdx, (access == RGResourceAccessMode::Read ? "READ" : "WRITE"),
+                buffer.m_Desc.m_NvrhiDesc.debugName.c_str());
+            SDL_assert(false && "Resource access dependency not declared");
+        }
+    }
+
     SDL_assert(buffer.m_PhysicalBuffer);
     SDL_assert(buffer.m_IsAllocated && "Buffer not allocated");
     

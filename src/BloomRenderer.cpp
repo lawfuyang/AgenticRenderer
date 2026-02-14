@@ -36,6 +36,10 @@ public:
 
         desc.m_NvrhiDesc.debugName = "Bloom_UpPyramid_RG";
         g_RG_BloomUpPyramid = renderGraph.DeclareTexture(desc, g_RG_BloomUpPyramid);
+
+        renderGraph.ReadTexture(g_RG_HDRColor);
+        renderGraph.WriteTexture(g_RG_BloomDownPyramid);
+        renderGraph.WriteTexture(g_RG_BloomUpPyramid);
     }
     
     void Render(nvrhi::CommandListHandle commandList) override
@@ -49,9 +53,9 @@ public:
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
         
-        nvrhi::TextureHandle bloomDownPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomDownPyramid);
-        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid);
-        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
+        nvrhi::TextureHandle bloomDownPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomDownPyramid, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
 
         // 1. Prefilter (HDR -> Down[0])
         {

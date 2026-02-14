@@ -40,6 +40,11 @@ public:
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             g_RG_ExposureBuffer = renderGraph.DeclareBuffer(desc, g_RG_ExposureBuffer);
         }
+
+        renderGraph.WriteBuffer(g_RG_LuminanceHistogram);
+        renderGraph.WriteBuffer(g_RG_ExposureBuffer);
+        renderGraph.ReadTexture(g_RG_HDRColor);
+        renderGraph.ReadTexture(g_RG_BloomUpPyramid);
     }
 
     
@@ -49,10 +54,10 @@ public:
 
         nvrhi::utils::ScopedMarker marker(commandList, "HDR Post-Processing");
 
-        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
-        nvrhi::BufferHandle luminanceHistogram = renderer->m_RenderGraph.GetBuffer(g_RG_LuminanceHistogram);
-        nvrhi::BufferHandle exposureBuffer = renderer->m_RenderGraph.GetBuffer(g_RG_ExposureBuffer);
-        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid);
+        nvrhi::BufferHandle luminanceHistogram = renderer->m_RenderGraph.GetBuffer(g_RG_LuminanceHistogram, RGResourceAccessMode::Write);
+        nvrhi::BufferHandle exposureBuffer = renderer->m_RenderGraph.GetBuffer(g_RG_ExposureBuffer, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle bloomUpPyramid = renderer->m_RenderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read);
 
         // 1. Histogram Pass
         {

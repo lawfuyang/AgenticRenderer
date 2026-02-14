@@ -119,13 +119,13 @@ public:
         Renderer* renderer = Renderer::GetInstance();
 
         // Get transient resources from render graph
-        nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
-        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
-        nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
-        nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
-        nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
-        nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
-        nvrhi::TextureHandle gbufferMotion = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
+        nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle gbufferMotion = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
 
         // Clear depth for reversed-Z (clear to 0.0f, no stencil)
         commandList->clearDepthStencilTexture(depthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
@@ -760,6 +760,7 @@ void Renderer::Run()
             m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex, passIndex]() { \
                 PROFILE_SCOPED(pRenderer->GetName()) \
                 ScopedCommandList scopedCmd{ cmd }; \
+                m_RenderGraph.SetActivePass(passIndex); \
                 if (m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex])) \
                 { \
                     pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex])); \
@@ -769,6 +770,7 @@ void Renderer::Run()
                 m_RenderGraph.InsertAliasBarriers(passIndex, scopedCmd); \
                 scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
                 pRenderer->Render(scopedCmd); \
+                m_RenderGraph.SetActivePass(0); \
                 scopedCmd->endTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
                 pRenderer->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
             }, bImmediateExecute); \

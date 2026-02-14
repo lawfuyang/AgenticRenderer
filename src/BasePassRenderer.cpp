@@ -15,31 +15,87 @@ extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_HDRColor;
 RGTextureHandle g_RG_OpaqueColor;
 
+enum class BasePassUsage
+{
+    OpaquePhase1,
+    OpaquePhase2,
+    Masked,
+    Transparent,
+    HZB
+};
+
 class BasePassRendererBase : public IRenderer
 {
 public:
+    struct ResourceHandles
+    {
+        nvrhi::BufferHandle visibleCount;
+        nvrhi::BufferHandle visibleIndirect;
+        nvrhi::BufferHandle occludedCount;
+        nvrhi::BufferHandle occludedIndices;
+        nvrhi::BufferHandle occludedIndirect;
+        nvrhi::BufferHandle meshletJob;
+        nvrhi::BufferHandle meshletJobCount;
+        nvrhi::BufferHandle meshletIndirect;
+
+        nvrhi::TextureHandle depth;
+        nvrhi::TextureHandle albedo;
+        nvrhi::TextureHandle normals;
+        nvrhi::TextureHandle orm;
+        nvrhi::TextureHandle emissive;
+        nvrhi::TextureHandle motion;
+        nvrhi::TextureHandle hdr;
+        nvrhi::TextureHandle opaque;
+
+        void Populate(RenderGraph& rg, BasePassUsage usage)
+        {
+            Renderer* renderer = Renderer::GetInstance();
+            BasePassResources& res = renderer->m_BasePassResources;
+
+            if (usage == BasePassUsage::OpaquePhase1 || usage == BasePassUsage::Masked || usage == BasePassUsage::OpaquePhase2 || usage == BasePassUsage::Transparent)
+            {
+                visibleCount = rg.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
+                visibleIndirect = rg.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
+                meshletJob = rg.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write);
+                meshletJobCount = rg.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write);
+                meshletIndirect = rg.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write);
+                depth = rg.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
+
+                if (usage == BasePassUsage::OpaquePhase1 || usage == BasePassUsage::Masked || usage == BasePassUsage::Transparent)
+                {
+                    occludedCount = rg.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write);
+                    occludedIndices = rg.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write);
+                    occludedIndirect = rg.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write);
+                }
+                else if (usage == BasePassUsage::OpaquePhase2)
+                {
+                    occludedIndirect = rg.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read);
+                }
+
+                if (usage == BasePassUsage::Transparent)
+                {
+                    hdr = rg.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
+                    opaque = rg.GetTexture(g_RG_OpaqueColor, RGResourceAccessMode::Write);
+                }
+                else
+                {
+                    albedo = rg.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
+                    normals = rg.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+                    orm = rg.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
+                    emissive = rg.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
+                    motion = rg.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
+                }
+            }
+            else if (usage == BasePassUsage::HZB)
+            {
+                depth = rg.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
+            }
+        }
+    };
+
     void Setup(RenderGraph& renderGraph) override
     {
-        Renderer* renderer = Renderer::GetInstance();
-        renderer->m_BasePassResources.DeclareResources(renderGraph);
-
-        // ... existing buffer writes ...
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleCountBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_VisibleIndirectBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedCountBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedIndicesBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_OccludedIndirectBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletJobBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletJobCountBuffer);
-        renderGraph.WriteBuffer(renderer->m_BasePassResources.m_MeshletIndirectBuffer);
-
-        renderGraph.WriteTexture(g_RG_DepthTexture);
-        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
-        renderGraph.WriteTexture(g_RG_GBufferNormals);
-        renderGraph.WriteTexture(g_RG_GBufferORM);
-        renderGraph.WriteTexture(g_RG_GBufferEmissive);
-        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
-        renderGraph.WriteTexture(g_RG_HDRColor);
+        Renderer::GetInstance()->m_BasePassResources.DeclareResources(renderGraph);
     }
     
     virtual void Render(nvrhi::CommandListHandle commandList) override = 0;
@@ -58,38 +114,32 @@ protected:
         bool m_BackFaceCull = false;
     };
 
-    void GenerateHZBMips(nvrhi::CommandListHandle commandList);
+    void GenerateHZBMips(nvrhi::CommandListHandle commandList, const ResourceHandles& handles);
     void ComputeFrustumPlanes(const Matrix& proj, Vector4 frustumPlanes[5]);
-    void PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args);
-    void RenderInstances(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args);
+    void PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args, const ResourceHandles& handles);
+    void RenderInstances(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args, const ResourceHandles& handles);
     void PrepareRenderingData(Matrix& outView, Matrix& outViewProjForCulling, Vector4 outFrustumPlanes[5]);
 
-    void ClearVisibleCounters(nvrhi::CommandListHandle commandList)
+    void ClearVisibleCounters(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
     {
         Renderer* renderer = Renderer::GetInstance();
-        BasePassResources& res = renderer->m_BasePassResources;
-        RenderGraph& rg = renderer->m_RenderGraph;
-        
         nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear Visible Counters" };
-        commandList->clearBufferUInt(rg.GetBuffer(res.m_VisibleCountBuffer), 0);
+        commandList->clearBufferUInt(handles.visibleCount, 0);
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(rg.GetBuffer(res.m_MeshletJobCountBuffer), 0);
+            commandList->clearBufferUInt(handles.meshletJobCount, 0);
         }
     }
 
-    void ClearAllCounters(nvrhi::CommandListHandle commandList)
+    void ClearAllCounters(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
     {
         Renderer* renderer = Renderer::GetInstance();
-        BasePassResources& res = renderer->m_BasePassResources;
-        RenderGraph& rg = renderer->m_RenderGraph;
-
         nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear All Counters" };
-        commandList->clearBufferUInt(rg.GetBuffer(res.m_VisibleCountBuffer), 0);
-        commandList->clearBufferUInt(rg.GetBuffer(res.m_OccludedCountBuffer), 0);
+        commandList->clearBufferUInt(handles.visibleCount, 0);
+        commandList->clearBufferUInt(handles.occludedCount, 0);
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(rg.GetBuffer(res.m_MeshletJobCountBuffer), 0);
+            commandList->clearBufferUInt(handles.meshletJobCount, 0);
         }
     }
 };
@@ -112,12 +162,11 @@ void BasePassRendererBase::PrepareRenderingData(Matrix& outView, Matrix& outView
     ComputeFrustumPlanes(cam->GetProjMatrix(), outFrustumPlanes);
 }
 
-void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args)
+void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args, const ResourceHandles& handles)
 {
     PROFILE_FUNCTION();
 
     Renderer* renderer = Renderer::GetInstance();
-    BasePassResources& res = renderer->m_BasePassResources;
 
     char marker[256];
     sprintf(marker, "Occlusion Culling Phase %d - %s", args.m_CullingPhase + 1, args.m_BucketName);
@@ -130,11 +179,11 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
     else if (args.m_CullingPhase == 1)
     {
         // Clear visible count buffer for Phase 2
-        commandList->clearBufferUInt(renderer->m_RenderGraph.GetBuffer(res.m_VisibleCountBuffer), 0);
+        commandList->clearBufferUInt(handles.visibleCount, 0);
 
         if (renderer->m_UseMeshletRendering)
         {
-            commandList->clearBufferUInt(renderer->m_RenderGraph.GetBuffer(res.m_MeshletJobCountBuffer), 0);
+            commandList->clearBufferUInt(handles.meshletJobCount, 0);
         }
     }
 
@@ -160,7 +209,6 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
     cullData.m_InstanceBaseIndex = args.m_InstanceBaseIndex;
     commandList->writeBuffer(cullCB, &cullData, sizeof(cullData), 0);
 
-    RenderGraph& rg = renderer->m_RenderGraph;
     nvrhi::BindingSetDesc cullBset;
     cullBset.bindings =
     {
@@ -168,14 +216,14 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, renderer->m_Scene.m_InstanceDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(1, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(2, renderer->m_Scene.m_MeshDataBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, rg.GetBuffer(res.m_VisibleIndirectBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(1, rg.GetBuffer(res.m_VisibleCountBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, rg.GetBuffer(res.m_OccludedIndicesBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(3, rg.GetBuffer(res.m_OccludedCountBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? rg.GetBuffer(res.m_OccludedIndirectBuffer) : CommonResources::GetInstance().DummyUAVBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, rg.GetBuffer(res.m_MeshletJobBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, rg.GetBuffer(res.m_MeshletJobCountBuffer)),
-        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, rg.GetBuffer(res.m_MeshletIndirectBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(0, handles.visibleIndirect),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(1, handles.visibleCount),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(2, handles.occludedIndices ? handles.occludedIndices : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(3, handles.occludedCount ? handles.occludedCount : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(4, args.m_CullingPhase == 0 ? handles.occludedIndirect : CommonResources::GetInstance().DummyUAVBuffer),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(5, handles.meshletJob),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(6, handles.meshletJobCount),
+        nvrhi::BindingSetItem::StructuredBuffer_UAV(7, handles.meshletIndirect),
         nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
     };
 
@@ -195,7 +243,7 @@ void BasePassRendererBase::PerformOcclusionCulling(nvrhi::CommandListHandle comm
         params.commandList = commandList;
         params.shaderName = "GPUCulling_Culling_CSMain";
         params.bindingSetDesc = cullBset;
-        params.dispatchParams = { .indirectBuffer = rg.GetBuffer(res.m_OccludedIndirectBuffer), .indirectOffsetBytes = 0 };
+        params.dispatchParams = { .indirectBuffer = handles.occludedIndirect, .indirectOffsetBytes = 0 };
         renderer->AddComputePass(params);
     }
 
@@ -232,21 +280,24 @@ void BasePassRendererBase::ComputeFrustumPlanes(const Matrix& proj, Vector4 frus
     }
 }
 
-void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args)
+void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList, const BasePassRenderingArgs& args, const ResourceHandles& handles)
 {
     PROFILE_FUNCTION();
 
     Renderer* renderer = Renderer::GetInstance();
-    BasePassResources& res = renderer->m_BasePassResources;
     
-    nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
-    nvrhi::TextureHandle gbufferAlbedo = renderer->m_RenderGraph.GetTexture(g_RG_GBufferAlbedo);
-    nvrhi::TextureHandle gbufferNormals = renderer->m_RenderGraph.GetTexture(g_RG_GBufferNormals);
-    nvrhi::TextureHandle gbufferORM = renderer->m_RenderGraph.GetTexture(g_RG_GBufferORM);
-    nvrhi::TextureHandle gbufferEmissive = renderer->m_RenderGraph.GetTexture(g_RG_GBufferEmissive);
-    nvrhi::TextureHandle gbufferMotionVectors = renderer->m_RenderGraph.GetTexture(g_RG_GBufferMotionVectors);
-    nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
-    nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? renderer->m_RenderGraph.GetTexture(g_RG_OpaqueColor) : CommonResources::GetInstance().DefaultTextureBlack;
+    nvrhi::BufferHandle visibleIndirect = handles.visibleIndirect;
+    nvrhi::BufferHandle meshletIndirect = handles.meshletIndirect;
+    nvrhi::BufferHandle meshletJob = handles.meshletJob;
+    nvrhi::BufferHandle meshletJobCount = handles.meshletJobCount;
+    nvrhi::TextureHandle gbufferAlbedo = handles.albedo;
+    nvrhi::TextureHandle gbufferNormals = handles.normals;
+    nvrhi::TextureHandle gbufferORM = handles.orm;
+    nvrhi::TextureHandle gbufferEmissive = handles.emissive;
+    nvrhi::TextureHandle gbufferMotionVectors = handles.motion;
+    nvrhi::TextureHandle depthTexture = handles.depth;
+    nvrhi::TextureHandle hdrColor = handles.hdr;
+    nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? handles.opaque : CommonResources::GetInstance().DefaultTextureBlack;
 
     char marker[256];
     sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
@@ -298,7 +349,6 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         (uint32_t)sizeof(ForwardLightingPerFrameData), "PerFrameCB", 1);
     const nvrhi::BufferHandle perFrameCB = renderer->m_RHI->m_NvrhiDevice->createBuffer(cbd);
 
-    RenderGraph& rg = renderer->m_RenderGraph;
     nvrhi::BindingSetDesc bset;
     bset.bindings =
     {
@@ -309,7 +359,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         nvrhi::BindingSetItem::StructuredBuffer_SRV(3, renderer->m_Scene.m_MeshletBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(4, renderer->m_Scene.m_MeshletVerticesBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_MeshletTrianglesBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, rg.GetBuffer(res.m_MeshletJobBuffer)),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(6, handles.meshletJob),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(7, renderer->m_Scene.m_MeshDataBuffer),
         nvrhi::BindingSetItem::Texture_SRV(8, renderer->m_HZBTexture),
         nvrhi::BindingSetItem::RayTracingAccelStruct(9, renderer->m_Scene.m_TLAS),
@@ -393,8 +443,8 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         meshState.pipeline = meshPipeline;
         meshState.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
         meshState.viewport = viewportState;
-        meshState.indirectParams = rg.GetBuffer(res.m_MeshletIndirectBuffer);
-        meshState.indirectCountBuffer = rg.GetBuffer(res.m_MeshletJobCountBuffer);
+        meshState.indirectParams = handles.meshletIndirect;
+        meshState.indirectCountBuffer = handles.meshletJobCount;
 
         commandList->setMeshletState(meshState);
         commandList->dispatchMeshIndirectCount(0, 0, args.m_NumInstances);
@@ -415,15 +465,15 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         state.indexBuffer = nvrhi::IndexBufferBinding{ renderer->m_Scene.m_IndexBuffer, nvrhi::Format::R32_UINT, 0 };
         state.bindings = { renderer->GetGlobalTextureDescriptorTable(), bindingSet };
         state.pipeline = renderer->GetOrCreateGraphicsPipeline(pipelineDesc, fbInfo);
-        state.indirectParams = rg.GetBuffer(res.m_VisibleIndirectBuffer);
-        state.indirectCountBuffer = rg.GetBuffer(res.m_VisibleCountBuffer);
+        state.indirectParams = handles.visibleIndirect;
+        state.indirectCountBuffer = handles.visibleCount;
         commandList->setGraphicsState(state);
 
         commandList->drawIndexedIndirectCount(0, 0, args.m_NumInstances);
     }
 }
 
-void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
+void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
 {
     PROFILE_FUNCTION();
 
@@ -434,8 +484,8 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
         return;
     }
 
-    // Get transient depth texture from render graph
-    nvrhi::TextureHandle depthTexture = renderer->m_RenderGraph.GetTexture(g_RG_DepthTexture);
+    // Get transient depth texture from resource handles
+    nvrhi::TextureHandle depthTexture = handles.depth;
 
     nvrhi::utils::ScopedMarker commandListMarker{ commandList, "Generate HZB Mips" };
 
@@ -475,6 +525,29 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList)
 class OpaquePhase1Renderer : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+        Renderer* renderer = Renderer::GetInstance();
+        BasePassResources& res = renderer->m_BasePassResources;
+
+        renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
+        renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
+        renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferORM);
+        renderGraph.WriteTexture(g_RG_GBufferEmissive);
+        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "OpaquePhase1"; }
 };
@@ -489,7 +562,10 @@ void OpaquePhase1Renderer::Render(nvrhi::CommandListHandle commandList)
     Vector4 frustumPlanes[5];
     PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
 
-    ClearAllCounters(commandList);
+    ResourceHandles handles;
+    handles.Populate(renderer->m_RenderGraph, BasePassUsage::OpaquePhase1);
+
+    ClearAllCounters(commandList, handles);
 
     BasePassRenderingArgs args;
     args.m_FrustumPlanes = frustumPlanes;
@@ -501,16 +577,24 @@ void OpaquePhase1Renderer::Render(nvrhi::CommandListHandle commandList)
     args.m_CullingPhase = 0;
     args.m_AlphaMode = ALPHA_MODE_OPAQUE;
 
-    PerformOcclusionCulling(commandList, args);
-    RenderInstances(commandList, args);
+    PerformOcclusionCulling(commandList, args, handles);
+    RenderInstances(commandList, args, handles);
 }
 
 class HZBGenerator : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override
     {
-        GenerateHZBMips(commandList);
+        ResourceHandles handles;
+        handles.Populate(Renderer::GetInstance()->m_RenderGraph, BasePassUsage::HZB);
+        GenerateHZBMips(commandList, handles);
     }
     const char* GetName() const override { return "HZBGenerator"; }
 };
@@ -518,6 +602,28 @@ public:
 class OpaquePhase2Renderer : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+        Renderer* renderer = Renderer::GetInstance();
+        BasePassResources& res = renderer->m_BasePassResources;
+
+        renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
+        
+        renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
+        renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
+        renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferORM);
+        renderGraph.WriteTexture(g_RG_GBufferEmissive);
+        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "OpaquePhase2"; }
 };
@@ -534,6 +640,9 @@ void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList)
     Vector4 frustumPlanes[5];
     PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
 
+    ResourceHandles handles;
+    handles.Populate(renderer->m_RenderGraph, BasePassUsage::OpaquePhase2);
+
     BasePassRenderingArgs args;
     args.m_FrustumPlanes = frustumPlanes;
     args.m_View = view;
@@ -544,13 +653,36 @@ void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList)
     args.m_CullingPhase = 1;
     args.m_AlphaMode = ALPHA_MODE_OPAQUE;
 
-    PerformOcclusionCulling(commandList, args);
-    RenderInstances(commandList, args);
+    PerformOcclusionCulling(commandList, args, handles);
+    RenderInstances(commandList, args, handles);
 }
 
 class MaskedPassRenderer : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+        Renderer* renderer = Renderer::GetInstance();
+        BasePassResources& res = renderer->m_BasePassResources;
+
+        renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
+        renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
+        renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferORM);
+        renderGraph.WriteTexture(g_RG_GBufferEmissive);
+        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override;
     const char* GetName() const override { return "MaskedPass"; }
 };
@@ -565,7 +697,10 @@ void MaskedPassRenderer::Render(nvrhi::CommandListHandle commandList)
     Vector4 frustumPlanes[5];
     PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
 
-    ClearVisibleCounters(commandList);
+    ResourceHandles handles;
+    handles.Populate(renderer->m_RenderGraph, BasePassUsage::Masked);
+
+    ClearVisibleCounters(commandList, handles);
 
     BasePassRenderingArgs args;
     args.m_FrustumPlanes = frustumPlanes;
@@ -577,16 +712,24 @@ void MaskedPassRenderer::Render(nvrhi::CommandListHandle commandList)
     args.m_CullingPhase = 0;
     args.m_AlphaMode = ALPHA_MODE_MASK;
 
-    PerformOcclusionCulling(commandList, args);
-    RenderInstances(commandList, args);
+    PerformOcclusionCulling(commandList, args, handles);
+    RenderInstances(commandList, args, handles);
 }
 
 class HZBGeneratorPhase2 : public BasePassRendererBase
 {
 public:
+    void Setup(RenderGraph& renderGraph) override
+    {
+        BasePassRendererBase::Setup(renderGraph);
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+    }
+
     void Render(nvrhi::CommandListHandle commandList) override
     {
-        GenerateHZBMips(commandList);
+        ResourceHandles handles;
+        handles.Populate(Renderer::GetInstance()->m_RenderGraph, BasePassUsage::HZB);
+        GenerateHZBMips(commandList, handles);
     }
     const char* GetName() const override { return "HZBGeneratorPhase2"; }
 };
@@ -599,6 +742,7 @@ public:
         BasePassRendererBase::Setup(renderGraph);
 
         Renderer* renderer = Renderer::GetInstance();
+        BasePassResources& res = renderer->m_BasePassResources;
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
@@ -624,6 +768,19 @@ public:
             desc.m_NvrhiDesc.mipLevels = mipLevels;
             g_RG_OpaqueColor = renderGraph.DeclareTexture(desc, g_RG_OpaqueColor);
         }
+
+        renderGraph.WriteTexture(g_RG_HDRColor);
+        renderGraph.WriteTexture(g_RG_OpaqueColor);
+        renderGraph.WriteTexture(g_RG_DepthTexture);
+
+        renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
+        renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
+        renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
+        renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
     }
 
     void Render(nvrhi::CommandListHandle commandList) override;
@@ -636,19 +793,19 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList)
     const uint32_t numTransparent = renderer->m_Scene.m_TransparentBucket.m_Count;
     if (numTransparent == 0) return;
 
-    nvrhi::TextureHandle hdrColor = renderer->m_RenderGraph.GetTexture(g_RG_HDRColor);
-    nvrhi::TextureHandle opaqueColor = renderer->m_RenderGraph.GetTexture(g_RG_OpaqueColor);
+    ResourceHandles handles;
+    handles.Populate(renderer->m_RenderGraph, BasePassUsage::Transparent);
 
     // Capture the opaque scene for refraction
-    commandList->copyTexture(opaqueColor, nvrhi::TextureSlice(), hdrColor, nvrhi::TextureSlice());
+    commandList->copyTexture(handles.opaque, nvrhi::TextureSlice(), handles.hdr, nvrhi::TextureSlice());
 
-    renderer->GenerateMipsUsingSPD(opaqueColor, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
+    renderer->GenerateMipsUsingSPD(handles.opaque, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
 
     Matrix view, viewProjForCulling;
     Vector4 frustumPlanes[5];
     PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
 
-    ClearVisibleCounters(commandList);
+    ClearVisibleCounters(commandList, handles);
 
     BasePassRenderingArgs args;
     args.m_FrustumPlanes = frustumPlanes;
@@ -661,8 +818,8 @@ void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList)
     args.m_CullingPhase = 0;
     args.m_BackFaceCull = true;
 
-    PerformOcclusionCulling(commandList, args);
-    RenderInstances(commandList, args);
+    PerformOcclusionCulling(commandList, args, handles);
+    RenderInstances(commandList, args, handles);
 }
 
 REGISTER_RENDERER(OpaquePhase1Renderer);
