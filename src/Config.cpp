@@ -122,22 +122,28 @@ void Config::ParseCommandLine(int argc, char* argv[])
             s_Instance.ExecutePerPassAndWait = true;
             SDL_Log("[Config] Execute per pass and wait enabled via command line");
         }
+        else if (std::strcmp(arg, "--disable-rendergraph-aliasing") == 0)
+        {
+            s_Instance.m_EnableRenderGraphAliasing = false;
+            SDL_Log("[Config] Render graph aliasing disabled via command line");
+        }
         else if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0)
         {
             SDL_Log("Agentic Renderer - Command Line Options:");
-            SDL_Log("  --rhidebug                    Enable graphics API validation layers");
-            SDL_Log("  --rhidebug-gpu                Enable GPU-assisted validation (requires --rhidebug)");
-            SDL_Log("  --vulkan                       Use Vulkan graphics API");
-            SDL_Log("  --execute-per-pass            Execute command lists per pass");
-            SDL_Log("  --execute-per-pass-and-wait   Wait for idle after each pass execution");
-            SDL_Log("  --scene <path>                Load the specified scene file");
-            SDL_Log("  --skip-textures               Skip loading textures from scene");
-            SDL_Log("  --skip-cache                  Skip loading/saving scene cache");
-            SDL_Log("  --irradiance <path>           Path to irradiance cubemap texture (DDS)");
-            SDL_Log("  --radiance <path>             Path to radiance cubemap texture (DDS)");
-            SDL_Log("  --envmap <path>               Path to environment map (.hdr/.exr for auto-inference of DDS)");
-            SDL_Log("  --brdflut <path>              Path to BRDF LUT texture (DDS)");
-            SDL_Log("  --help, -h                    Show this help message");
+            SDL_Log("  --rhidebug                       Enable graphics API validation layers");
+            SDL_Log("  --rhidebug-gpu                   Enable GPU-assisted validation (requires --rhidebug)");
+            SDL_Log("  --vulkan                         Use Vulkan graphics API");
+            SDL_Log("  --execute-per-pass               Execute command lists per pass");
+            SDL_Log("  --execute-per-pass-and-wait      Wait for idle after each pass execution");
+            SDL_Log("  --disable-rendergraph-aliasing   Disable render graph aliasing");
+            SDL_Log("  --scene <path>                   Load the specified scene file");
+            SDL_Log("  --skip-textures                  Skip loading textures from scene");
+            SDL_Log("  --skip-cache                     Skip loading/saving scene cache");
+            SDL_Log("  --irradiance <path>              Path to irradiance cubemap texture (DDS)");
+            SDL_Log("  --radiance <path>                Path to radiance cubemap texture (DDS)");
+            SDL_Log("  --envmap <path>                  Path to environment map (.hdr/.exr for auto-inference of DDS)");
+            SDL_Log("  --brdflut <path>                 Path to BRDF LUT texture (DDS)");
+            SDL_Log("  --help, -h                       Show this help message");
         }
         else
         {

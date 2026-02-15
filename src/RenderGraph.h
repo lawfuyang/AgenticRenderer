@@ -170,8 +170,6 @@ public:
 
     // Returns the pass index for the current pass (valid after BeginPass, before Compile)
     uint16_t GetCurrentPassIndex() const { return m_CurrentPassIndex; }
-    
-    void InvalidateTransientResources();
 
     // Debug & Stats
     struct Stats
@@ -241,7 +239,7 @@ private:
     std::vector<const char*> m_PassNames;
     
     Stats m_Stats;
-    bool m_AliasingEnabled = false;
+    bool m_AliasingEnabled = true;
     bool m_IsCompiled = false;
     uint16_t m_CurrentPassIndex = 0;
     uint64_t m_FrameIndex = 0;

@@ -18,6 +18,9 @@ struct Config
     bool ExecutePerPass = false;
     bool ExecutePerPassAndWait = false;
 
+    // Enable render graph aliasing
+    bool m_EnableRenderGraphAliasing = true;
+
     // Add more configuration options here as needed
     // int renderWidth = 1920;
     // int renderHeight = 1080;

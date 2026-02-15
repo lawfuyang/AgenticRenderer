@@ -1,5 +1,6 @@
 #include "RenderGraph.h"
 #include "Renderer.h"
+#include "Config.h"
 #include "Utilities.h"
 
 #include "imgui.h"
@@ -83,6 +84,8 @@ void RenderGraph::Shutdown()
 void RenderGraph::Reset()
 {
     PROFILE_FUNCTION();
+    
+    m_AliasingEnabled = Config::Get().m_EnableRenderGraphAliasing;
     
     const uint32_t kMaxTransientResourceLifetimeFrames = 3;
 
@@ -438,70 +441,70 @@ void RenderGraph::Compile()
     // Build per-pass aliasing barrier info.
     // For each aliased resource, insert an aliasing barrier at the pass where it's first used.
     // This ensures the GPU flushes caches for the shared heap memory before the new resource accesses it.
-    m_PerPassAliasBarriers.clear();
-    m_PerPassAliasBarriers.resize(m_CurrentPassIndex + 1); // pass indices are 1-based
-
     if (m_AliasingEnabled)
     {
-        auto addBarrier = [&](bool isBuffer, uint32_t index, const RenderGraphInternal::ResourceLifetime& lifetime)
+        m_PerPassAliasBarriers.clear();
+        m_PerPassAliasBarriers.resize(m_CurrentPassIndex + 1); // pass indices are 1-based
+
+        auto addBarrier = [&](bool isBuffer, uint32_t index, const RenderGraphInternal::ResourceLifetime& lifetime, const char* debugName)
         {
-            if (lifetime.IsValid())
+            if (!lifetime.IsValid() || lifetime.m_FirstPass == 0 || lifetime.m_FirstPass > m_PassAccesses.size())
+                return;
+
+            const PassAccess& firstAccess = m_PassAccesses[lifetime.m_FirstPass - 1];
+
+            bool hasWrite = false;
+            bool hasRead = false;
+            if (isBuffer)
             {
-                uint16_t passIdx = lifetime.m_FirstPass;
-                if (passIdx < m_PerPassAliasBarriers.size())
-                {
-                    m_PerPassAliasBarriers[passIdx].push_back({ isBuffer, index });
-                }
+                hasWrite = firstAccess.m_WriteBuffers.count(index) > 0;
+                hasRead = firstAccess.m_ReadBuffers.count(index) > 0;
+            }
+            else
+            {
+                hasWrite = firstAccess.m_WriteTextures.count(index) > 0;
+                hasRead = firstAccess.m_ReadTextures.count(index) > 0;
+            }
+
+            if (!hasWrite || hasRead)
+            {
+                SDL_Log("[RenderGraph] ERROR: Aliased %s '%s' first used in pass %u must be write-only. hasWrite=%d hasRead=%d",
+                    isBuffer ? "buffer" : "texture",
+                    debugName,
+                    lifetime.m_FirstPass,
+                    hasWrite ? 1 : 0,
+                    hasRead ? 1 : 0);
+                SDL_assert(false && "Aliased resource first use must be write-only");
+            }
+
+            const uint16_t passIdx = lifetime.m_FirstPass;
+            if (passIdx > 0 && passIdx < m_PerPassAliasBarriers.size())
+            {
+                m_PerPassAliasBarriers[passIdx].push_back({ isBuffer, index });
             }
         };
 
         for (uint32_t i = 0; i < (uint32_t)m_Textures.size(); ++i)
         {
             const TransientTexture& tex = m_Textures[i];
-            if (!tex.m_IsDeclaredThisFrame) continue;
+            if (!tex.m_IsDeclaredThisFrame)
+                continue;
 
-            bool needsBarrier = (tex.m_AliasedFromIndex != UINT32_MAX);
-            
-            if (!needsBarrier && tex.m_IsPhysicalOwner)
+            if (tex.m_AliasedFromIndex != UINT32_MAX)
             {
-                for (const TransientTexture& other : m_Textures)
-                {
-                    if (other.m_IsDeclaredThisFrame && other.m_AliasedFromIndex == i)
-                    {
-                        needsBarrier = true;
-                        break;
-                    }
-                }
-            }
-
-            if (needsBarrier)
-            {
-                addBarrier(false, i, tex.m_Lifetime);
+                addBarrier(false, i, tex.m_Lifetime, tex.m_Desc.m_NvrhiDesc.debugName.c_str());
             }
         }
 
         for (uint32_t i = 0; i < (uint32_t)m_Buffers.size(); ++i)
         {
             const TransientBuffer& buf = m_Buffers[i];
-            if (!buf.m_IsDeclaredThisFrame) continue;
+            if (!buf.m_IsDeclaredThisFrame)
+                continue;
 
-            bool needsBarrier = (buf.m_AliasedFromIndex != UINT32_MAX);
-
-            if (!needsBarrier && buf.m_IsPhysicalOwner)
+            if (buf.m_AliasedFromIndex != UINT32_MAX)
             {
-                for (const TransientBuffer& other : m_Buffers)
-                {
-                    if (other.m_IsDeclaredThisFrame && other.m_AliasedFromIndex == i)
-                    {
-                        needsBarrier = true;
-                        break;
-                    }
-                }
-            }
-
-            if (needsBarrier)
-            {
-                addBarrier(true, i, buf.m_Lifetime);
+                addBarrier(true, i, buf.m_Lifetime, buf.m_Desc.m_NvrhiDesc.debugName.c_str());
             }
         }
     }
@@ -535,24 +538,6 @@ void RenderGraph::InsertAliasBarriers(uint16_t passIndex, nvrhi::ICommandList* c
             if (texture.m_PhysicalTexture)
             {
                 commandList->insertAliasingBarrier(texture.m_PhysicalTexture);
-
-                // After an aliasing barrier activates a new placed resource on shared heap memory, D3D12 requires that the first GPU operation on that resource must be one of:
-                //     - DiscardResource() — invalidates all hardware compression metadata
-                //     - A full clear (ClearRenderTargetView, ClearDepthStencilView)
-                //     - A copy/write that covers the ENTIRE resource
-                // Just clear because im lazy
-                // Also, DiscardResource() implicitly modifies the resource state to RENDER_TARGET, which messes up the state tracking in nvrhi, and i dont want to deal with that
-                const nvrhi::TextureDesc& desc = texture.m_Desc.m_NvrhiDesc;
-                if (desc.format == nvrhi::Format::D16 ||
-                    desc.format == nvrhi::Format::D24S8 || desc.format == nvrhi::Format::D32 ||
-                    desc.format == nvrhi::Format::D32S8)
-                {
-                    commandList->clearDepthStencilTexture(texture.m_PhysicalTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, false, 0);
-                }
-                else if (desc.isRenderTarget)
-                {
-                    commandList->clearTextureFloat(texture.m_PhysicalTexture, nvrhi::AllSubresources, desc.clearValue);
-                }
             }
         }
     }
@@ -765,7 +750,7 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
         }
 
         bool aliased = false;
-        if (m_AliasingEnabled)
+        if (m_AliasingEnabled && !bIsBuffer) // TODO: figure out why the fuck aliasing buffers is buggy
         {
             for (uint32_t candidateIdx : sortedIndices)
             {
@@ -926,41 +911,6 @@ nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAcce
     return buffer.m_PhysicalBuffer;
 }
 
-void RenderGraph::InvalidateTransientResources()
-{
-    SDL_Log("[RenderGraph] Invalidating all transient resource allocations");
-
-    for (TransientTexture& texture : m_Textures)
-    {
-        if (texture.m_PhysicalTexture)
-        {
-            if (texture.m_IsPhysicalOwner && texture.m_HeapIndex != UINT32_MAX)
-            {
-                FreeBlock(texture.m_HeapIndex, texture.m_BlockOffset);
-            }
-            texture.m_PhysicalTexture = nullptr;
-            texture.m_Heap = nullptr;
-            texture.m_HeapIndex = UINT32_MAX;
-            texture.m_IsAllocated = false;
-        }
-    }
-
-    for (TransientBuffer& buffer : m_Buffers)
-    {
-        if (buffer.m_PhysicalBuffer)
-        {
-            if (buffer.m_IsPhysicalOwner && buffer.m_HeapIndex != UINT32_MAX)
-            {
-                FreeBlock(buffer.m_HeapIndex, buffer.m_BlockOffset);
-            }
-            buffer.m_PhysicalBuffer = nullptr;
-            buffer.m_Heap = nullptr;
-            buffer.m_HeapIndex = UINT32_MAX;
-            buffer.m_IsAllocated = false;
-        }
-    }
-}
-
 // ============================================================================
 // RenderGraph - Debug UI
 // ============================================================================
@@ -986,8 +936,6 @@ void RenderGraph::RenderDebugUI()
         
         ImGui::Text("Buffer Memory: %.2f MB", 
                    m_Stats.m_TotalBufferMemory / (1024.0 * 1024.0));
-        
-        ImGui::Separator();
         
         if (ImGui::TreeNode("Lifetime Visualization"))
         {
@@ -1094,16 +1042,6 @@ void RenderGraph::RenderDebugUI()
             
             ImGui::TreePop();
         }
-
-        ImGui::Separator();
-        
-        if (ImGui::Checkbox("Enable Aliasing", &m_AliasingEnabled))
-        {
-            Reset();
-            Shutdown();
-        }
-        
-        ImGui::Separator();
         
         if (ImGui::TreeNode("Textures"))
         {
@@ -1296,7 +1234,7 @@ void RenderGraph::RenderDebugUI()
                             {
                                 if (ImGui::TreeNodeEx("Aliasing Barriers Details", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
-                                    for (const auto& barrier : m_PerPassAliasBarriers[i])
+                                    for (const AliasBarrierEntry& barrier : m_PerPassAliasBarriers[i])
                                     {
                                         const char* name = barrier.m_IsBuffer ? m_Buffers[barrier.m_ResourceIndex].m_Desc.m_NvrhiDesc.debugName.c_str() : m_Textures[barrier.m_ResourceIndex].m_Desc.m_NvrhiDesc.debugName.c_str();
                                         ImGui::BulletText("%s (%s)", name, barrier.m_IsBuffer ? "Buffer" : "Texture");
