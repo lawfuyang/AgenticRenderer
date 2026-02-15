@@ -762,7 +762,13 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
                 bool bCanAlias = resource->m_Lifetime.m_FirstPass > candidate->m_PhysicalLastPass;
                 if (bCanAlias)
                 {
-                    bCanAlias = memReq.size <= candidate->GetMemoryRequirements().size;
+                    const nvrhi::MemoryRequirements candidateMemReq = candidate->GetMemoryRequirements();
+                    bCanAlias = memReq.size <= candidateMemReq.size;
+
+                    if (bCanAlias && memReq.alignment > 0)
+                    {
+                        bCanAlias = (candidate->m_Offset % memReq.alignment) == 0;
+                    }
                 }
                 
                 if (bCanAlias)
