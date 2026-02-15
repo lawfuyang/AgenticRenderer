@@ -1081,7 +1081,7 @@ void RenderGraph::RenderDebugUI()
         
         if (ImGui::Checkbox("Enable Aliasing", &m_AliasingEnabled))
         {
-            InvalidateTransientResources();
+            Shutdown();
         }
         
         ImGui::Separator();

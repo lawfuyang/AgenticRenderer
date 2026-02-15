@@ -3,7 +3,7 @@
 #include "meshoptimizer.h"
 
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 17;
+static constexpr uint32_t kSceneCacheVersion = 18;
 
 // --- Binary Serialization Helpers ---
 template<typename T>
@@ -192,6 +192,10 @@ void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t
 		WriteString(os, cam.m_Name);
 		WritePOD(os, cam.m_Projection);
 		WritePOD(os, cam.m_NodeIndex);
+		WritePOD(os, cam.m_ExposureValue);
+		WritePOD(os, cam.m_ExposureCompensation);
+		WritePOD(os, cam.m_ExposureValueMin);
+		WritePOD(os, cam.m_ExposureValueMax);
 	}
 
 	// Lights
@@ -351,6 +355,10 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& a
 		ReadString(is, cam.m_Name);
 		ReadPOD(is, cam.m_Projection);
 		ReadPOD(is, cam.m_NodeIndex);
+		ReadPOD(is, cam.m_ExposureValue);
+		ReadPOD(is, cam.m_ExposureCompensation);
+		ReadPOD(is, cam.m_ExposureValueMin);
+		ReadPOD(is, cam.m_ExposureValueMax);
 	}
 
 	// Lights
