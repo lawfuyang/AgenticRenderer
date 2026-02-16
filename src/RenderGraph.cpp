@@ -1051,7 +1051,7 @@ void RenderGraph::RenderDebugUI()
                                       ImGui::GetColorU32(ImGuiCol_Separator, 0.5f));
                 }
 
-                auto drawResourceRow = [&](const auto& resource, const char* typeName, ImU32 color)
+                auto drawResourceRow = [&](const auto& resource, const char* typeName, ImU32 color, const auto& resourceVector)
                 {
                     if (!resource.m_IsDeclaredThisFrame || !resource.m_Lifetime.IsValid())
                         return;
@@ -1096,7 +1096,16 @@ void RenderGraph::RenderDebugUI()
                         if (resource.m_AliasedFromIndex != UINT32_MAX)
                         {
                             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 0, 1));
-                            ImGui::Text("Aliased from: index %u", resource.m_AliasedFromIndex);
+                            
+                            std::string chain = "Aliased from " + resourceVector[resource.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName;
+                            uint32_t nextIdx = resourceVector[resource.m_AliasedFromIndex].m_AliasedFromIndex;
+                            while (nextIdx != UINT32_MAX)
+                            {
+                                chain += ", which was aliased from " + resourceVector[nextIdx].m_Desc.m_NvrhiDesc.debugName;
+                                nextIdx = resourceVector[nextIdx].m_AliasedFromIndex;
+                            }
+                            
+                            ImGui::TextWrapped("%s", chain.c_str());
                             ImGui::PopStyleColor();
                         }
                         else
@@ -1109,10 +1118,10 @@ void RenderGraph::RenderDebugUI()
                 };
 
                 for (const TransientTexture& tex : m_Textures)
-                    drawResourceRow(tex, "Texture", ImGui::GetColorU32(ImVec4(0.2f, 0.5f, 0.8f, 0.8f)));
+                    drawResourceRow(tex, "Texture", ImGui::GetColorU32(ImVec4(0.2f, 0.5f, 0.8f, 0.8f)), m_Textures);
 
                 for (const TransientBuffer& buf : m_Buffers)
-                    drawResourceRow(buf, "Buffer", ImGui::GetColorU32(ImVec4(0.2f, 0.7f, 0.3f, 0.8f)));
+                    drawResourceRow(buf, "Buffer", ImGui::GetColorU32(ImVec4(0.2f, 0.7f, 0.3f, 0.8f)), m_Buffers);
 
                 ImGui::EndChild();
             }
@@ -1176,9 +1185,20 @@ void RenderGraph::RenderDebugUI()
                     
                     ImGui::TableNextColumn();
                     if (texture.m_AliasedFromIndex != UINT32_MAX)
-                        ImGui::Text("%s", m_Textures[texture.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName.c_str());
+                    {
+                        std::string chain = m_Textures[texture.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName;
+                        uint32_t nextIdx = m_Textures[texture.m_AliasedFromIndex].m_AliasedFromIndex;
+                        while (nextIdx != UINT32_MAX)
+                        {
+                            chain += " -> " + m_Textures[nextIdx].m_Desc.m_NvrhiDesc.debugName;
+                            nextIdx = m_Textures[nextIdx].m_AliasedFromIndex;
+                        }
+                        ImGui::Text("%s", chain.c_str());
+                    }
                     else
+                    {
                         ImGui::Text("-");
+                    }
                 }
                 
                 ImGui::EndTable();
@@ -1241,9 +1261,20 @@ void RenderGraph::RenderDebugUI()
                     
                     ImGui::TableNextColumn();
                     if (buffer.m_AliasedFromIndex != UINT32_MAX)
-                        ImGui::Text("%s", m_Buffers[buffer.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName.c_str());
+                    {
+                        std::string chain = m_Buffers[buffer.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName;
+                        uint32_t nextIdx = m_Buffers[buffer.m_AliasedFromIndex].m_AliasedFromIndex;
+                        while (nextIdx != UINT32_MAX)
+                        {
+                            chain += " -> " + m_Buffers[nextIdx].m_Desc.m_NvrhiDesc.debugName;
+                            nextIdx = m_Buffers[nextIdx].m_AliasedFromIndex;
+                        }
+                        ImGui::Text("%s", chain.c_str());
+                    }
                     else
+                    {
                         ImGui::Text("-");
+                    }
                 }
                 
                 ImGui::EndTable();
