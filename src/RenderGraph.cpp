@@ -104,6 +104,7 @@ void RenderGraph::Reset()
         texture.m_Lifetime = {};
         texture.m_AliasedFromIndex = UINT32_MAX;
         texture.m_PhysicalLastPass = 0;
+        texture.m_DeclarationPass = 0;
 
         // Cleanup physical resources not used for > 3 frames
         if (texture.m_PhysicalTexture && (m_FrameIndex - texture.m_LastFrameUsed > kMaxTransientResourceLifetimeFrames))
@@ -126,6 +127,7 @@ void RenderGraph::Reset()
         buffer.m_Lifetime = {};
         buffer.m_AliasedFromIndex = UINT32_MAX;
         buffer.m_PhysicalLastPass = 0;
+        buffer.m_DeclarationPass = 0;
 
         if (buffer.m_PhysicalBuffer && (m_FrameIndex - buffer.m_LastFrameUsed > kMaxTransientResourceLifetimeFrames))
         {
@@ -195,6 +197,7 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
         texture.m_Hash = hash;
         texture.m_IsDeclaredThisFrame = true;
         texture.m_LastFrameUsed = m_FrameIndex;
+        texture.m_DeclarationPass = m_CurrentPassIndex;
         UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
         return existing;
     }
@@ -207,6 +210,7 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
             m_Textures[i].m_Desc = desc; // Ensure metadata like debugName is updated
             m_Textures[i].m_IsDeclaredThisFrame = true;
             m_Textures[i].m_LastFrameUsed = m_FrameIndex;
+            m_Textures[i].m_DeclarationPass = m_CurrentPassIndex;
             UpdateResourceLifetime(m_Textures[i].m_Lifetime, m_CurrentPassIndex);
             return { i };
         }
@@ -220,6 +224,7 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
     texture.m_Hash = hash;
     texture.m_IsDeclaredThisFrame = true;
     texture.m_LastFrameUsed = m_FrameIndex;
+    texture.m_DeclarationPass = m_CurrentPassIndex;
     UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
     
     m_Textures.push_back(texture);
@@ -248,6 +253,7 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
         buffer.m_Hash = hash;
         buffer.m_IsDeclaredThisFrame = true;
         buffer.m_LastFrameUsed = m_FrameIndex;
+        buffer.m_DeclarationPass = m_CurrentPassIndex;
         UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
         return existing;
     }
@@ -259,6 +265,7 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
             m_Buffers[i].m_Desc = desc; // Ensure metadata like debugName is updated
             m_Buffers[i].m_IsDeclaredThisFrame = true;
             m_Buffers[i].m_LastFrameUsed = m_FrameIndex;
+            m_Buffers[i].m_DeclarationPass = m_CurrentPassIndex;
             UpdateResourceLifetime(m_Buffers[i].m_Lifetime, m_CurrentPassIndex);
             return { i };
         }
@@ -272,6 +279,7 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
     buffer.m_Hash = hash;
     buffer.m_IsDeclaredThisFrame = true;
     buffer.m_LastFrameUsed = m_FrameIndex;
+    buffer.m_DeclarationPass = m_CurrentPassIndex;
     UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
     
     m_Buffers.push_back(buffer);
@@ -383,6 +391,73 @@ void RenderGraph::UpdateResourceLifetime(RenderGraphInternal::ResourceLifetime& 
 void RenderGraph::Compile()
 {
     PROFILE_FUNCTION();
+
+    // Resource validation
+    for (uint32_t i = 0; i < (uint32_t)m_Textures.size(); ++i)
+    {
+        const TransientTexture& tex = m_Textures[i];
+        if (!tex.m_IsDeclaredThisFrame) continue;
+
+        uint16_t firstAccessPass = UINT16_MAX;
+
+        for (uint16_t passIdx = 1; passIdx <= (uint16_t)m_PassAccesses.size(); ++passIdx)
+        {
+            const PassAccess& access = m_PassAccesses[passIdx - 1];
+            if (access.m_ReadTextures.count(i) || access.m_WriteTextures.count(i))
+            {
+                if (firstAccessPass == UINT16_MAX)
+                {
+                    firstAccessPass = passIdx;
+                }
+            }
+        }
+
+        if (firstAccessPass == UINT16_MAX)
+        {
+            SDL_Log("[RenderGraph] ERROR: Texture '%s' (index %u) declared but never accessed", tex.m_Desc.m_NvrhiDesc.debugName.c_str(), i);
+            SDL_assert(false && "Resource declared but never accessed");
+        }
+
+        if (tex.m_DeclarationPass > firstAccessPass)
+        {
+            SDL_Log("[RenderGraph] ERROR: Texture '%s' (index %u) accessed in pass %u but only declared in pass %u", 
+                tex.m_Desc.m_NvrhiDesc.debugName.c_str(), i, firstAccessPass, tex.m_DeclarationPass);
+            SDL_assert(false && "Resource accessed before it was declared");
+        }
+    }
+
+    for (uint32_t i = 0; i < (uint32_t)m_Buffers.size(); ++i)
+    {
+        const TransientBuffer& buf = m_Buffers[i];
+        if (!buf.m_IsDeclaredThisFrame) continue;
+
+        uint16_t firstAccessPass = UINT16_MAX;
+
+        for (uint16_t passIdx = 1; passIdx <= (uint16_t)m_PassAccesses.size(); ++passIdx)
+        {
+            const PassAccess& access = m_PassAccesses[passIdx - 1];
+            if (access.m_ReadBuffers.count(i) || access.m_WriteBuffers.count(i))
+            {
+                if (firstAccessPass == UINT16_MAX)
+                {
+                    firstAccessPass = passIdx;
+                }
+            }
+        }
+
+        if (firstAccessPass == UINT16_MAX)
+        {
+            SDL_Log("[RenderGraph] ERROR: Buffer '%s' (index %u) declared but never accessed", buf.m_Desc.m_NvrhiDesc.debugName.c_str(), i);
+            SDL_assert(false && "Resource declared but never accessed");
+        }
+
+        if (buf.m_DeclarationPass > firstAccessPass)
+        {
+            SDL_Log("[RenderGraph] ERROR: Buffer '%s' (index %u) accessed in pass %u but only declared in pass %u", 
+                buf.m_Desc.m_NvrhiDesc.debugName.c_str(), i, firstAccessPass, buf.m_DeclarationPass);
+            SDL_assert(false && "Resource accessed before it was declared");
+        }
+    }
 
     nvrhi::IDevice* device = Renderer::GetInstance()->m_RHI->m_NvrhiDevice.Get();
 
