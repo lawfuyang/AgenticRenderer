@@ -16,6 +16,11 @@ void RenderGraph::RenderDebugUI()
 
     if (ImGui::TreeNode("Render Graph"))
     {
+        if (ImGui::Button("Copy to Clipboard"))
+        {
+            ImGui::SetClipboardText(ExportToString().c_str());
+        }
+        
         ImGui::Text("Textures: %u (Allocated: %u, Aliased: %u)", 
                    m_Stats.m_NumTextures, 
                    m_Stats.m_NumAllocatedTextures, 
@@ -474,4 +479,107 @@ void RenderGraph::RenderDebugUI()
         
         ImGui::TreePop();
     }
+}
+
+std::string RenderGraph::ExportToString() const
+{
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(2);
+
+    ss << "# Render Graph Data Dump\n\n";
+
+    ss << "## Summary\n";
+    ss << "- Textures: " << m_Stats.m_NumTextures << " (Allocated: " << m_Stats.m_NumAllocatedTextures << ", Aliased: " << m_Stats.m_NumAliasedTextures << ")\n";
+    ss << "- Buffers: " << m_Stats.m_NumBuffers << " (Allocated: " << m_Stats.m_NumAllocatedBuffers << ", Aliased: " << m_Stats.m_NumAliasedBuffers << ")\n";
+    ss << "- Texture Memory: " << m_Stats.m_TotalTextureMemory / (1024.0 * 1024.0) << " MB\n";
+    ss << "- Buffer Memory: " << m_Stats.m_TotalBufferMemory / (1024.0 * 1024.0) << " MB\n\n";
+
+    ss << "## Render Passes\n";
+    for (uint32_t i = 0; i < (uint32_t)m_PassNames.size(); ++i)
+    {
+        uint32_t passID = i + 1;
+        ss << passID << ". " << m_PassNames[i] << "\n";
+        
+        const PassAccess& access = m_PassAccesses[i];
+        
+        if (!access.m_ReadTextures.empty() || !access.m_WriteTextures.empty())
+        {
+            ss << "   - Textures:";
+            for (uint32_t idx : access.m_ReadTextures) ss << " [R]" << m_Textures[idx].m_Desc.m_NvrhiDesc.debugName;
+            for (uint32_t idx : access.m_WriteTextures) ss << " [W]" << m_Textures[idx].m_Desc.m_NvrhiDesc.debugName;
+            ss << "\n";
+        }
+
+        if (!access.m_ReadBuffers.empty() || !access.m_WriteBuffers.empty())
+        {
+            ss << "   - Buffers:";
+            for (uint32_t idx : access.m_ReadBuffers) ss << " [R]" << m_Buffers[idx].m_Desc.m_NvrhiDesc.debugName;
+            for (uint32_t idx : access.m_WriteBuffers) ss << " [W]" << m_Buffers[idx].m_Desc.m_NvrhiDesc.debugName;
+            ss << "\n";
+        }
+
+        if (passID < (uint32_t)m_PerPassAliasBarriers.size() && !m_PerPassAliasBarriers[passID].empty())
+        {
+            ss << "   - Aliasing Barriers:";
+            for (const AliasBarrierEntry& barrier : m_PerPassAliasBarriers[passID])
+            {
+                const char* name = barrier.m_IsBuffer ? m_Buffers[barrier.m_ResourceIndex].m_Desc.m_NvrhiDesc.debugName.c_str() : m_Textures[barrier.m_ResourceIndex].m_Desc.m_NvrhiDesc.debugName.c_str();
+                ss << " " << name << " (" << (barrier.m_IsBuffer ? "Buffer" : "Texture") << ")";
+            }
+            ss << "\n";
+        }
+    }
+    ss << "\n";
+
+    ss << "## Textures\n";
+    for (const TransientTexture& tex : m_Textures)
+    {
+        ss << "- " << tex.m_Desc.m_NvrhiDesc.debugName << "\n";
+        ss << "  - Size: " << tex.m_Desc.m_NvrhiDesc.width << "x" << tex.m_Desc.m_NvrhiDesc.height << " (" << nvrhi::utils::FormatToString(tex.m_Desc.m_NvrhiDesc.format) << ")\n";
+        ss << "  - Lifetime: Pass " << tex.m_Lifetime.m_FirstPass << " to " << tex.m_Lifetime.m_LastPass << "\n";
+        ss << "  - Memory: " << tex.m_Desc.GetMemoryRequirements().size / (1024.0 * 1024.0) << " MB\n";
+        ss << "  - Physical: Heap " << (tex.m_HeapIndex != UINT32_MAX ? (int)tex.m_HeapIndex : -1) << ", Offset " << tex.m_Offset << "\n";
+        if (tex.m_AliasedFromIndex != UINT32_MAX)
+        {
+            ss << "  - Aliased from: " << m_Textures[tex.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName << "\n";
+        }
+    }
+    ss << "\n";
+
+    ss << "## Buffers\n";
+    for (const TransientBuffer& buf : m_Buffers)
+    {
+        ss << "- " << buf.m_Desc.m_NvrhiDesc.debugName << "\n";
+        ss << "  - Size: " << buf.m_Desc.m_NvrhiDesc.byteSize << " bytes (Stride: " << buf.m_Desc.m_NvrhiDesc.structStride << ")\n";
+        ss << "  - Lifetime: Pass " << buf.m_Lifetime.m_FirstPass << " to " << buf.m_Lifetime.m_LastPass << "\n";
+        ss << "  - Memory: " << buf.m_Desc.GetMemoryRequirements().size / (1024.0 * 1024.0) << " MB\n";
+        ss << "  - Physical: Heap " << (buf.m_HeapIndex != UINT32_MAX ? (int)buf.m_HeapIndex : -1) << ", Offset " << buf.m_Offset << "\n";
+        if (buf.m_AliasedFromIndex != UINT32_MAX)
+        {
+            ss << "  - Aliased from: " << m_Buffers[buf.m_AliasedFromIndex].m_Desc.m_NvrhiDesc.debugName << "\n";
+        }
+    }
+    ss << "\n";
+
+    ss << "## Heaps\n";
+    for (size_t i = 0; i < m_Heaps.size(); ++i)
+    {
+        const HeapEntry& heap = m_Heaps[i];
+        if (!heap.m_Heap) continue;
+        ss << "### Heap " << i << " (" << heap.m_Size / (1024.0 * 1024.0) << " MB)\n";
+        for (const HeapBlock& block : heap.m_Blocks)
+        {
+            const char* resourceName = "[Free]";
+            if (!block.m_IsFree)
+            {
+                for (const TransientTexture& tex : m_Textures) if (tex.m_HeapIndex == (uint32_t)i && tex.m_Offset == block.m_Offset) { resourceName = tex.m_Desc.m_NvrhiDesc.debugName.c_str(); break; }
+                if (resourceName[0] == '[') {
+                    for (const TransientBuffer& buf : m_Buffers) if (buf.m_HeapIndex == (uint32_t)i && buf.m_Offset == block.m_Offset) { resourceName = buf.m_Desc.m_NvrhiDesc.debugName.c_str(); break; }
+                }
+            }
+            ss << "- Offset " << block.m_Offset << ": " << block.m_Size / 1024.0 << " KB - " << resourceName << "\n";
+        }
+    }
+
+    return ss.str();
 }

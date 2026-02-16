@@ -188,6 +188,7 @@ public:
     };
     
     void RenderDebugUI();
+    std::string ExportToString() const;
     
 private:
     // Generic resource allocation helper (avoids code duplication)
