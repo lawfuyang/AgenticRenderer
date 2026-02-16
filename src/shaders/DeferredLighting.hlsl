@@ -52,7 +52,8 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     clipPos.z = depth;
     clipPos.w = 1.0f;
 
-    float4 worldPosFour = MatrixMultiply(clipPos, g_Deferred.m_View.m_MatClipToWorld);
+    // FIXME: Switch to m_MatClipToWorld (jittered) once TAA is implemented
+    float4 worldPosFour = MatrixMultiply(clipPos, g_Deferred.m_View.m_MatClipToWorldNoOffset);
     float3 worldPos = worldPosFour.xyz / worldPosFour.w;
 
     float3 V = normalize(g_Deferred.m_CameraPos.xyz - worldPos);

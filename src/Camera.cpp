@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "Camera.h"
 #include "Renderer.h"
-#include <cmath>
+#include "Utilities.h"
 
 Camera::Camera()
 {
@@ -224,8 +224,11 @@ void Camera::FillPlanarViewConstants(PlanarViewConstants& constants, float viewp
     XMStoreFloat4x4(&constants.m_MatViewToWorld, invView);
     XMStoreFloat4x4(&constants.m_MatClipToWorld, invViewProj);
 
-    // Jittered versions (current implementation doesn't have jitter yet, but we'll prepare for it)
-    XMMATRIX jitterMatrix = XMMatrixTranslation(2.0f * m_PixelOffset.x / viewportWidth, -2.0f * m_PixelOffset.y / viewportHeight, 0.0f);
+    // Jittered versions
+    uint32_t frameIndex = Renderer::GetInstance()->m_FrameNumber;
+    Vector2 jitter = { Halton(frameIndex % 16 + 1, 2) - 0.5f, Halton(frameIndex % 16 + 1, 3) - 0.5f };
+
+    XMMATRIX jitterMatrix = XMMatrixTranslation(2.0f * jitter.x / viewportWidth, -2.0f * jitter.y / viewportHeight, 0.0f);
     XMMATRIX viewProjJittered = XMMatrixMultiply(viewProj, jitterMatrix);
     XMMATRIX invViewProjJittered = XMMatrixInverse(&det, viewProjJittered);
     XMMATRIX projJittered = XMMatrixMultiply(proj, jitterMatrix);
@@ -244,7 +247,7 @@ void Camera::FillPlanarViewConstants(PlanarViewConstants& constants, float viewp
     constants.m_ViewportOrigin = Vector2(0, 0);
     constants.m_ViewportSize = Vector2(viewportWidth, viewportHeight);
     constants.m_ViewportSizeInv = Vector2(1.0f / viewportWidth, 1.0f / viewportHeight);
-    constants.m_PixelOffset = m_PixelOffset;
+    constants.m_PixelOffset = jitter;
 
     constants.m_ClipToWindowScale = Vector2(0.5f * viewportWidth, -0.5f * viewportHeight);
     constants.m_ClipToWindowBias = Vector2(0.5f * viewportWidth, 0.5f * viewportHeight);

@@ -241,7 +241,11 @@ struct PathTracerConstants
     PlanarViewConstants m_View;
     Vector4 m_CameraPos;
     uint32_t m_LightCount;
-    uint32_t pad1[3];
+    uint32_t m_AccumulationIndex;
+    uint32_t m_FrameIndex;
+    uint32_t pad1;
+    Vector2 m_Jitter;
+    uint32_t pad2[2];
 };
 
 // Material constants (persistent, per-material data)

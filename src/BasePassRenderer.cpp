@@ -338,8 +338,9 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     cb.m_EnableOcclusionCulling = renderer->m_EnableOcclusionCulling ? 1 : 0;
     cb.m_HZBWidth = (uint32_t)renderer->m_HZBTexture->getDesc().width;
     cb.m_HZBHeight = (uint32_t)renderer->m_HZBTexture->getDesc().height;
-    cb.m_P00 = cb.m_View.m_MatViewToClip._11;
-    cb.m_P11 = cb.m_View.m_MatViewToClip._22;
+    // FIXME: Switch to m_MatViewToClip (jittered) once TAA is implemented
+    cb.m_P00 = cb.m_View.m_MatViewToClipNoOffset._11;
+    cb.m_P11 = cb.m_View.m_MatViewToClipNoOffset._22;
     cb.m_EnableIBL = renderer->m_EnableIBL ? 1 : 0;
     cb.m_IBLIntensity = renderer->m_IBLIntensity;
     cb.m_RadianceMipCount = CommonResources::GetInstance().RadianceTexture->getDesc().mipLevels;

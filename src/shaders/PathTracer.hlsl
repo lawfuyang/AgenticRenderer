@@ -16,6 +16,7 @@ StructuredBuffer<uint> g_Indices : register(t5);
 StructuredBuffer<VertexQuantized> g_Vertices : register(t6);
 
 RWTexture2D<float4> g_Output : register(u0);
+RWTexture2D<float4> g_Accumulation : register(u1);
 
 [numthreads(8, 8, 1)]
 void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
@@ -23,13 +24,14 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
     if (dispatchThreadID.x >= (uint)g_PathTracer.m_View.m_ViewportSize.x || dispatchThreadID.y >= (uint)g_PathTracer.m_View.m_ViewportSize.y)
         return;
 
-    float2 uv = (float2(dispatchThreadID.xy) + 0.5f) * g_PathTracer.m_View.m_ViewportSizeInv;
+    float2 jitter = g_PathTracer.m_Jitter;
+    float2 uv = (float2(dispatchThreadID.xy) + 0.5f + jitter) * g_PathTracer.m_View.m_ViewportSizeInv;
     float2 clipPos;
     clipPos.x = uv.x * 2.0f - 1.0f;
     clipPos.y = (1.0f - uv.y) * 2.0f - 1.0f;
     
     // just use 0.9. we're only interested in the direction
-    float4 rayEndFar = MatrixMultiply(float4(clipPos, 0.9f, 1.0f), g_PathTracer.m_View.m_MatClipToWorld);
+    float4 rayEndFar = MatrixMultiply(float4(clipPos, 0.9f, 1.0f), g_PathTracer.m_View.m_MatClipToWorldNoOffset);
     rayEndFar.xyz /= rayEndFar.w;
 
     float3 rayDir = normalize(rayEndFar.xyz - g_PathTracer.m_CameraPos.xyz);
@@ -114,5 +116,12 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         finalColor = float3(1, 1, 1);
     }
 
-    g_Output[dispatchThreadID.xy] = float4(finalColor, 1.0f);
+    float4 accum = float4(finalColor, 1.0f);
+    if (g_PathTracer.m_AccumulationIndex > 0)
+    {
+        accum += g_Accumulation[dispatchThreadID.xy];
+    }
+    g_Accumulation[dispatchThreadID.xy] = accum;
+
+    g_Output[dispatchThreadID.xy] = float4(accum.rgb / accum.a, 1.0f);
 }

@@ -32,8 +32,9 @@ void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
 
 float2 ComputeMotionVectors(float3 worldPos, float3 prevWorldPos)
 {
-    float4 clipPos = MatrixMultiply(float4(worldPos, 1.0), g_PerFrame.m_View.m_MatWorldToClip);
-    float4 prevClipPos = MatrixMultiply(float4(prevWorldPos, 1.0), g_PerFrame.m_PrevView.m_MatWorldToClip);
+    // FIXME: Switch back to m_MatWorldToClip (jittered) once TAA is implemented
+    float4 clipPos = MatrixMultiply(float4(worldPos, 1.0), g_PerFrame.m_View.m_MatWorldToClipNoOffset);
+    float4 prevClipPos = MatrixMultiply(float4(prevWorldPos, 1.0), g_PerFrame.m_PrevView.m_MatWorldToClipNoOffset);
 
     clipPos.xyz /= clipPos.w;
     prevClipPos.xyz /= prevClipPos.w;
@@ -41,7 +42,9 @@ float2 ComputeMotionVectors(float3 worldPos, float3 prevWorldPos)
     float2 windowPos = clipPos.xy * g_PerFrame.m_View.m_ClipToWindowScale + g_PerFrame.m_View.m_ClipToWindowBias;
     float2 prevWindowPos = prevClipPos.xy * g_PerFrame.m_PrevView.m_ClipToWindowScale + g_PerFrame.m_PrevView.m_ClipToWindowBias;
 
-    return prevWindowPos.xy - windowPos.xy + (g_PerFrame.m_View.m_PixelOffset - g_PerFrame.m_PrevView.m_PixelOffset);
+    // FIXME: When TAA is implemented, if we use jittered matrices, we need to add back the jitter offset correction:
+    // return prevWindowPos.xy - windowPos.xy + (g_PerFrame.m_View.m_PixelOffset - g_PerFrame.m_PrevView.m_PixelOffset);
+    return prevWindowPos.xy - windowPos.xy;
 }
 
 struct VSOut
@@ -60,7 +63,8 @@ VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshlet
 {
     VSOut o;
     float4 worldPos = MatrixMultiply(float4(v.m_Pos, 1.0f), inst.m_World);
-    o.Position = MatrixMultiply(worldPos, g_PerFrame.m_View.m_MatWorldToClip);
+    // FIXME: Switch to m_MatWorldToClip (jittered) once TAA is implemented
+    o.Position = MatrixMultiply(worldPos, g_PerFrame.m_View.m_MatWorldToClipNoOffset);
 
     o.normal = TransformNormal(v.m_Normal, inst.m_World);
     o.uv = v.m_Uv;
@@ -440,7 +444,8 @@ GBufferOut GBuffer_PSMain(VSOut input)
         float3 refractedRayExit = input.worldPos + transmissionRay;
 
         // Project to screen space
-        float4 refractClipPos = MatrixMultiply(float4(refractedRayExit, 1.0), g_PerFrame.m_View.m_MatWorldToClip);
+        // FIXME: Switch back to m_MatWorldToClip (jittered) once TAA is implemented
+        float4 refractClipPos = MatrixMultiply(float4(refractedRayExit, 1.0), g_PerFrame.m_View.m_MatWorldToClipNoOffset);
         float2 refractUV = (refractClipPos.xy / refractClipPos.w) * float2(0.5, -0.5) + 0.5;
 
         // Sample background with roughness-based LOD

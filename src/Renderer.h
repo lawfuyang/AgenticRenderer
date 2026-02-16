@@ -7,12 +7,6 @@
 #include "Camera.h"
 #include "BasePassCommon.h"
 #include "RenderGraph.h"
-
-#include <thread>
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
-#include <memory>
 #include "TaskScheduler.h"
 
 class IRenderer

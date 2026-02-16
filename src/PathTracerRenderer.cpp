@@ -7,12 +7,34 @@ extern RGTextureHandle g_RG_HDRColor;
 
 class PathTracerRenderer : public IRenderer
 {
+    nvrhi::TextureHandle m_AccumulationBuffer;
+    uint32_t m_AccumulationIndex = 0;
+
 public:
+    void Initialize() override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+
+        nvrhi::TextureDesc desc;
+        desc.width = renderer->m_RHI->m_SwapchainExtent.x;
+        desc.height = renderer->m_RHI->m_SwapchainExtent.y;
+        desc.format = nvrhi::Format::RGBA32_FLOAT;
+        desc.isUAV = true;
+        desc.debugName = "AccumulationBuffer";
+        desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+        desc.keepInitialState = true;
+        m_AccumulationBuffer = renderer->m_RHI->m_NvrhiDevice->createTexture(desc);
+        
+    }
+
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         if (!renderer->m_EnableReferencePathTracer)
+        {
+            m_AccumulationIndex = 0;
             return false;
+        }
 
         renderGraph.WriteTexture(g_RG_HDRColor);
         return true;
@@ -26,6 +48,21 @@ public:
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
         const nvrhi::TextureDesc& hdrDesc = hdrColor->getDesc();
 
+        // Camera change detection
+        bool reset = false;
+        if (memcmp(&renderer->m_View.m_MatWorldToClipNoOffset, &renderer->m_ViewPrev.m_MatWorldToClipNoOffset, sizeof(Matrix)) != 0)
+        {
+            reset = true;
+        }
+
+        if (reset)
+        {
+            m_AccumulationIndex = 0;
+        }
+
+        // Pause animations
+        renderer->m_EnableAnimations = false;
+
         const nvrhi::BufferDesc pathTracerCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(PathTracerConstants), "PathTracerCB", 1);
         const nvrhi::BufferHandle pathTracerCB = renderer->m_RHI->m_NvrhiDevice->createBuffer(pathTracerCBD);
 
@@ -33,6 +70,10 @@ public:
         cb.m_View = renderer->m_View;
         cb.m_CameraPos = Vector4{ renderer->m_Camera.GetPosition().x, renderer->m_Camera.GetPosition().y, renderer->m_Camera.GetPosition().z, 1.0f };
         cb.m_LightCount = renderer->m_Scene.m_LightCount;
+        cb.m_AccumulationIndex = m_AccumulationIndex;
+        cb.m_FrameIndex = renderer->m_FrameNumber;
+        cb.m_Jitter = Vector2{ Halton(m_AccumulationIndex + 1, 2) - 0.5f, Halton(m_AccumulationIndex + 1, 3) - 0.5f };
+
         commandList->writeBuffer(pathTracerCB, &cb, sizeof(cb), 0);
 
         nvrhi::BindingSetDesc bset;
@@ -45,7 +86,8 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(4, renderer->m_Scene.m_MaterialConstantsBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(5, renderer->m_Scene.m_IndexBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_VertexBufferQuantized),
-            nvrhi::BindingSetItem::Texture_UAV(0, hdrColor)
+            nvrhi::BindingSetItem::Texture_UAV(0, hdrColor),
+            nvrhi::BindingSetItem::Texture_UAV(1, m_AccumulationBuffer)
         };
 
         Renderer::RenderPassParams params{
@@ -61,6 +103,8 @@ public:
         };
 
         renderer->AddComputePass(params);
+
+        m_AccumulationIndex++;
     }
 
     const char* GetName() const override { return "ReferencePathTracer"; }

@@ -30,6 +30,20 @@ static constexpr uint32_t DivideAndRoundUp(uint32_t dividend, uint32_t divisor)
     return (dividend + divisor - 1) / divisor;
 }
 
+static float Halton(uint32_t index, uint32_t base)
+{
+    float result = 0.0f;
+    float f = 1.0f / (float)base;
+    uint32_t i = index;
+    while (i > 0)
+    {
+        result += f * (float)(i % base);
+        i /= base;
+        f /= (float)base;
+    }
+    return result;
+}
+
 struct SimpleTimer
 {
     uint64_t freq = SDL_GetPerformanceFrequency();
