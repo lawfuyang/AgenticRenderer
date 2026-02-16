@@ -875,6 +875,16 @@ void SceneLoader::ProcessCameras(const cgltf_data* data, Scene& scene, const Sce
 void SceneLoader::ProcessLights(const cgltf_data* data, Scene& scene, const SceneOffsets& offsets)
 {
 	SCOPED_TIMER("[Scene] Lights");
+	bool hasDirectional = false;
+	for (const Scene::Light& l : scene.m_Lights)
+	{
+		if (l.m_Type == Scene::Light::Directional)
+		{
+			hasDirectional = true;
+			break;
+		}
+	}
+
 	for (cgltf_size i = 0; i < data->lights_count; ++i)
 	{
 		const cgltf_light& cgLight = data->lights[i];
@@ -890,15 +900,30 @@ void SceneLoader::ProcessLights(const cgltf_data* data, Scene& scene, const Scen
 		light.m_SpotInnerConeAngle = cgLight.spot_inner_cone_angle;
 		light.m_SpotOuterConeAngle = cgLight.spot_outer_cone_angle;
 		if (cgLight.type == cgltf_light_type_directional)
+		{
 			light.m_Type = Scene::Light::Directional;
+			hasDirectional = true;
+		}
 		else if (cgLight.type == cgltf_light_type_spot)
+		{
 			light.m_Type = Scene::Light::Spot;
+		}
+		scene.m_Lights.push_back(std::move(light));
+	}
+
+	if (!hasDirectional)
+	{
+		Scene::Light light;
+		light.m_Name = "Default Directional";
+		light.m_Type = Scene::Light::Directional;
+		light.m_Color = Vector3{ 1.0f, 1.0f, 1.0f };
+		light.m_Intensity = 1.0f;
 		scene.m_Lights.push_back(std::move(light));
 	}
 
 	std::sort(scene.m_Lights.begin(), scene.m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
 	{
-		return a.m_Type < b.m_Type; // Directional < Spot < Point
+		return a.m_Type < b.m_Type; // Directional < Point < Spot
 	});
 }
 
