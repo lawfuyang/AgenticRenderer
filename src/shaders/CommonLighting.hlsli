@@ -197,6 +197,98 @@ LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, f
     return components;
 }
 
+float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
+{
+    if (!inputs.enableRTShadows) return 1.0f;
+
+    RayDesc ray;
+    ray.Origin = inputs.worldPos + inputs.N * 0.1f;
+    ray.Direction = L;
+    ray.TMin = 0.1f;
+    ray.TMax = maxDist;
+
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+    q.TraceRayInline(inputs.sceneAS, RAY_FLAG_NONE, 0xFF, ray);
+    
+    while (q.Proceed())
+    {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            uint instanceIndex = q.CandidateInstanceIndex();
+            uint primitiveIndex = q.CandidatePrimitiveIndex();
+            float2 bary = q.CandidateTriangleBarycentrics();
+
+            PerInstanceData inst = inputs.instances[instanceIndex];
+            MeshData mesh = inputs.meshData[inst.m_MeshDataIndex];
+            MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
+
+            if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+            {
+                uint baseIndex = mesh.m_IndexOffsets[0];
+                uint i0 = inputs.indices[baseIndex + 3 * primitiveIndex + 0];
+                uint i1 = inputs.indices[baseIndex + 3 * primitiveIndex + 1];
+                uint i2 = inputs.indices[baseIndex + 3 * primitiveIndex + 2];
+
+                Vertex v0 = UnpackVertex(inputs.vertices[i0]);
+                Vertex v1 = UnpackVertex(inputs.vertices[i1]);
+                Vertex v2 = UnpackVertex(inputs.vertices[i2]);
+
+                float2 uv0 = v0.m_Uv;
+                float2 uv1 = v1.m_Uv;
+                float2 uv2 = v2.m_Uv;
+
+                float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
+                
+                float3 p0 = mul(float4(v0.m_Pos, 1.0f), inst.m_World).xyz;
+                float3 p1 = mul(float4(v1.m_Pos, 1.0f), inst.m_World).xyz;
+                float3 p2 = mul(float4(v2.m_Pos, 1.0f), inst.m_World).xyz;
+                
+                float3 hitPos = p0 * (1.0f - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
+                float dist = length(hitPos - ray.Origin);
+                
+                float3 edge1 = p1 - p0;
+                float3 edge2 = p2 - p0;
+                float triangleArea = length(cross(edge1, edge2)) * 0.5f;
+                
+                float2 uvMin = min(uv0, min(uv1, uv2));
+                float2 uvMax = max(uv0, max(uv1, uv2));
+                float2 uvRange = uvMax - uvMin;
+                
+                float gradientScale = triangleArea / max(dist, 0.1f);
+                float2 ddx_uv = uvRange * gradientScale;
+                float2 ddy_uv = uvRange * gradientScale;
+                
+                bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
+                float4 albedoSample = hasAlbedo 
+                    ? SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv)
+                    : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
+                
+                float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
+                
+                if (alpha >= mat.m_AlphaCutoff)
+                {
+                    q.CommitNonOpaqueTriangleHit();
+                }
+            }
+            else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
+            {
+                // ignore
+            }
+            else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+            {
+                q.CommitNonOpaqueTriangleHit();
+            }
+        }
+    }
+
+    if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+    {
+        return 0.0f;
+    }
+
+    return 1.0f;
+}
+
 LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight light)
 {
     LightingComponents result;
@@ -213,95 +305,7 @@ LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight li
 
     float3 radiance = light.m_Color * light.m_Intensity;
 
-    // Raytraced shadows
-    float shadow = 1.0f;
-    if (inputs.enableRTShadows)
-    {
-        RayDesc ray;
-        ray.Origin = inputs.worldPos + inputs.N * 0.1f;
-        ray.Direction = inputs.L;
-        ray.TMin = 0.1f;
-        ray.TMax = 1e10f;
-
-        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
-        q.TraceRayInline(inputs.sceneAS, RAY_FLAG_NONE, 0xFF, ray);
-        
-        while (q.Proceed())
-        {
-            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
-            {
-                uint instanceIndex = q.CandidateInstanceIndex();
-                uint primitiveIndex = q.CandidatePrimitiveIndex();
-                float2 bary = q.CandidateTriangleBarycentrics();
-
-                PerInstanceData inst = inputs.instances[instanceIndex];
-                MeshData mesh = inputs.meshData[inst.m_MeshDataIndex];
-                MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
-
-                if (mat.m_AlphaMode == ALPHA_MODE_MASK)
-                {
-                    uint baseIndex = mesh.m_IndexOffsets[0];
-                    uint i0 = inputs.indices[baseIndex + 3 * primitiveIndex + 0];
-                    uint i1 = inputs.indices[baseIndex + 3 * primitiveIndex + 1];
-                    uint i2 = inputs.indices[baseIndex + 3 * primitiveIndex + 2];
-
-                    Vertex v0 = UnpackVertex(inputs.vertices[i0]);
-                    Vertex v1 = UnpackVertex(inputs.vertices[i1]);
-                    Vertex v2 = UnpackVertex(inputs.vertices[i2]);
-
-                    float2 uv0 = v0.m_Uv;
-                    float2 uv1 = v1.m_Uv;
-                    float2 uv2 = v2.m_Uv;
-
-                    float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
-                    
-                    float3 p0 = mul(float4(v0.m_Pos, 1.0f), inst.m_World).xyz;
-                    float3 p1 = mul(float4(v1.m_Pos, 1.0f), inst.m_World).xyz;
-                    float3 p2 = mul(float4(v2.m_Pos, 1.0f), inst.m_World).xyz;
-                    
-                    float3 hitPos = p0 * (1.0f - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
-                    float dist = length(hitPos - ray.Origin);
-                    
-                    float3 edge1 = p1 - p0;
-                    float3 edge2 = p2 - p0;
-                    float triangleArea = length(cross(edge1, edge2)) * 0.5f;
-                    
-                    float2 uvMin = min(uv0, min(uv1, uv2));
-                    float2 uvMax = max(uv0, max(uv1, uv2));
-                    float2 uvRange = uvMax - uvMin;
-                    
-                    float gradientScale = triangleArea / max(dist, 0.1f);
-                    float2 ddx_uv = uvRange * gradientScale;
-                    float2 ddy_uv = uvRange * gradientScale;
-                    
-                    bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
-                    float4 albedoSample = hasAlbedo 
-                        ? SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv)
-                        : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
-                    
-                    float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
-                    
-                    if (alpha >= mat.m_AlphaCutoff)
-                    {
-                        q.CommitNonOpaqueTriangleHit();
-                    }
-                }
-                else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
-                {
-                    // ignore
-                }
-                else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
-                {
-                    q.CommitNonOpaqueTriangleHit();
-                }
-            }
-        }
-
-        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
-        {
-            shadow = 0.0f;
-        }
-    }
+    float shadow = CalculateRTShadow(inputs, L, 1e10f);
 
     return EvaluateDirectLight(inputs, radiance, shadow);
 }
@@ -349,7 +353,9 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light)
     inputs.L = L;
     PrepareLightingByproducts(inputs);
     
-    return EvaluateDirectLight(inputs, radiance, 1.0f);
+    float shadow = CalculateRTShadow(inputs, L, dist);
+
+    return EvaluateDirectLight(inputs, radiance, shadow);
 }
 
 LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCount)

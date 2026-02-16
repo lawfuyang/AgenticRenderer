@@ -36,7 +36,7 @@ public:
     void SetProjection(const ProjectionParams& proj) { m_Proj = proj; }
 
     // Exposure settings (photographic EV100)
-    float m_ExposureValue           = 10.0f; // EV100
+    float m_ExposureValue           = 0.0f; // EV100
     float m_ExposureCompensation    = 0.0f;  // in stops
     float m_ExposureValueMin        = -7.0f;  // clamp for auto exposure
     float m_ExposureValueMax        = 23.0f; // clamp for auto exposure
