@@ -188,6 +188,56 @@ void RenderGraph::BeginPass(const char* name)
     m_PendingDeclaredBuffers.clear();
 }
 
+void RenderGraph::ScheduleRenderer(IRenderer* pRenderer)
+{
+    Renderer* renderer = Renderer::GetInstance();
+    const int readIndex = renderer->m_FrameNumber % 2;
+    const int writeIndex = (renderer->m_FrameNumber + 1) % 2;
+
+    BeginSetup();
+    bool bPassEnabled = false;
+    {
+        PROFILE_SCOPED("SetupRenderer");
+        bPassEnabled = pRenderer->Setup(*this);
+    }
+    EndSetup(bPassEnabled);
+
+    if (bPassEnabled)
+    {
+        BeginPass(pRenderer->GetName());
+        const uint16_t passIndex = GetCurrentPassIndex();
+
+        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+
+        const bool bImmediateExecute = false; /* defer execution until after render graph compiles */
+        renderer->m_TaskScheduler->ScheduleTask([renderer, pRenderer, cmd, readIndex, writeIndex, passIndex]() {
+            PROFILE_SCOPED(pRenderer->GetName());
+            SimpleTimer cpuTimer;
+            ScopedCommandList scopedCmd{ cmd, pRenderer->GetName() };
+            
+            renderer->m_RenderGraph.SetActivePass(passIndex);
+            
+            if (renderer->m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex]))
+            {
+                pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(renderer->m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex]));
+            }
+            renderer->m_RHI->m_NvrhiDevice->resetTimerQuery(pRenderer->m_GPUQueries[readIndex]);
+            
+            renderer->m_RenderGraph.InsertAliasBarriers(passIndex, scopedCmd);
+            scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]);
+            pRenderer->Render(scopedCmd, renderer->m_RenderGraph);
+            renderer->m_RenderGraph.SetActivePass(0);
+            scopedCmd->endTimerQuery(pRenderer->m_GPUQueries[writeIndex]);
+            pRenderer->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds());
+        }, bImmediateExecute);
+    }
+    else
+    {
+        pRenderer->m_CPUTime = 0.0f;
+        pRenderer->m_GPUTime = 0.0f;
+    }
+}
+
 void RenderGraph::BeginSetup()
 {
     SDL_assert(!m_IsInsideSetup);

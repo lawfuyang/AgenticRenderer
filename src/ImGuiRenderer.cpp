@@ -318,8 +318,8 @@ void ImGuiRenderer::CreateDeviceObjects()
         }
 
         // Upload font texture data
-        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("ImGui Font Upload");
-        ScopedCommandList scopedCmd{ cmd };
+        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+        ScopedCommandList scopedCmd{ cmd, "ImGui Font Upload" };
         scopedCmd->writeTexture(m_FontTexture, 0, 0, pixels, width * 4);
     }
 

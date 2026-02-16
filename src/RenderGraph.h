@@ -158,6 +158,8 @@ public:
     void EndSetup(bool bEnabled);
     void BeginPass(const char* name);
     
+    void ScheduleRenderer(class IRenderer* pRenderer);
+    
     void Compile();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)

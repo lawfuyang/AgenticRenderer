@@ -86,7 +86,7 @@ struct Renderer
     void Shutdown();
 
     // Command List Management
-    nvrhi::CommandListHandle AcquireCommandList(std::string_view markerName, bool bImmediatelyQueue = true);
+    nvrhi::CommandListHandle AcquireCommandList(bool bImmediatelyQueue = true);
     void ExecutePendingCommandLists();
 
     // Swapchain / Backbuffer
@@ -232,6 +232,7 @@ private:
 
     // Caches
     std::mutex m_CacheMutex;
+    std::mutex m_CommandListMutex;
     std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
     std::unordered_map<size_t, nvrhi::GraphicsPipelineHandle> m_GraphicsPipelineCache;
     std::unordered_map<size_t, nvrhi::MeshletPipelineHandle> m_MeshletPipelineCache;
@@ -265,14 +266,23 @@ private:
 class ScopedCommandList
 {
 public:
-    ScopedCommandList(const nvrhi::CommandListHandle& commandList)
+    ScopedCommandList(const nvrhi::CommandListHandle& commandList, std::string_view markerName = "")
         : m_CommandList(commandList)
+        , m_HasMarker(!markerName.empty())
     {
+        m_CommandList->open();
+        if (m_HasMarker)
+        {
+            m_CommandList->beginMarker(markerName.data());
+        }
     }
 
     ~ScopedCommandList()
     {
-        m_CommandList->endMarker();
+        if (m_HasMarker)
+        {
+            m_CommandList->endMarker();
+        }
         m_CommandList->close();
     }
 
@@ -282,4 +292,5 @@ public:
 
 private:
     const nvrhi::CommandListHandle& m_CommandList;
+    bool m_HasMarker;
 };

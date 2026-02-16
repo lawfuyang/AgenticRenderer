@@ -90,8 +90,8 @@ void Scene::BuildAccelerationStructures()
 
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
-	nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Build Scene Accel Structs");
-	ScopedCommandList scopedCmd{ cmd };
+	nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+	ScopedCommandList scopedCmd{ cmd, "Build Scene Accel Structs" };
 
     // Mapping from MeshDataIndex to Primitive pointer for TLAS build
     std::vector<Primitive*> meshDataToPrimitive(m_MeshData.size(), nullptr);

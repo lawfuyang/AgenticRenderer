@@ -712,8 +712,8 @@ void Renderer::Run()
             m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
             if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
             {
-                nvrhi::CommandListHandle cmd = AcquireCommandList("Upload Animated Instances");
-                ScopedCommandList scopedCmd{ cmd };
+                nvrhi::CommandListHandle cmd = AcquireCommandList();
+                ScopedCommandList scopedCmd{ cmd, "Upload Animated Instances" };
                 uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
                 uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
                 scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
@@ -749,70 +749,39 @@ void Renderer::Run()
         if constexpr (false)
         {
             PROFILE_SCOPED("GPU Frame Start");
-            nvrhi::CommandListHandle cmd = AcquireCommandList("GPU Frame Start");
-            ScopedCommandList scopedCmd{ cmd };
+            nvrhi::CommandListHandle cmd = AcquireCommandList();
+            ScopedCommandList scopedCmd{ cmd, "GPU Frame Start" };
             m_RHI->m_NvrhiDevice->resetTimerQuery(m_GPUQueries[readIndex]);
             scopedCmd->beginTimerQuery(m_GPUQueries[writeIndex]);
         }
         
         m_RenderGraph.Reset();
 
-        #define ADD_RENDER_PASS(rendererName) \
-        { \
-            extern IRenderer* rendererName; \
-            IRenderer* pRenderer = rendererName; \
-            m_RenderGraph.BeginSetup(); \
-            bool bPassEnabled = false; \
-            { \
-                PROFILE_SCOPED("Setup " #rendererName); \
-                bPassEnabled = pRenderer->Setup(m_RenderGraph); \
-            } \
-            m_RenderGraph.EndSetup(bPassEnabled); \
-            if (bPassEnabled) \
-            { \
-                m_RenderGraph.BeginPass(pRenderer->GetName()); \
-                const uint16_t passIndex = m_RenderGraph.GetCurrentPassIndex(); \
-                nvrhi::CommandListHandle cmd = AcquireCommandList(pRenderer->GetName()); \
-                const bool bImmediateExecute = false; /* defer execution until after render graph compiles */ \
-                m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex, passIndex]() { \
-                    PROFILE_SCOPED(pRenderer->GetName()) \
-                    ScopedCommandList scopedCmd{ cmd }; \
-                    m_RenderGraph.SetActivePass(passIndex); \
-                    if (m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex])) \
-                    { \
-                        pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex])); \
-                    } \
-                    m_RHI->m_NvrhiDevice->resetTimerQuery(pRenderer->m_GPUQueries[readIndex]); \
-                    SimpleTimer cpuTimer; \
-                    m_RenderGraph.InsertAliasBarriers(passIndex, scopedCmd); \
-                    scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
-                    pRenderer->Render(scopedCmd, m_RenderGraph); \
-                    m_RenderGraph.SetActivePass(0); \
-                    scopedCmd->endTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
-                    pRenderer->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
-                }, bImmediateExecute); \
-            } \
-            else \
-            { \
-                rendererName->m_CPUTime = 0.0f; \
-                rendererName->m_GPUTime = 0.0f; \
-            } \
-        }
+        extern IRenderer* g_TLASRenderer;
+        extern IRenderer* g_ClearRenderer;
+        extern IRenderer* g_OpaquePhase1Renderer;
+        extern IRenderer* g_HZBGenerator;
+        extern IRenderer* g_OpaquePhase2Renderer;
+        extern IRenderer* g_MaskedPassRenderer;
+        extern IRenderer* g_HZBGeneratorPhase2;
+        extern IRenderer* g_DeferredRenderer;
+        extern IRenderer* g_TransparentPassRenderer;
+        extern IRenderer* g_BloomRenderer;
+        extern IRenderer* g_HDRRenderer;
+        extern IRenderer* g_ImGuiRenderer;
 
-        ADD_RENDER_PASS(g_TLASRenderer);
-        ADD_RENDER_PASS(g_ClearRenderer);
-        ADD_RENDER_PASS(g_OpaquePhase1Renderer);
-        ADD_RENDER_PASS(g_HZBGenerator);
-        ADD_RENDER_PASS(g_OpaquePhase2Renderer);
-        ADD_RENDER_PASS(g_MaskedPassRenderer);
-        ADD_RENDER_PASS(g_HZBGeneratorPhase2);
-        ADD_RENDER_PASS(g_DeferredRenderer);
-        ADD_RENDER_PASS(g_TransparentPassRenderer);
-        ADD_RENDER_PASS(g_BloomRenderer);
-        ADD_RENDER_PASS(g_HDRRenderer);
-        ADD_RENDER_PASS(g_ImGuiRenderer);
-
-        #undef ADD_RENDER_PASS
+        m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
+        m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
+        m_RenderGraph.ScheduleRenderer(g_OpaquePhase1Renderer);
+        m_RenderGraph.ScheduleRenderer(g_HZBGenerator);
+        m_RenderGraph.ScheduleRenderer(g_OpaquePhase2Renderer);
+        m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
+        m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+        m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
+        m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
+        m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+        m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
+        m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
 
         // Compile render graph: compute lifetimes and allocate resources
         m_RenderGraph.Compile();
@@ -824,8 +793,8 @@ void Renderer::Run()
         if constexpr (false)
         {
             PROFILE_SCOPED("GPU Frame End");
-            nvrhi::CommandListHandle cmd = AcquireCommandList("GPU Frame End");
-            ScopedCommandList scopedCmd{ cmd };
+            nvrhi::CommandListHandle cmd = AcquireCommandList();
+            ScopedCommandList scopedCmd{ cmd, "GPU Frame End" };
             scopedCmd->endTimerQuery(m_GPUQueries[writeIndex]);
         }
 
@@ -1504,31 +1473,30 @@ void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::Command
     AddComputePass(params);
 }
 
-nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerName, bool bImmediatelyQueue)
+nvrhi::CommandListHandle Renderer::AcquireCommandList(bool bImmediatelyQueue)
 {
     PROFILE_FUNCTION();
-    SINGLE_THREAD_GUARD();
 
     nvrhi::CommandListHandle handle;
-    if (!m_CommandListFreeList.empty())
     {
-        handle = m_CommandListFreeList.back();
-        m_CommandListFreeList.pop_back();
-    }
-    else
-    {
-        const nvrhi::CommandListParameters params{ .enableImmediateExecution = false, .queueType = nvrhi::CommandQueue::Graphics };
-        handle = m_RHI->m_NvrhiDevice->createCommandList(params);
-    }
+        std::lock_guard<std::mutex> lock(m_CommandListMutex);
+        if (!m_CommandListFreeList.empty())
+        {
+            handle = m_CommandListFreeList.back();
+            m_CommandListFreeList.pop_back();
+        }
+        else
+        {
+            const nvrhi::CommandListParameters params{ .enableImmediateExecution = false, .queueType = nvrhi::CommandQueue::Graphics };
+            handle = m_RHI->m_NvrhiDevice->createCommandList(params);
+        }
 
-    SDL_assert(handle && "Failed to acquire command list");
+        SDL_assert(handle && "Failed to acquire command list");
 
-    handle->open();
-    handle->beginMarker(markerName.data());
-
-    if (bImmediatelyQueue)
-    {
-        m_PendingCommandLists.push_back(handle);
+        if (bImmediatelyQueue)
+        {
+            m_PendingCommandLists.push_back(handle);
+        }
     }
 
     return handle;
@@ -1537,13 +1505,13 @@ nvrhi::CommandListHandle Renderer::AcquireCommandList(std::string_view markerNam
 void Renderer::ExecutePendingCommandLists()
 {
     PROFILE_FUNCTION();
-    SINGLE_THREAD_GUARD();
+     SINGLE_THREAD_GUARD();
 
     // Wait for GPU to finish all work before presenting
     {
         PROFILE_SCOPED("WaitForIdle");
         m_RHI->m_NvrhiDevice->waitForIdle();
-    }
+     }
 
     m_CommandListFreeList.insert(m_CommandListFreeList.end(), m_InFlightCommandLists.begin(), m_InFlightCommandLists.end());
     m_InFlightCommandLists.clear();
@@ -1572,10 +1540,9 @@ void Renderer::ExecutePendingCommandLists()
             }
 
             m_RHI->m_NvrhiDevice->executeCommandLists(rawLists.data(), rawLists.size());
-            
         }
-        
-        m_InFlightCommandLists.insert(m_InFlightCommandLists.end(), m_PendingCommandLists.begin(), m_PendingCommandLists.end());        
+
+        m_InFlightCommandLists.insert(m_InFlightCommandLists.end(), m_PendingCommandLists.begin(), m_PendingCommandLists.end());
         m_PendingCommandLists.clear();
     }
 }
@@ -1630,8 +1597,8 @@ void Renderer::CreateSceneResources()
     counterDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     m_SPDAtomicCounter = m_RHI->m_NvrhiDevice->createBuffer(counterDesc);
 
-    nvrhi::CommandListHandle cmd = AcquireCommandList("HZB_Clear");
-    ScopedCommandList scopedCmd{ cmd };
+    nvrhi::CommandListHandle cmd = AcquireCommandList();
+    ScopedCommandList scopedCmd{ cmd, "HZB_Clear" };
     scopedCmd->clearTextureFloat(m_HZBTexture, nvrhi::AllSubresources, DEPTH_FAR);
 
     SDL_Log("[Init] Created HZB texture (%ux%u, %u mips)", hzbWidth, hzbHeight, mipLevels);

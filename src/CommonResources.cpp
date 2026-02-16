@@ -246,8 +246,8 @@ void CommonResources::Initialize()
         DummyUAVBuffer = device->createBuffer(bufferDesc);
 
         // Upload texture data using renderer's command list management
-        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("CommonResources_DefaultTextures");
-        ScopedCommandList commandList{ cmd };
+        nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+        ScopedCommandList commandList{ cmd, "CommonResources_DefaultTextures" };
 
         const char* basePath = SDL_GetBasePath();
         const Config& config = Config::Get();

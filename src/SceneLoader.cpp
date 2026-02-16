@@ -104,8 +104,8 @@ static nvrhi::TextureHandle LoadAndRegisterEnvMap(const std::string& path, uint3
 	desc.debugName = path;
 	nvrhi::TextureHandle tex = Renderer::GetInstance()->m_RHI->m_NvrhiDevice->createTexture(desc);
 
-	nvrhi::CommandListHandle cmd = Renderer::GetInstance()->AcquireCommandList(name);
-	ScopedCommandList scopedCmd{ cmd };
+	nvrhi::CommandListHandle cmd = Renderer::GetInstance()->AcquireCommandList();
+	ScopedCommandList scopedCmd{ cmd, name };
 
 	UploadTexture(scopedCmd, tex, desc, imgData->GetData(), imgData->GetSize());
 
@@ -690,9 +690,11 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 
 	const uint32_t threadCount = renderer->m_TaskScheduler->GetThreadCount() + 1;
 	std::vector<nvrhi::CommandListHandle> threadCommandLists(threadCount);
+	std::vector<std::unique_ptr<ScopedCommandList>> threadScopedCommandLists(threadCount);
 	for (uint32_t i = 0; i < threadCount; ++i)
 	{
-		threadCommandLists[i] = renderer->AcquireCommandList("Texture Load");
+		threadCommandLists[i] = renderer->AcquireCommandList();
+		threadScopedCommandLists[i] = std::make_unique<ScopedCommandList>(threadCommandLists[i], "Texture Load");
 	}
 
 	renderer->m_TaskScheduler->ParallelFor(static_cast<uint32_t>(scene.m_Textures.size()), [&](uint32_t i, uint32_t threadIndex)
@@ -729,11 +731,7 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 		UploadTexture(cmd, tex.m_Handle, desc, imgData->GetData(), imgData->GetSize());
 	});
 
-	for (uint32_t i = 0; i < threadCount; ++i)
-	{
-		// just to queue, close cmd list & end marker
-		ScopedCommandList scopedCmd{ threadCommandLists[i] };
-	}
+	threadScopedCommandLists.clear();
 
 	for (size_t ti = 0; ti < scene.m_Textures.size(); ++ti)
 	{
@@ -820,8 +818,8 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* rend
 			.setDebugName("MaterialConstantsBuffer");
 		scene.m_MaterialConstantsBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(matBufDesc);
 
-		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload MaterialConstants");
-		ScopedCommandList scopedCmd{ cmd };
+		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+		ScopedCommandList scopedCmd{ cmd, "Upload MaterialConstants" };
 		scopedCmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(MaterialConstants));
 	}
 }
@@ -1442,8 +1440,8 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 {
 	SCOPED_TIMER("[Scene] GPU Upload");
 
-	nvrhi::CommandListHandle cmd = renderer->AcquireCommandList("Upload Scene Buffers");
-	ScopedCommandList scopedCmd{ cmd };
+	nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
+	ScopedCommandList scopedCmd{ cmd, "Upload Scene Buffers" };
 
 	// Create quantized vertex buffer
 	if (!allVerticesQuantized.empty())
