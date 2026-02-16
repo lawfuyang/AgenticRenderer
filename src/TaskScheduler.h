@@ -3,6 +3,8 @@
 class TaskScheduler
 {
 public:
+    static const uint32_t kRuntimeThreadCount = 12;
+
     TaskScheduler();
     ~TaskScheduler();
 
@@ -10,6 +12,7 @@ public:
     void ScheduleTask(std::function<void()> func, bool bImmediateExecute = true);
     void ExecuteAllScheduledTasks();
 
+    void SetThreadCount(uint32_t count);
     uint32_t GetThreadCount() const { return static_cast<uint32_t>(m_Workers.size()); }
 
 private:
@@ -21,6 +24,7 @@ private:
     std::mutex m_QueueMutex;
     std::condition_variable m_Condition;
     std::atomic<bool> m_Stop{ false };
+    std::atomic<uint32_t> m_TargetThreadCount{ 0 };
 
     std::atomic<uint32_t> m_RemainingTasks{ 0 };
     std::mutex m_CompletionMutex;

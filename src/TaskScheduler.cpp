@@ -3,12 +3,7 @@
 
 TaskScheduler::TaskScheduler()
 {
-    //const uint32_t kNumThreads = std::thread::hardware_concurrency();
-    const uint32_t kNumThreads = 12;
-    for (uint32_t i = 0; i < kNumThreads; ++i)
-    {
-        m_Workers.emplace_back(&TaskScheduler::WorkerThread, this, i);
-    }
+    SetThreadCount(kRuntimeThreadCount);
 }
 
 TaskScheduler::~TaskScheduler()
@@ -20,7 +15,51 @@ TaskScheduler::~TaskScheduler()
     m_Condition.notify_all();
     for (std::thread& worker : m_Workers)
     {
-        worker.join();
+        if (worker.joinable())
+        {
+            worker.join();
+        }
+    }
+}
+
+void TaskScheduler::SetThreadCount(uint32_t count)
+{
+    std::vector<std::thread> threadsToJoin;
+    {
+        std::lock_guard<std::mutex> lock(m_QueueMutex);
+        
+        if (count > m_Workers.size())
+        {
+            uint32_t startIdx = static_cast<uint32_t>(m_Workers.size());
+            m_TargetThreadCount = count;
+            for (uint32_t i = startIdx; i < count; ++i)
+            {
+                m_Workers.emplace_back(&TaskScheduler::WorkerThread, this, i);
+            }
+        }
+        else if (count < m_Workers.size())
+        {
+            m_TargetThreadCount = count;
+            m_Condition.notify_all();
+            
+            for (uint32_t i = count; i < m_Workers.size(); ++i)
+            {
+                threadsToJoin.push_back(std::move(m_Workers[i]));
+            }
+            m_Workers.resize(count);
+        }
+        else
+        {
+            m_TargetThreadCount = count;
+        }
+    }
+
+    for (std::thread& t : threadsToJoin)
+    {
+        if (t.joinable())
+        {
+            t.join();
+        }
     }
 }
 
@@ -118,8 +157,14 @@ void TaskScheduler::WorkerThread(uint32_t threadIndex)
         std::function<void(uint32_t)> task;
         {
             std::unique_lock<std::mutex> lock(m_QueueMutex);
-            m_Condition.wait(lock, [this]() { return m_Stop || !m_Tasks.empty(); });
+            m_Condition.wait(lock, [this, threadIndex]() { return m_Stop || !m_Tasks.empty() || threadIndex >= m_TargetThreadCount; });
+            
             if (m_Stop && m_Tasks.empty()) return;
+
+            if (threadIndex >= m_TargetThreadCount) return;
+
+            if (m_Tasks.empty()) continue;
+
             task = std::move(m_Tasks.back());
             m_Tasks.pop_back();
         }
