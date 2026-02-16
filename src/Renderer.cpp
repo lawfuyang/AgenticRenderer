@@ -34,7 +34,7 @@ RGTextureHandle g_RG_HDRColor;
 class ClearRenderer : public IRenderer
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
@@ -109,6 +109,8 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+
+        return true;
     }
     
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
@@ -143,14 +145,21 @@ public:
 class TLASRenderer : public IRenderer
 {
 public:
-
-    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         Scene& scene = renderer->m_Scene;
 
         if (!scene.m_TLAS || !scene.m_RTInstanceDescBuffer || scene.m_RTInstanceDescs.empty())
-            return;
+            return false;
+
+        return true;
+    }
+
+    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        Scene& scene = renderer->m_Scene;
 
         // Perform GPU TLAS update
         commandList->buildTopLevelAccelStructFromBuffer(
@@ -750,28 +759,42 @@ void Renderer::Run()
         { \
             extern IRenderer* rendererName; \
             IRenderer* pRenderer = rendererName; \
-            m_RenderGraph.BeginPass(pRenderer->GetName()); \
-            pRenderer->Setup(m_RenderGraph); \
-            const uint16_t passIndex = m_RenderGraph.GetCurrentPassIndex(); \
-            nvrhi::CommandListHandle cmd = AcquireCommandList(pRenderer->GetName()); \
-            const bool bImmediateExecute = false; /* defer execution until after render graph compiles */ \
-            m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex, passIndex]() { \
-                PROFILE_SCOPED(pRenderer->GetName()) \
-                ScopedCommandList scopedCmd{ cmd }; \
-                m_RenderGraph.SetActivePass(passIndex); \
-                if (m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex])) \
-                { \
-                    pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex])); \
-                } \
-                m_RHI->m_NvrhiDevice->resetTimerQuery(pRenderer->m_GPUQueries[readIndex]); \
-                SimpleTimer cpuTimer; \
-                m_RenderGraph.InsertAliasBarriers(passIndex, scopedCmd); \
-                scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
-                pRenderer->Render(scopedCmd, m_RenderGraph); \
-                m_RenderGraph.SetActivePass(0); \
-                scopedCmd->endTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
-                pRenderer->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
-            }, bImmediateExecute); \
+            m_RenderGraph.BeginSetup(); \
+            bool bPassEnabled = false; \
+            { \
+                PROFILE_SCOPED("Setup " #rendererName); \
+                bPassEnabled = pRenderer->Setup(m_RenderGraph); \
+            } \
+            m_RenderGraph.EndSetup(bPassEnabled); \
+            if (bPassEnabled) \
+            { \
+                m_RenderGraph.BeginPass(pRenderer->GetName()); \
+                const uint16_t passIndex = m_RenderGraph.GetCurrentPassIndex(); \
+                nvrhi::CommandListHandle cmd = AcquireCommandList(pRenderer->GetName()); \
+                const bool bImmediateExecute = false; /* defer execution until after render graph compiles */ \
+                m_TaskScheduler->ScheduleTask([this, pRenderer, cmd, readIndex, writeIndex, passIndex]() { \
+                    PROFILE_SCOPED(pRenderer->GetName()) \
+                    ScopedCommandList scopedCmd{ cmd }; \
+                    m_RenderGraph.SetActivePass(passIndex); \
+                    if (m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex])) \
+                    { \
+                        pRenderer->m_GPUTime = SimpleTimer::SecondsToMilliseconds(m_RHI->m_NvrhiDevice->getTimerQueryTime(pRenderer->m_GPUQueries[readIndex])); \
+                    } \
+                    m_RHI->m_NvrhiDevice->resetTimerQuery(pRenderer->m_GPUQueries[readIndex]); \
+                    SimpleTimer cpuTimer; \
+                    m_RenderGraph.InsertAliasBarriers(passIndex, scopedCmd); \
+                    scopedCmd->beginTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
+                    pRenderer->Render(scopedCmd, m_RenderGraph); \
+                    m_RenderGraph.SetActivePass(0); \
+                    scopedCmd->endTimerQuery(pRenderer->m_GPUQueries[writeIndex]); \
+                    pRenderer->m_CPUTime = static_cast<float>(cpuTimer.TotalMilliseconds()); \
+                }, bImmediateExecute); \
+            } \
+            else \
+            { \
+                rendererName->m_CPUTime = 0.0f; \
+                rendererName->m_GPUTime = 0.0f; \
+            } \
         }
 
         ADD_RENDER_PASS(g_TLASRenderer);

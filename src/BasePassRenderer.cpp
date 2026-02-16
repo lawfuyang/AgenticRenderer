@@ -463,7 +463,7 @@ void BasePassRendererBase::GenerateHZBMips(nvrhi::CommandListHandle commandList,
 class OpaquePhase1Renderer : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
@@ -490,6 +490,8 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;
@@ -543,20 +545,19 @@ void OpaquePhase1Renderer::Render(nvrhi::CommandListHandle commandList, const Re
 class HZBGenerator : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableOcclusionCulling)
-        {
-            renderGraph.ReadTexture(g_RG_DepthTexture);
-        }
+        if (!renderer->m_EnableOcclusionCulling) return false;
+
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling) return;
-
+        
         ResourceHandles handles;
         handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
         GenerateHZBMips(commandList, handles);
@@ -567,15 +568,14 @@ public:
 class OpaquePhase2Renderer : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
+        if (!renderer->m_EnableOcclusionCulling) return false;
+
         BasePassResources& res = renderer->m_BasePassResources;
 
-        if (renderer->m_EnableOcclusionCulling)
-        {
-            renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
-        }
+        renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
         
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
@@ -592,6 +592,8 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;
@@ -601,8 +603,7 @@ public:
 void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
     Renderer* renderer = Renderer::GetInstance();
-    if (!renderer->m_EnableOcclusionCulling) return;
-
+    
     const uint32_t numOpaque = renderer->m_Scene.m_OpaqueBucket.m_Count;
     if (numOpaque == 0) return;
 
@@ -643,7 +644,7 @@ void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList, const Re
 class MaskedPassRenderer : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
@@ -669,6 +670,8 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;
@@ -722,20 +725,19 @@ void MaskedPassRenderer::Render(nvrhi::CommandListHandle commandList, const Rend
 class HZBGeneratorPhase2 : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableOcclusionCulling)
-        {
-            renderGraph.ReadTexture(g_RG_DepthTexture);
-        }
+        if (!renderer->m_EnableOcclusionCulling) return false;
+
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling) return;
-
+        
         ResourceHandles handles;
         handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
         GenerateHZBMips(commandList, handles);
@@ -746,7 +748,7 @@ public:
 class TransparentPassRenderer : public BasePassRendererBase
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         BasePassResources& res = renderer->m_BasePassResources;
@@ -794,6 +796,8 @@ public:
             renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
             renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
         }
+
+        return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;

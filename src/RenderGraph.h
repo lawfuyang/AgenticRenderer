@@ -154,6 +154,8 @@ public:
     void WriteBuffer(RGBufferHandle handle);
     
     // Pass management (internal use by render loop)
+    void BeginSetup();
+    void EndSetup(bool bEnabled);
     void BeginPass(const char* name);
     
     void Compile();
@@ -239,6 +241,13 @@ private:
     std::vector<RenderGraphInternal::TransientBuffer> m_Buffers;
     std::vector<const char*> m_PassNames;
     
+    // Setup state
+    bool m_IsInsideSetup = false;
+    bool m_DidAccessInSetup = false;
+    PassAccess m_PendingPassAccess;
+    std::vector<uint32_t> m_PendingDeclaredTextures;
+    std::vector<uint32_t> m_PendingDeclaredBuffers;
+
     Stats m_Stats;
     bool m_AliasingEnabled = true;
     bool m_IsCompiled = false;

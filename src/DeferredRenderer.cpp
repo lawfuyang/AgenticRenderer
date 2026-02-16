@@ -15,7 +15,7 @@ class DeferredRenderer : public IRenderer
 {
 public:
 
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
 
@@ -26,6 +26,8 @@ public:
         renderGraph.ReadTexture(g_RG_GBufferEmissive);
         renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
         renderGraph.WriteTexture(g_RG_HDRColor);
+
+        return true;
     }
     
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override

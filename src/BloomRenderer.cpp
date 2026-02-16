@@ -14,10 +14,10 @@ class BloomRenderer : public IRenderer
 {
 public:
 
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableBloom) return;
+        if (!renderer->m_EnableBloom) return false;
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
@@ -40,13 +40,14 @@ public:
         renderGraph.ReadTexture(g_RG_HDRColor);
         renderGraph.WriteTexture(g_RG_BloomDownPyramid);
         renderGraph.WriteTexture(g_RG_BloomUpPyramid);
+
+        return true;
     }
     
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
-        if (!renderer->m_EnableBloom) return;
 
         nvrhi::utils::ScopedMarker marker(commandList, "Bloom");
 

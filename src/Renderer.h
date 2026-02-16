@@ -21,7 +21,7 @@ public:
     virtual ~IRenderer() = default;
     virtual void Initialize() {}
     virtual void PostSceneLoad() {}
-    virtual void Setup(RenderGraph& renderGraph) {}
+    virtual bool Setup(RenderGraph& renderGraph) { return false; }
     virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) = 0;
     virtual const char* GetName() const = 0;
 

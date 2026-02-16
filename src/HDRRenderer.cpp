@@ -15,7 +15,7 @@ static constexpr float kMaxLogLuminance = 20.0f;
 class HDRRenderer : public IRenderer
 {
 public:
-    void Setup(RenderGraph& renderGraph) override
+    bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         
@@ -52,6 +52,8 @@ public:
         {
             renderGraph.ReadTexture(g_RG_BloomUpPyramid);
         }
+
+        return true;
     }
 
     

@@ -10,7 +10,7 @@ class ImGuiRenderer : public IRenderer
 {
 public:
     void Initialize() override;
-    
+    bool Setup(RenderGraph& renderGraph) override;
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override;
     const char* GetName() const override { return "ImGui"; }
 
@@ -36,23 +36,29 @@ void ImGuiRenderer::Initialize()
     CreateDeviceObjects();
 }
 
+bool ImGuiRenderer::Setup(RenderGraph& renderGraph)
+{
+    ImDrawData* draw_data = ImGui::GetDrawData();
+    if (!draw_data)
+        return false;
+
+    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
+    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+
+    if (fb_width <= 0 || fb_height <= 0)
+        return false;
+
+    return true;
+}
+
 void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
     Renderer* renderer = Renderer::GetInstance();
     ImDrawData* draw_data = ImGui::GetDrawData();
 
-    // ============================================================================
-    // Validation and Setup
-    // ============================================================================
-    if (!draw_data)
-        return;
-
     // Replicate ImGui_ImplVulkan_RenderDrawData behavior using nvrhi
     int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
     int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
-
-    if (fb_width <= 0 || fb_height <= 0)
-        return;
 
     // ============================================================================
     // Framebuffer Setup

@@ -158,10 +158,65 @@ void RenderGraph::Reset()
 
 void RenderGraph::BeginPass(const char* name)
 {
+    PROFILE_FUNCTION();
+    
     SDL_assert(name);
     m_CurrentPassIndex++;
     m_PassNames.push_back(name);
-    m_PassAccesses.push_back({}); // New entry for this pass (1-based index)
+    m_PassAccesses.push_back(m_PendingPassAccess); // Copy pending accesses from Setup
+    
+    // Update resources declared in Setup with the correct pass index
+    for (uint32_t texIdx : m_PendingDeclaredTextures)
+    {
+        m_Textures[texIdx].m_DeclarationPass = m_CurrentPassIndex;
+        UpdateResourceLifetime(m_Textures[texIdx].m_Lifetime, m_CurrentPassIndex);
+    }
+    for (uint32_t bufIdx : m_PendingDeclaredBuffers)
+    {
+        m_Buffers[bufIdx].m_DeclarationPass = m_CurrentPassIndex;
+        UpdateResourceLifetime(m_Buffers[bufIdx].m_Lifetime, m_CurrentPassIndex);
+    }
+    
+    // Also update any read/write resources that were just registered in Setup
+    for (uint32_t texIdx : m_PendingPassAccess.m_ReadTextures) UpdateResourceLifetime(m_Textures[texIdx].m_Lifetime, m_CurrentPassIndex);
+    for (uint32_t texIdx : m_PendingPassAccess.m_WriteTextures) UpdateResourceLifetime(m_Textures[texIdx].m_Lifetime, m_CurrentPassIndex);
+    for (uint32_t bufIdx : m_PendingPassAccess.m_ReadBuffers) UpdateResourceLifetime(m_Buffers[bufIdx].m_Lifetime, m_CurrentPassIndex);
+    for (uint32_t bufIdx : m_PendingPassAccess.m_WriteBuffers) UpdateResourceLifetime(m_Buffers[bufIdx].m_Lifetime, m_CurrentPassIndex);
+
+    m_PendingPassAccess = {};
+    m_PendingDeclaredTextures.clear();
+    m_PendingDeclaredBuffers.clear();
+}
+
+void RenderGraph::BeginSetup()
+{
+    SDL_assert(!m_IsInsideSetup);
+    m_IsInsideSetup = true;
+    m_DidAccessInSetup = false;
+    m_PendingPassAccess = {};
+    m_PendingDeclaredTextures.clear();
+    m_PendingDeclaredBuffers.clear();
+}
+
+void RenderGraph::EndSetup(bool bEnabled)
+{
+    SDL_assert(m_IsInsideSetup);
+    if (!bEnabled)
+    {
+        if (m_DidAccessInSetup)
+        {
+            SDL_assert(false && "Renderer returned false in Setup but accessed/declared RG resources");
+        }
+        
+        // Safety: clear any pending state just in case
+        for (uint32_t texIdx : m_PendingDeclaredTextures) m_Textures[texIdx].m_IsDeclaredThisFrame = false;
+        for (uint32_t bufIdx : m_PendingDeclaredBuffers) m_Buffers[bufIdx].m_IsDeclaredThisFrame = false;
+
+        m_PendingPassAccess = {};
+        m_PendingDeclaredTextures.clear();
+        m_PendingDeclaredBuffers.clear();
+    }
+    m_IsInsideSetup = false;
 }
 
 void RenderGraph::SetActivePass(uint16_t passIndex)
@@ -178,6 +233,9 @@ uint16_t RenderGraph::GetActivePassIndex() const
 
 RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTextureHandle existing)
 {
+    SDL_assert(m_IsInsideSetup && "DeclareTexture must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     size_t hash = desc.ComputeHash();
 
     if (existing.IsValid() && existing.m_Index < m_Textures.size())
@@ -197,8 +255,8 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
         texture.m_Hash = hash;
         texture.m_IsDeclaredThisFrame = true;
         texture.m_LastFrameUsed = m_FrameIndex;
-        texture.m_DeclarationPass = m_CurrentPassIndex;
-        UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
+        
+        m_PendingDeclaredTextures.push_back(existing.m_Index);
         return existing;
     }
 
@@ -210,8 +268,8 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
             m_Textures[i].m_Desc = desc; // Ensure metadata like debugName is updated
             m_Textures[i].m_IsDeclaredThisFrame = true;
             m_Textures[i].m_LastFrameUsed = m_FrameIndex;
-            m_Textures[i].m_DeclarationPass = m_CurrentPassIndex;
-            UpdateResourceLifetime(m_Textures[i].m_Lifetime, m_CurrentPassIndex);
+            
+            m_PendingDeclaredTextures.push_back(i);
             return { i };
         }
     }
@@ -224,16 +282,18 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
     texture.m_Hash = hash;
     texture.m_IsDeclaredThisFrame = true;
     texture.m_LastFrameUsed = m_FrameIndex;
-    texture.m_DeclarationPass = m_CurrentPassIndex;
-    UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
     
     m_Textures.push_back(texture);
+    m_PendingDeclaredTextures.push_back(handle.m_Index);
     
     return handle;
 }
 
 RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHandle existing)
 {
+    SDL_assert(m_IsInsideSetup && "DeclareBuffer must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     size_t hash = desc.ComputeHash();
 
     if (existing.IsValid() && existing.m_Index < m_Buffers.size())
@@ -253,8 +313,8 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
         buffer.m_Hash = hash;
         buffer.m_IsDeclaredThisFrame = true;
         buffer.m_LastFrameUsed = m_FrameIndex;
-        buffer.m_DeclarationPass = m_CurrentPassIndex;
-        UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
+
+        m_PendingDeclaredBuffers.push_back(existing.m_Index);
         return existing;
     }
 
@@ -265,8 +325,8 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
             m_Buffers[i].m_Desc = desc; // Ensure metadata like debugName is updated
             m_Buffers[i].m_IsDeclaredThisFrame = true;
             m_Buffers[i].m_LastFrameUsed = m_FrameIndex;
-            m_Buffers[i].m_DeclarationPass = m_CurrentPassIndex;
-            UpdateResourceLifetime(m_Buffers[i].m_Lifetime, m_CurrentPassIndex);
+
+            m_PendingDeclaredBuffers.push_back(i);
             return { i };
         }
     }
@@ -279,10 +339,9 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
     buffer.m_Hash = hash;
     buffer.m_IsDeclaredThisFrame = true;
     buffer.m_LastFrameUsed = m_FrameIndex;
-    buffer.m_DeclarationPass = m_CurrentPassIndex;
-    UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
     
     m_Buffers.push_back(buffer);
+    m_PendingDeclaredBuffers.push_back(handle.m_Index);
     
     return handle;
 }
@@ -293,6 +352,9 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
 
 void RenderGraph::ReadTexture(RGTextureHandle handle)
 {
+    SDL_assert(m_IsInsideSetup && "ReadTexture must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
         SDL_assert(false && "Invalid texture handle");
@@ -307,12 +369,14 @@ void RenderGraph::ReadTexture(RGTextureHandle handle)
         return;
     }
 
-    m_PassAccesses[m_CurrentPassIndex - 1].m_ReadTextures.insert(handle.m_Index);
-    UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
+    m_PendingPassAccess.m_ReadTextures.insert(handle.m_Index);
 }
 
 void RenderGraph::WriteTexture(RGTextureHandle handle)
 {
+    SDL_assert(m_IsInsideSetup && "WriteTexture must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
         SDL_assert(false && "Invalid texture handle");
@@ -327,12 +391,14 @@ void RenderGraph::WriteTexture(RGTextureHandle handle)
         return;
     }
 
-    m_PassAccesses[m_CurrentPassIndex - 1].m_WriteTextures.insert(handle.m_Index);
-    UpdateResourceLifetime(texture.m_Lifetime, m_CurrentPassIndex);
+    m_PendingPassAccess.m_WriteTextures.insert(handle.m_Index);
 }
 
 void RenderGraph::ReadBuffer(RGBufferHandle handle)
 {
+    SDL_assert(m_IsInsideSetup && "ReadBuffer must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {
         SDL_assert(false && "Invalid buffer handle");
@@ -347,12 +413,14 @@ void RenderGraph::ReadBuffer(RGBufferHandle handle)
         return;
     }
 
-    m_PassAccesses[m_CurrentPassIndex - 1].m_ReadBuffers.insert(handle.m_Index);
-    UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
+    m_PendingPassAccess.m_ReadBuffers.insert(handle.m_Index);
 }
 
 void RenderGraph::WriteBuffer(RGBufferHandle handle)
 {
+    SDL_assert(m_IsInsideSetup && "WriteBuffer must be called during Setup phase");
+    m_DidAccessInSetup = true;
+
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {
         SDL_assert(false && "Invalid buffer handle");
@@ -367,8 +435,7 @@ void RenderGraph::WriteBuffer(RGBufferHandle handle)
         return;
     }
 
-    m_PassAccesses[m_CurrentPassIndex - 1].m_WriteBuffers.insert(handle.m_Index);
-    UpdateResourceLifetime(buffer.m_Lifetime, m_CurrentPassIndex);
+    m_PendingPassAccess.m_WriteBuffers.insert(handle.m_Index);
 }
 
 // ============================================================================
