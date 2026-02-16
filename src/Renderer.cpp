@@ -14,9 +14,6 @@ using FfxUInt32x4 = uint32_t[4];
 #define ffxMin(a, b) std::min(a, b)
 #include "shaders/ffx_spd.h"
 
-#include <imgui.h>
-#include <imgui_impl_sdl3.h>
-
 // ============================================================================
 // Global Render Graph Handles for Transient Resources
 // ============================================================================

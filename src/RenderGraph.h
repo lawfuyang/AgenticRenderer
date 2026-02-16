@@ -92,6 +92,7 @@ struct TransientResourceBase
     ResourceLifetime m_Lifetime;
     uint32_t m_AliasedFromIndex = UINT32_MAX;
     uint16_t m_PhysicalLastPass = 0;
+    uint16_t m_DeclarationPass = 0;
     uint64_t m_LastFrameUsed = 0;
     uint64_t m_Offset = 0;
     uint64_t m_BlockOffset = 0;
