@@ -55,6 +55,22 @@
     return max(length(m[0].xyz), max(length(m[1].xyz), length(m[2].xyz)));
   }
 
+  float3x3 MakeAdjugateMatrix(float4x4 m)
+  {
+      return float3x3
+      (
+          cross(m[1].xyz, m[2].xyz),
+          cross(m[2].xyz, m[0].xyz),
+          cross(m[0].xyz, m[1].xyz)
+      );
+  }
+
+  float3 TransformNormal(float3 normal, float4x4 worldMatrix)
+  {
+      float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(worldMatrix);
+      return normalize(mul(normal, adjugateWorldMatrix));
+  }
+
 #define DEPTH_NEAR 1.0f
 #define DEPTH_FAR 0.0f
 #endif
@@ -207,6 +223,14 @@ struct DeferredLightingConstants
   float m_IBLIntensity;
   uint32_t m_RadianceMipCount;
   uint32_t pad1[2];
+};
+
+struct PathTracerConstants
+{
+    PlanarViewConstants m_View;
+    Vector4 m_CameraPos;
+    uint32_t m_LightCount;
+    uint32_t pad1[3];
 };
 
 // Material constants (persistent, per-material data)

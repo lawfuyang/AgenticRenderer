@@ -77,6 +77,7 @@ void ImGuiLayer::UpdateFrame()
         // Rendering options
         if (ImGui::TreeNode("Rendering"))
         {
+            ImGui::Checkbox("Reference Path Tracer", &renderer->m_EnableReferencePathTracer);
             ImGui::Checkbox("Use Meshlet Rendering", &renderer->m_UseMeshletRendering);
             ImGui::Checkbox("Enable RT Shadows", &renderer->m_EnableRTShadows);
             ImGui::Checkbox("Enable IBL", &renderer->m_EnableIBL);

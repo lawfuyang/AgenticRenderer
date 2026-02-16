@@ -48,7 +48,7 @@ public:
         }
         renderGraph.WriteBuffer(g_RG_ExposureBuffer);
         renderGraph.ReadTexture(g_RG_HDRColor);
-        if (renderer->m_EnableBloom)
+        if (renderer->m_EnableBloom && !renderer->m_EnableReferencePathTracer)
         {
             renderGraph.ReadTexture(g_RG_BloomUpPyramid);
         }
@@ -66,7 +66,7 @@ public:
         nvrhi::BufferHandle luminanceHistogram = renderer->m_EnableAutoExposure ? renderGraph.GetBuffer(g_RG_LuminanceHistogram, RGResourceAccessMode::Write) : nullptr;
         nvrhi::BufferHandle exposureBuffer = renderGraph.GetBuffer(g_RG_ExposureBuffer, RGResourceAccessMode::Write);
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle bloomUpPyramid = renderer->m_EnableBloom ? renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read) : nullptr;
+        nvrhi::TextureHandle bloomUpPyramid = (renderer->m_EnableBloom && !renderer->m_EnableReferencePathTracer) ? renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read) : nullptr;
 
         // 1. Histogram Pass
         if (renderer->m_EnableAutoExposure)

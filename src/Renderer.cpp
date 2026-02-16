@@ -64,6 +64,7 @@ public:
             desc.m_NvrhiDesc.format = Renderer::HDR_COLOR_FORMAT;
             desc.m_NvrhiDesc.debugName = "HDRColorTexture_RG";
             desc.m_NvrhiDesc.isRenderTarget = true;
+            desc.m_NvrhiDesc.isUAV = true;
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
             desc.m_NvrhiDesc.setClearValue(Renderer::kHDROutputClearColor);
             g_RG_HDRColor = renderGraph.DeclareTexture(desc, g_RG_HDRColor);
@@ -776,17 +777,27 @@ void Renderer::Run()
         extern IRenderer* g_BloomRenderer;
         extern IRenderer* g_HDRRenderer;
         extern IRenderer* g_ImGuiRenderer;
+        extern IRenderer* g_PathTracerRenderer;
 
         m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
         m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
-        m_RenderGraph.ScheduleRenderer(g_OpaquePhase1Renderer);
-        m_RenderGraph.ScheduleRenderer(g_HZBGenerator);
-        m_RenderGraph.ScheduleRenderer(g_OpaquePhase2Renderer);
-        m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
-        m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
-        m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
-        m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
-        m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+
+        if (m_EnableReferencePathTracer)
+        {
+            m_RenderGraph.ScheduleRenderer(g_PathTracerRenderer);
+        }
+        else
+        {
+            m_RenderGraph.ScheduleRenderer(g_OpaquePhase1Renderer);
+            m_RenderGraph.ScheduleRenderer(g_HZBGenerator);
+            m_RenderGraph.ScheduleRenderer(g_OpaquePhase2Renderer);
+            m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
+            m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+            m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
+            m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
+            m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+        }
+
         m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
         m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
 

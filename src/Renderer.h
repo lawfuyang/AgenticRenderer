@@ -197,6 +197,9 @@ struct Renderer
     nvrhi::TextureHandle m_HZBTexture;
     nvrhi::BufferHandle m_SPDAtomicCounter;
 
+    // Reference Path Tracer
+    bool m_EnableReferencePathTracer = false;
+
     // Base pass resources
     BasePassResources m_BasePassResources;
 

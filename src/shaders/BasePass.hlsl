@@ -30,22 +30,6 @@ void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
     radius   = f16tof32(m.m_CenterRadius[1] >> 16);
 }
 
-float3x3 MakeAdjugateMatrix(float4x4 m)
-{
-    return float3x3
-    (
-		cross(m[1].xyz, m[2].xyz),
-		cross(m[2].xyz, m[0].xyz),
-		cross(m[0].xyz, m[1].xyz)
-	);
-}
-
-float3 TransformNormal(float3 normal, float4x4 worldMatrix)
-{
-    float3x3 adjugateWorldMatrix = MakeAdjugateMatrix(worldMatrix);
-    return normalize(mul(normal, adjugateWorldMatrix));
-}
-
 float2 ComputeMotionVectors(float3 worldPos, float3 prevWorldPos)
 {
     float4 clipPos = mul(float4(worldPos, 1.0), g_PerFrame.m_View.m_MatWorldToClip);

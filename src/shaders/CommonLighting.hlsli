@@ -2,6 +2,7 @@
 #define COMMON_LIGHTING_HLSLI
 
 #include "ShaderShared.h"
+#include "RaytracingCommon.hlsli"
 
 // Octahedral encoding for normals
 // From: http://jcgt.org/published/0003/02/01/
@@ -123,7 +124,6 @@ struct LightingInputs
     float roughness;
     float metallic;
     float ior;
-    float lightIntensity;
     float3 worldPos;
     uint radianceMipCount;
     bool enableRTShadows;
@@ -224,48 +224,10 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
 
             if (mat.m_AlphaMode == ALPHA_MODE_MASK)
             {
-                uint baseIndex = mesh.m_IndexOffsets[0];
-                uint i0 = inputs.indices[baseIndex + 3 * primitiveIndex + 0];
-                uint i1 = inputs.indices[baseIndex + 3 * primitiveIndex + 1];
-                uint i2 = inputs.indices[baseIndex + 3 * primitiveIndex + 2];
-
-                Vertex v0 = UnpackVertex(inputs.vertices[i0]);
-                Vertex v1 = UnpackVertex(inputs.vertices[i1]);
-                Vertex v2 = UnpackVertex(inputs.vertices[i2]);
-
-                float2 uv0 = v0.m_Uv;
-                float2 uv1 = v1.m_Uv;
-                float2 uv2 = v2.m_Uv;
-
-                float2 uv = uv0 * (1.0f - bary.x - bary.y) + uv1 * bary.x + uv2 * bary.y;
+                TriangleVertices tv = GetTriangleVertices(primitiveIndex, mesh, inputs.indices, inputs.vertices);
+                RayGradients grad = GetShadowRayGradients(tv, bary, ray.Origin, inst.m_World);
                 
-                float3 p0 = mul(float4(v0.m_Pos, 1.0f), inst.m_World).xyz;
-                float3 p1 = mul(float4(v1.m_Pos, 1.0f), inst.m_World).xyz;
-                float3 p2 = mul(float4(v2.m_Pos, 1.0f), inst.m_World).xyz;
-                
-                float3 hitPos = p0 * (1.0f - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
-                float dist = length(hitPos - ray.Origin);
-                
-                float3 edge1 = p1 - p0;
-                float3 edge2 = p2 - p0;
-                float triangleArea = length(cross(edge1, edge2)) * 0.5f;
-                
-                float2 uvMin = min(uv0, min(uv1, uv2));
-                float2 uvMax = max(uv0, max(uv1, uv2));
-                float2 uvRange = uvMax - uvMin;
-                
-                float gradientScale = triangleArea / max(dist, 0.1f);
-                float2 ddx_uv = uvRange * gradientScale;
-                float2 ddy_uv = uvRange * gradientScale;
-                
-                bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
-                float4 albedoSample = hasAlbedo 
-                    ? SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv)
-                    : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
-                
-                float alpha = hasAlbedo ? (albedoSample.w * mat.m_BaseColor.w) : mat.m_BaseColor.w;
-                
-                if (alpha >= mat.m_AlphaCutoff)
+                if (AlphaTestGrad(grad.uv, grad.ddx, grad.ddy, mat))
                 {
                     q.CommitNonOpaqueTriangleHit();
                 }
