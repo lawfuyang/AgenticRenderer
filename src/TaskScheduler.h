@@ -20,6 +20,7 @@ private:
 
     std::vector<std::thread> m_Workers;
     std::vector<std::function<void(uint32_t)>> m_Tasks;
+    std::vector<std::function<void()>> m_DeferredTasks;
     
     std::mutex m_QueueMutex;
     std::condition_variable m_Condition;

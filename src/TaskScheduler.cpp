@@ -99,15 +99,19 @@ void TaskScheduler::ParallelFor(uint32_t count, const std::function<void(uint32_
 void TaskScheduler::ScheduleTask(std::function<void()> func, bool bImmediateExecute)
 {
     std::lock_guard<std::mutex> lock(m_QueueMutex);
-    m_RemainingTasks.fetch_add(1);
-    m_Tasks.push_back([func](uint32_t)
-        {
-            func();
-        });
-
     if (bImmediateExecute)
     {
+        m_RemainingTasks.fetch_add(1);
+        m_Tasks.push_back([func](uint32_t)
+            {
+                func();
+            });
+
         m_Condition.notify_one();
+    }
+    else
+    {
+        m_DeferredTasks.push_back([func]() { func(); });
     }
 }
 
@@ -116,6 +120,12 @@ void TaskScheduler::ExecuteAllScheduledTasks()
     PROFILE_FUNCTION();
 
     m_Condition.notify_all();
+
+    for (std::function<void()>& deferredTask : m_DeferredTasks)
+    {
+        ScheduleTask(std::move(deferredTask));
+    }
+    m_DeferredTasks.clear();
 
     while (m_RemainingTasks > 0)
     {
