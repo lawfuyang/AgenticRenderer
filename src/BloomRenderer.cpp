@@ -38,8 +38,6 @@ public:
         g_RG_BloomUpPyramid = renderGraph.DeclareTexture(desc, g_RG_BloomUpPyramid);
 
         renderGraph.ReadTexture(g_RG_HDRColor);
-        renderGraph.WriteTexture(g_RG_BloomDownPyramid);
-        renderGraph.WriteTexture(g_RG_BloomUpPyramid);
 
         return true;
     }

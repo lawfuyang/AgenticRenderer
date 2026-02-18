@@ -104,14 +104,6 @@ public:
         gbufferDesc.m_NvrhiDesc.debugName = "GBufferMotion_RG";
         g_RG_GBufferMotionVectors = renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferMotionVectors);
 
-        renderGraph.WriteTexture(g_RG_DepthTexture);
-        renderGraph.WriteTexture(g_RG_HDRColor);
-        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
-        renderGraph.WriteTexture(g_RG_GBufferNormals);
-        renderGraph.WriteTexture(g_RG_GBufferORM);
-        renderGraph.WriteTexture(g_RG_GBufferEmissive);
-        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
-
         return true;
     }
     

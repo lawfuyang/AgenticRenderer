@@ -307,6 +307,7 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
         texture.m_LastFrameUsed = m_FrameIndex;
         
         m_PendingDeclaredTextures.push_back(existing.m_Index);
+        WriteTexture(existing); // Implicitly mark as written in the declaring pass, since they start with undefined contents
         return existing;
     }
 
@@ -320,6 +321,7 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
             m_Textures[i].m_LastFrameUsed = m_FrameIndex;
             
             m_PendingDeclaredTextures.push_back(i);
+            WriteTexture({ i }); // Implicitly mark as written in the declaring pass, since they start with undefined contents
             return { i };
         }
     }
@@ -335,7 +337,8 @@ RGTextureHandle RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTexture
     
     m_Textures.push_back(texture);
     m_PendingDeclaredTextures.push_back(handle.m_Index);
-    
+
+    WriteTexture(handle); // Implicitly mark new textures as written in the declaring pass, since they start with undefined contents
     return handle;
 }
 
@@ -365,6 +368,7 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
         buffer.m_LastFrameUsed = m_FrameIndex;
 
         m_PendingDeclaredBuffers.push_back(existing.m_Index);
+        WriteBuffer(existing); // Implicitly mark as written in the declaring pass, since they start with undefined contents
         return existing;
     }
 
@@ -377,6 +381,7 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
             m_Buffers[i].m_LastFrameUsed = m_FrameIndex;
 
             m_PendingDeclaredBuffers.push_back(i);
+            WriteBuffer({ i }); // Implicitly mark as written in the declaring pass, since they start with undefined contents
             return { i };
         }
     }
@@ -392,7 +397,8 @@ RGBufferHandle RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHand
     
     m_Buffers.push_back(buffer);
     m_PendingDeclaredBuffers.push_back(handle.m_Index);
-    
+
+    WriteBuffer(handle); // Implicitly mark new buffers as written in the declaring pass, since they start with undefined contents    
     return handle;
 }
 

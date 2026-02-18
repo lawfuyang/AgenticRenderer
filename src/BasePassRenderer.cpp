@@ -780,7 +780,6 @@ public:
         }
 
         renderGraph.WriteTexture(g_RG_HDRColor);
-        renderGraph.WriteTexture(g_RG_OpaqueColor);
         renderGraph.WriteTexture(g_RG_DepthTexture);
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
