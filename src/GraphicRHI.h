@@ -57,6 +57,9 @@ public:
     virtual float GetVRAMUsageMB() const = 0;
 
     virtual nvrhi::GraphicsAPI GetGraphicsAPI() const = 0;
+
+    // Optional: set a debug name on an internal command list's native object
+    virtual void SetCommandListDebugName(const nvrhi::CommandListHandle& /*commandList*/, std::string_view /*name*/) { }
 };
 
 inline std::unique_ptr<GraphicRHI> CreateGraphicRHI(nvrhi::GraphicsAPI api)

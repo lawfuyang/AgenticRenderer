@@ -354,6 +354,28 @@ public:
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::VULKAN; }
 
+    void SetCommandListDebugName(const nvrhi::CommandListHandle& commandList, std::string_view name) override
+    {
+        if (name.empty() || m_Device == VK_NULL_HANDLE)
+            return;
+
+        try
+        {
+            nvrhi::Object obj = commandList->getNativeObject(nvrhi::ObjectTypes::VK_CommandBuffer);
+            if (obj.pointer)
+            {
+                VkCommandBuffer cmdBuf = static_cast<VkCommandBuffer>(obj.pointer);
+                vk::DebugUtilsObjectNameInfoEXT info;
+                info.setObjectType(vk::ObjectType::eCommandBuffer);
+                info.setObjectHandle(reinterpret_cast<uint64_t>(cmdBuf));
+                info.pObjectName = name.data();
+                vk::Device device = static_cast<vk::Device>(m_Device);
+                device.setDebugUtilsObjectNameEXT(info);
+            }
+        }
+        catch (...) {}
+    }
+
     bool CreateInstance()
     {
         SDL_Log("[Init] Creating Vulkan instance");

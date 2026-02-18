@@ -268,6 +268,12 @@ public:
         , m_HasMarker(!markerName.empty())
     {
         m_CommandList->open();
+
+        if (m_HasMarker)
+        {
+            Renderer::GetInstance()->m_RHI->SetCommandListDebugName(commandList, markerName);
+        }
+
         if (m_HasMarker)
         {
             m_CommandList->beginMarker(markerName.data());

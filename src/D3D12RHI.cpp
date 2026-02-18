@@ -334,6 +334,28 @@ public:
     }
 
     nvrhi::GraphicsAPI GetGraphicsAPI() const override { return nvrhi::GraphicsAPI::D3D12; }
+
+    void SetCommandListDebugName(const nvrhi::CommandListHandle& commandList, std::string_view name) override
+    {
+        if (name.empty())
+            return;
+
+        nvrhi::Object obj = commandList->getNativeObject(nvrhi::ObjectTypes::D3D12_GraphicsCommandList);
+        if (obj.pointer)
+        {
+            ID3D12GraphicsCommandList* pCmd = static_cast<ID3D12GraphicsCommandList*>(obj.pointer);
+            if (pCmd)
+            {
+                int len = ::MultiByteToWideChar(CP_UTF8, 0, name.data(), (int)name.size(), nullptr, 0);
+                if (len > 0)
+                {
+                    std::wstring wname(len, L'\0');
+                    ::MultiByteToWideChar(CP_UTF8, 0, name.data(), (int)name.size(), &wname[0], len);
+                    pCmd->SetName(wname.c_str());
+                }
+            }
+        }
+    }
 };
 
 std::unique_ptr<GraphicRHI> CreateD3D12GraphicRHI()
