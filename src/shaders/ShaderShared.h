@@ -84,6 +84,8 @@
 
 #define DEPTH_NEAR 1.0f
 #define DEPTH_FAR 0.0f
+
+static const float3 kEarthCenter = float3(0.0f, -6360000.0f, 0.0f);
 #endif
 
 struct ImGuiPushConstants
