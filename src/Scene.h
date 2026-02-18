@@ -206,7 +206,7 @@ public:
     nvrhi::BufferHandle m_MeshletTrianglesBuffer;
     nvrhi::BufferHandle m_LightBuffer;
     uint32_t m_LightCount = 0;
-    bool m_LightsDirty = false;
+    bool m_LightsDirty = true;
 
     std::vector<PerInstanceData> m_InstanceData;
     std::vector<MeshData> m_MeshData;
