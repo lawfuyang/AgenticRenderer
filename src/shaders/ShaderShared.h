@@ -97,6 +97,19 @@ static const uint32_t kThreadsPerGroup = 32;
 static const uint32_t kMaxMeshletVertices = 64;
 static const uint32_t kMaxMeshletTriangles = 96;
 
+// Bruneton / atmosphere precomputed texture dimensions
+static const int TRANSMITTANCE_TEXTURE_WIDTH = 256;
+static const int TRANSMITTANCE_TEXTURE_HEIGHT = 64;
+static const int SCATTERING_TEXTURE_R_SIZE = 32;
+static const int SCATTERING_TEXTURE_MU_SIZE = 128;
+static const int SCATTERING_TEXTURE_MU_S_SIZE = 32;
+static const int SCATTERING_TEXTURE_NU_SIZE = 8;
+static const int SCATTERING_TEXTURE_WIDTH = SCATTERING_TEXTURE_NU_SIZE * SCATTERING_TEXTURE_MU_S_SIZE;
+static const int SCATTERING_TEXTURE_HEIGHT = SCATTERING_TEXTURE_MU_SIZE;
+static const int SCATTERING_TEXTURE_DEPTH = SCATTERING_TEXTURE_R_SIZE;
+static const int IRRADIANCE_TEXTURE_WIDTH = 64;
+static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
+
 #define DEBUG_MODE_NONE 0
 #define DEBUG_MODE_INSTANCES 1
 #define DEBUG_MODE_MESHLETS 2

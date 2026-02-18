@@ -335,10 +335,10 @@ void CommonResources::Initialize()
             }
         };
 
-        // Bruneton constants from atmosphere/constants.h
-        LoadBruneton("transmittance.dat", "BrunetonTransmittance", BrunetonTransmittance, 256, 64);
-        LoadBruneton("scattering.dat", "BrunetonScattering", BrunetonScattering, 256, 128, 32); // WIDTH=NU_SIZE*MU_S_SIZE = 8*32 = 256, HEIGHT=128, DEPTH=32
-        LoadBruneton("irradiance.dat", "BrunetonIrradiance", BrunetonIrradiance, 64, 16);
+        // Bruneton constants (use shared ShaderShared.h values)
+        LoadBruneton("transmittance.dat", "BrunetonTransmittance", BrunetonTransmittance, TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
+        LoadBruneton("scattering.dat", "BrunetonScattering", BrunetonScattering, SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT, SCATTERING_TEXTURE_DEPTH); // WIDTH=NU_SIZE*MU_S_SIZE, HEIGHT=SCATTERING_TEXTURE_MU_SIZE, DEPTH=SCATTERING_TEXTURE_R_SIZE
+        LoadBruneton("irradiance.dat", "BrunetonIrradiance", BrunetonIrradiance, IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
 
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)

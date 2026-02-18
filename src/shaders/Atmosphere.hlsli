@@ -92,18 +92,6 @@ static const float kcd = 1000.0 * cd;
 static const float cd_per_square_meter = cd / m2;
 static const float kcd_per_square_meter = kcd / m2;
 
-static const int TRANSMITTANCE_TEXTURE_WIDTH = 256;
-static const int TRANSMITTANCE_TEXTURE_HEIGHT = 64;
-static const int SCATTERING_TEXTURE_R_SIZE = 32;
-static const int SCATTERING_TEXTURE_MU_SIZE = 128;
-static const int SCATTERING_TEXTURE_MU_S_SIZE = 32;
-static const int SCATTERING_TEXTURE_NU_SIZE = 8;
-static const int SCATTERING_TEXTURE_WIDTH = SCATTERING_TEXTURE_NU_SIZE * SCATTERING_TEXTURE_MU_S_SIZE;
-static const int SCATTERING_TEXTURE_HEIGHT = SCATTERING_TEXTURE_MU_SIZE;
-static const int SCATTERING_TEXTURE_DEPTH = SCATTERING_TEXTURE_R_SIZE;
-static const int IRRADIANCE_TEXTURE_WIDTH = 64;
-static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
-
 float ClampCosine(float mu)
 {
     return clamp(mu, -1.0, 1.0);
