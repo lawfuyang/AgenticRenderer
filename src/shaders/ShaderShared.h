@@ -273,8 +273,12 @@ struct PathTracerConstants
     uint32_t m_AccumulationIndex;
     uint32_t m_FrameIndex;
     uint32_t pad1;
+    // 
     Vector2 m_Jitter;
     uint32_t pad2[2];
+    //
+    Vector3 m_SunDirection;
+    uint32_t pad3;
 };
 
 // Material constants (persistent, per-material data)
