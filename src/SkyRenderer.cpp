@@ -14,7 +14,7 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        if (!renderer->m_EnableSky)
+        if (!renderer->m_EnableSky || renderer->m_EnableReferencePathTracer)
         {
             return false;
         }

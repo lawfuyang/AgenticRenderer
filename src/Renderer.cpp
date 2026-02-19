@@ -44,6 +44,7 @@ public:
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
         
         // Declare transient depth texture
+        if (!renderer->m_EnableReferencePathTracer)
         {
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width = width;
@@ -73,40 +74,44 @@ public:
         }
         
         // Declare transient GBuffer textures
-        RGTextureDesc gbufferDesc;
-        gbufferDesc.m_NvrhiDesc.width = width;
-        gbufferDesc.m_NvrhiDesc.height = height;
-        gbufferDesc.m_NvrhiDesc.isRenderTarget = true;
-        gbufferDesc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
-        gbufferDesc.m_NvrhiDesc.keepInitialState = true;
-        gbufferDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{});
-        
-        // Albedo: RGBA8
-        gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_ALBEDO_FORMAT;
-        gbufferDesc.m_NvrhiDesc.debugName = "GBufferAlbedo_RG";
-        renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferAlbedo);
-        
-        // Normals: RG16_FLOAT
-        gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_NORMALS_FORMAT;
-        gbufferDesc.m_NvrhiDesc.debugName = "GBufferNormals_RG";
-        renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferNormals);
-        
-        // ORM: RGBA8
-        gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_ORM_FORMAT;
-        gbufferDesc.m_NvrhiDesc.debugName = "GBufferORM_RG";
-        renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferORM);
-        
-        // Emissive: RGBA8
-        gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_EMISSIVE_FORMAT;
-        gbufferDesc.m_NvrhiDesc.debugName = "GBufferEmissive_RG";
-        renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferEmissive);
-        
-        // Motion Vectors: RG16_FLOAT
-        gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_MOTION_FORMAT;
-        gbufferDesc.m_NvrhiDesc.debugName = "GBufferMotion_RG";
-        renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferMotionVectors);
+        if (!renderer->m_EnableReferencePathTracer)
+        {
+            RGTextureDesc gbufferDesc;
+            gbufferDesc.m_NvrhiDesc.width = width;
+            gbufferDesc.m_NvrhiDesc.height = height;
+            gbufferDesc.m_NvrhiDesc.isRenderTarget = true;
+            gbufferDesc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+            gbufferDesc.m_NvrhiDesc.keepInitialState = true;
+            gbufferDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{});
+            
+            // Albedo: RGBA8
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_ALBEDO_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferAlbedo_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferAlbedo);
+            
+            // Normals: RG16_FLOAT
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_NORMALS_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferNormals_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferNormals);
+            
+            // ORM: RGBA8
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_ORM_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferORM_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferORM);
+            
+            // Emissive: RGBA8
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_EMISSIVE_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferEmissive_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferEmissive);
+            
+            // Motion Vectors: RG16_FLOAT
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_MOTION_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferMotion_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferMotionVectors);
+        }
 
         // HZB Texture (Persistent)
+        if (!renderer->m_EnableReferencePathTracer)
         {
             uint32_t sw = width;
             uint32_t sh = height;
@@ -142,28 +147,32 @@ public:
 
         // Get transient resources from render graph
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle depthTexture = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle gbufferAlbedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle gbufferNormals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle gbufferORM = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle gbufferEmissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle gbufferMotion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
-
-        // Clear depth for reversed-Z (clear to 0.0f) and stencil to 0
-        commandList->clearDepthStencilTexture(depthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, true, 0);
-
-        // clear gbuffers
         commandList->clearTextureFloat(hdrColor, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(gbufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(gbufferNormals, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(gbufferORM, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(gbufferEmissive, nvrhi::AllSubresources, nvrhi::Color{});
-        commandList->clearTextureFloat(gbufferMotion, nvrhi::AllSubresources, nvrhi::Color{});
 
-        if (m_NeedHZBClear)
+        if (!renderer->m_EnableReferencePathTracer)
         {
-            nvrhi::TextureHandle hzbTexture = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
-            commandList->clearTextureFloat(hzbTexture, nvrhi::AllSubresources, nvrhi::Color{ Renderer::DEPTH_FAR, 0.0f, 0.0f, 0.0f });
+            nvrhi::TextureHandle depthTexture = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferAlbedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferNormals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferORM = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferEmissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferMotion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
+
+            // Clear depth for reversed-Z (clear to 0.0f) and stencil to 0
+            commandList->clearDepthStencilTexture(depthTexture, nvrhi::AllSubresources, true, Renderer::DEPTH_FAR, true, 0);
+
+            // clear gbuffers
+            commandList->clearTextureFloat(gbufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
+            commandList->clearTextureFloat(gbufferNormals, nvrhi::AllSubresources, nvrhi::Color{});
+            commandList->clearTextureFloat(gbufferORM, nvrhi::AllSubresources, nvrhi::Color{});
+            commandList->clearTextureFloat(gbufferEmissive, nvrhi::AllSubresources, nvrhi::Color{});
+            commandList->clearTextureFloat(gbufferMotion, nvrhi::AllSubresources, nvrhi::Color{});
+
+            if (m_NeedHZBClear)
+            {
+                nvrhi::TextureHandle hzbTexture = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
+                commandList->clearTextureFloat(hzbTexture, nvrhi::AllSubresources, nvrhi::Color{ Renderer::DEPTH_FAR, 0.0f, 0.0f, 0.0f });
+            }
         }
     }
     const char* GetName() const override { return "Clear"; }
@@ -703,7 +712,7 @@ void Renderer::Run()
                     }
                 }
             }
-        }
+        };
 
         if (m_RequestedShaderReload)
         {
@@ -729,6 +738,9 @@ void Renderer::Run()
             PROFILE_SCOPED("Garbage Collection");
             m_RHI->m_NvrhiDevice->runGarbageCollection();
         });
+
+        // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
+        m_ImGuiLayer.UpdateFrame();
 
         // Update animations
         if (m_EnableAnimations)
@@ -762,9 +774,6 @@ void Renderer::Run()
             SceneLoader::CreateAndUploadLightBuffer(m_Scene, this);
             m_Scene.m_LightsDirty = false;
         }
-
-        // Prepare ImGui UI (NewFrame + UI creation + ImGui::Render)
-        m_ImGuiLayer.UpdateFrame();
 
         // Update camera (camera retrieves frame time internally)
         m_ViewPrev = m_View;

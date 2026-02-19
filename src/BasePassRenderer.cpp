@@ -484,6 +484,8 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
+        if (renderer->m_EnableReferencePathTracer) return false;
+
         BasePassResources& res = renderer->m_BasePassResources;
         res.DeclareResources(renderGraph);
 
@@ -568,7 +570,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
@@ -601,7 +603,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
 
         BasePassResources& res = renderer->m_BasePassResources;
 
@@ -679,6 +681,8 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
+        if (renderer->m_EnableReferencePathTracer) return false;
+
         BasePassResources& res = renderer->m_BasePassResources;
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
@@ -762,7 +766,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
@@ -795,6 +799,8 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
+        if (renderer->m_EnableReferencePathTracer) return false;
+
         BasePassResources& res = renderer->m_BasePassResources;
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
