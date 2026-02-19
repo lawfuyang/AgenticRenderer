@@ -88,17 +88,6 @@ protected:
             commandList->clearBufferUInt(handles.meshletJobCount, 0);
         }
     }
-
-    RGBufferDesc GetSPDAtomicCounterDesc(const char* debugName) const
-    {
-        RGBufferDesc desc;
-        desc.m_NvrhiDesc.structStride = sizeof(uint32_t);
-        desc.m_NvrhiDesc.byteSize = sizeof(uint32_t);
-        desc.m_NvrhiDesc.canHaveUAVs = true;
-        desc.m_NvrhiDesc.debugName = debugName;
-        desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-        return desc;
-    }
 };
 
 void BasePassRendererBase::PrepareRenderingData(Matrix& outView, Matrix& outViewProjForCulling, Vector4 outFrustumPlanes[5])
@@ -578,7 +567,7 @@ public:
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
 
-        renderGraph.DeclareBuffer(GetSPDAtomicCounterDesc("HZB SPD Atomic Counter"), m_RG_SPDAtomicCounter);
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("HZB SPD Atomic Counter"), m_RG_SPDAtomicCounter);
         renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
 
         return true;
@@ -774,7 +763,7 @@ public:
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
 
-        renderGraph.DeclareBuffer(GetSPDAtomicCounterDesc("HZB Phase 2 SPD Atomic Counter"), m_RG_SPDAtomicCounter);
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("HZB Phase 2 SPD Atomic Counter"), m_RG_SPDAtomicCounter);
         renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
 
         return true;
@@ -850,7 +839,7 @@ public:
             renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
         }
 
-        renderGraph.DeclareBuffer(GetSPDAtomicCounterDesc("Transparent SPD Atomic Counter"), m_RG_SPDAtomicCounter);
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("Transparent SPD Atomic Counter"), m_RG_SPDAtomicCounter);
         renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
 
         return true;

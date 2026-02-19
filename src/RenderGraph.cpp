@@ -1075,6 +1075,7 @@ nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle, RGResourceA
         if (access == RGResourceAccessMode::Read)
         {
             found = passAccess.m_ReadTextures.count(handle.m_Index) > 0;
+            found |= passAccess.m_WriteTextures.count(handle.m_Index) > 0; // Allow read access if the pass declared write access, since that implies read access as well
         }
         else if (access == RGResourceAccessMode::Write)
         {
@@ -1122,6 +1123,7 @@ nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAcce
         if (access == RGResourceAccessMode::Read)
         {
             found = passAccess.m_ReadBuffers.count(handle.m_Index) > 0;
+            found |= passAccess.m_WriteBuffers.count(handle.m_Index) > 0; // Allow read access if the pass declared write access, since that implies read access as well
         }
         else if (access == RGResourceAccessMode::Write)
         {
@@ -1143,4 +1145,13 @@ nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAcce
     return buffer.m_PhysicalBuffer;
 }
 
-
+RGBufferDesc RenderGraph::GetSPDAtomicCounterDesc(const char* debugName)
+{
+    RGBufferDesc desc;
+    desc.m_NvrhiDesc.structStride = sizeof(uint32_t);
+    desc.m_NvrhiDesc.byteSize = sizeof(uint32_t);
+    desc.m_NvrhiDesc.canHaveUAVs = true;
+    desc.m_NvrhiDesc.debugName = debugName;
+    desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    return desc;
+}
