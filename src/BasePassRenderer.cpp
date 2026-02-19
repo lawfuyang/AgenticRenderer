@@ -375,6 +375,7 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
         renderState.depthStencilState.stencilEnable = true;
         renderState.depthStencilState.frontFaceStencil.passOp = nvrhi::StencilOp::Replace;
         renderState.depthStencilState.frontFaceStencil.stencilFunc = nvrhi::ComparisonFunc::Always;
+        renderState.depthStencilState.backFaceStencil = renderState.depthStencilState.frontFaceStencil;
         renderState.depthStencilState.stencilRefValue = 1;
     }
 
