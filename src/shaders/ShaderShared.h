@@ -123,6 +123,10 @@ static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
 #define DEBUG_MODE_LOD 8
 #define DEBUG_MODE_MOTION_VECTORS 9
 
+#define RENDERING_MODE_NORMAL 0
+#define RENDERING_MODE_IBL 1
+#define RENDERING_MODE_PATH_TRACER 2
+
 #define TEXFLAG_ALBEDO (1u << 0)
 #define TEXFLAG_NORMAL (1u << 1)
 #define TEXFLAG_ROUGHNESS_METALLIC (1u << 2)
@@ -232,9 +236,10 @@ struct ForwardLightingPerFrameData
   float m_P00;
   float m_P11;
   Vector2 m_OpaqueColorDimensions;
-  //
   Vector3 m_SunDirection;
   uint32_t m_EnableSky;
+  uint32_t m_RenderingMode;
+  uint32_t m_RadianceMipCount;
 };
 
 struct SkyConstants
@@ -243,7 +248,7 @@ struct SkyConstants
   Vector4 m_CameraPos;
   Vector3 m_SunDirection;
   float m_SunIntensity;
-  float pad0;
+  uint32_t m_RenderingMode;
 };
 
 struct DeferredLightingConstants
@@ -257,7 +262,8 @@ struct DeferredLightingConstants
   uint32_t m_EnableRTShadows;
   uint32_t m_DebugMode;
   uint32_t m_EnableSky;
-  uint32_t pad1;
+  uint32_t m_RenderingMode;
+  uint32_t m_RadianceMipCount;
 };
 
 struct PathTracerConstants

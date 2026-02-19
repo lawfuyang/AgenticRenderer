@@ -17,7 +17,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableBloom || renderer->m_EnableReferencePathTracer) return false;
+        if (!renderer->m_EnableBloom || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;

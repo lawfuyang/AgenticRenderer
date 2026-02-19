@@ -287,6 +287,8 @@ void CommonResources::Initialize()
         LoadAndUpload(renderer->m_IrradianceTexture, "IrradianceTexture", IrradianceTexture, true);
         LoadAndUpload(renderer->m_RadianceTexture, "RadianceTexture", RadianceTexture, true);
 
+        m_RadianceMipCount = RadianceTexture->getDesc().mipLevels;
+
         // Load Bruneton Atmosphere textures
         auto LoadBruneton = [&](const char* filename, const char* debugName, nvrhi::TextureHandle& outTexture, uint32_t width, uint32_t height, uint32_t depth = 1)
         {

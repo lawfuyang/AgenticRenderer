@@ -62,6 +62,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.metallic = metallic;
     lightingInputs.ior = 1.5f; // Default IOR for opaque
     lightingInputs.worldPos = worldPos;
+    lightingInputs.radianceMipCount = g_Deferred.m_RadianceMipCount;
     lightingInputs.enableRTShadows = g_Deferred.m_EnableRTShadows != 0;
     lightingInputs.sceneAS = g_SceneAS;
     lightingInputs.instances = g_Instances;
@@ -75,31 +76,42 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.useSunRadiance = false;
     lightingInputs.sunShadow = 1.0f;
 
-    float3 p_atmo = GetAtmospherePos(worldPos);
-
-    if (g_Deferred.m_EnableSky)
+    float3 color = 0;
+    if (g_Deferred.m_RenderingMode == RENDERING_MODE_IBL)
     {
-        // Use solar_irradiance * transmittance as the direct sun radiance at surface
-        lightingInputs.sunRadiance = GetAtmosphereSunRadiance(p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
-        lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
-        lightingInputs.useSunRadiance = true;
+        lightingInputs.L = g_Deferred.m_SunDirection;
+        PrepareLightingByproducts(lightingInputs);
+        IBLComponents iblRes = ComputeIBL(lightingInputs);
+        color = iblRes.ibl + emissive;
     }
-
-    LightingComponents directLighting = AccumulateDirectLighting(lightingInputs, g_Deferred.m_LightCount);
-    float3 color = directLighting.diffuse + directLighting.specular;
-    
-    float3 ambient = 0.0;
-    if (g_Deferred.m_EnableSky)
+    else
     {
-        ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
-    }
+        float3 p_atmo = GetAtmospherePos(worldPos);
 
-    color += ambient + emissive;
+        if (g_Deferred.m_EnableSky)
+        {
+            // Use solar_irradiance * transmittance as the direct sun radiance at surface
+            lightingInputs.sunRadiance = GetAtmosphereSunRadiance(p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
+            lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
+            lightingInputs.useSunRadiance = true;
+        }
 
-    // Aerial perspective
-    if (g_Deferred.m_EnableSky)
-    {
-        color = ApplyAtmosphereAerialPerspective(color, g_Deferred.m_CameraPos.xyz, p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
+        LightingComponents directLighting = AccumulateDirectLighting(lightingInputs, g_Deferred.m_LightCount);
+        color = directLighting.diffuse + directLighting.specular;
+        
+        float3 ambient = 0.0;
+        if (g_Deferred.m_EnableSky)
+        {
+            ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
+        }
+
+        color += ambient + emissive;
+
+        // Aerial perspective
+        if (g_Deferred.m_EnableSky)
+        {
+            color = ApplyAtmosphereAerialPerspective(color, g_Deferred.m_CameraPos.xyz, p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
+        }
     }
 
     // Debug visualizations

@@ -14,7 +14,13 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        if (!renderer->m_EnableSky || renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
+        {
+            return false;
+        }
+
+        // SkyRenderer handles both atmospheric sky (Normal mode) and IBL background (IBL mode)
+        if (renderer->m_Mode == RenderingMode::Normal && !renderer->m_EnableSky)
         {
             return false;
         }
@@ -44,6 +50,7 @@ public:
         scb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 1.0f };
         scb.m_SunDirection = renderer->m_Scene.m_SunDirection;
         scb.m_SunIntensity = renderer->m_Scene.GetSunIntensity();
+        scb.m_RenderingMode = (uint32_t)renderer->m_Mode;
         
         commandList->writeBuffer(skyCB, &scb, sizeof(scb), 0);
 

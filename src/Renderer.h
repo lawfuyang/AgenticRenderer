@@ -57,6 +57,13 @@ static bool s_##ClassName##Registered = []() { \
     return true; \
 }();
 
+enum class RenderingMode : uint32_t
+{
+    Normal = RENDERING_MODE_NORMAL,
+    IBL = RENDERING_MODE_IBL,
+    ReferencePathTracer = RENDERING_MODE_PATH_TRACER
+};
+
 struct Renderer
 {
     // Constants
@@ -195,8 +202,8 @@ struct Renderer
     Vector3 m_FrozenCullingCameraPos;
     bool m_EnableOcclusionCulling = true;
 
-    // Reference Path Tracer
-    bool m_EnableReferencePathTracer = false;
+    // Rendering mode
+    RenderingMode m_Mode = RenderingMode::Normal;
 
     // Base pass resources
     BasePassResources m_BasePassResources;

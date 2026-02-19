@@ -44,7 +44,7 @@ public:
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
         
         // Declare transient depth texture
-        if (!renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
         {
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width = width;
@@ -74,7 +74,7 @@ public:
         }
         
         // Declare transient GBuffer textures
-        if (!renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
         {
             RGTextureDesc gbufferDesc;
             gbufferDesc.m_NvrhiDesc.width = width;
@@ -111,7 +111,7 @@ public:
         }
 
         // HZB Texture (Persistent)
-        if (!renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
         {
             uint32_t sw = width;
             uint32_t sh = height;
@@ -149,7 +149,7 @@ public:
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
         commandList->clearTextureFloat(hdrColor, nvrhi::AllSubresources, nvrhi::Color{});
 
-        if (!renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
         {
             nvrhi::TextureHandle depthTexture = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferAlbedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
@@ -816,7 +816,7 @@ void Renderer::Run()
         m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
         m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
 
-        if (m_EnableReferencePathTracer)
+        if (m_Mode == RenderingMode::ReferencePathTracer)
         {
             m_RenderGraph.ScheduleRenderer(g_PathTracerRenderer);
         }

@@ -78,13 +78,19 @@ void ImGuiLayer::UpdateFrame()
         // Rendering options
         if (ImGui::TreeNode("Rendering"))
         {
-            ImGui::Checkbox("Reference Path Tracer", &renderer->m_EnableReferencePathTracer);
+            static const char* kRenderingModes[] = { "Normal", "Image Based Lighting", "Reference Pathtracer" };
+            int currentMode = static_cast<int>(renderer->m_Mode);
+            if (ImGui::Combo("Rendering Mode", &currentMode, kRenderingModes, IM_ARRAYSIZE(kRenderingModes)))
+            {
+                renderer->m_Mode = static_cast<RenderingMode>(currentMode);
+            }
+
             ImGui::Checkbox("Use Meshlet Rendering", &renderer->m_UseMeshletRendering);
             ImGui::Checkbox("Enable RT Shadows", &renderer->m_EnableRTShadows);
             ImGui::Checkbox("Enable Sky", &renderer->m_EnableSky);
 
             static const char* kDebugModes[] = {
-                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD", "Irradiance", "Radiance", "IBL", "Motion Vectors"
+                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD", "Motion Vectors"
             };
             ImGui::Combo("Debug Mode", &renderer->m_DebugMode, kDebugModes, IM_ARRAYSIZE(kDebugModes));
 

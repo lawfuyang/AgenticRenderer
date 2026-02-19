@@ -357,6 +357,8 @@ void BasePassRendererBase::RenderInstances(nvrhi::CommandListHandle commandList,
     cb.m_OpaqueColorDimensions = Vector2{ (float)opaqueColor->getDesc().width, (float)opaqueColor->getDesc().height };
     cb.m_EnableSky = renderer->m_EnableSky ? 1 : 0;
     cb.m_SunDirection = renderer->m_Scene.m_SunDirection;
+    cb.m_RenderingMode = (uint32_t)renderer->m_Mode;
+    cb.m_RadianceMipCount = CommonResources::GetInstance().m_RadianceMipCount;
 
     commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
@@ -485,7 +487,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableReferencePathTracer) return false;
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = renderer->m_BasePassResources;
         res.DeclareResources(renderGraph);
@@ -571,7 +573,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
@@ -604,7 +606,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = renderer->m_BasePassResources;
 
@@ -682,7 +684,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableReferencePathTracer) return false;
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = renderer->m_BasePassResources;
 
@@ -767,7 +769,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_EnableReferencePathTracer) return false;
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
@@ -800,7 +802,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableReferencePathTracer) return false;
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = renderer->m_BasePassResources;
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;

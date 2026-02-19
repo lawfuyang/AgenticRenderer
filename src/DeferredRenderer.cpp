@@ -18,7 +18,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_EnableReferencePathTracer) return false;
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);
@@ -56,6 +56,8 @@ public:
         dcb.m_CameraPos = Vector4{ camPos.x, camPos.y, camPos.z, 1.0f };
         dcb.m_SunDirection = renderer->m_Scene.m_SunDirection;
         dcb.m_EnableSky = renderer->m_EnableSky ? 1 : 0;
+        dcb.m_RenderingMode = (uint32_t)renderer->m_Mode;
+        dcb.m_RadianceMipCount = CommonResources::GetInstance().m_RadianceMipCount;
         dcb.m_LightCount = renderer->m_Scene.m_LightCount;
         dcb.m_EnableRTShadows = renderer->m_EnableRTShadows ? 1 : 0;
         dcb.m_DebugMode = renderer->m_DebugMode;

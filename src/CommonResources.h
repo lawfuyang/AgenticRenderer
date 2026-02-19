@@ -75,5 +75,7 @@ public:
     // Default buffers
     nvrhi::BufferHandle DummyUAVBuffer;    // Empty structured buffer
 
+    uint32_t m_RadianceMipCount = 1;
+
     CommonResources() = default;
 };

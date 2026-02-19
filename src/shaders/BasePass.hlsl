@@ -401,6 +401,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     lightingInputs.metallic = metallic;
     lightingInputs.ior = mat.m_IOR;
     lightingInputs.worldPos = input.worldPos;
+    lightingInputs.radianceMipCount = g_PerFrame.m_RadianceMipCount;
     lightingInputs.enableRTShadows = g_PerFrame.m_EnableRTShadows != 0;
     lightingInputs.sceneAS = g_SceneAS;
     lightingInputs.instances = g_Instances;
@@ -414,29 +415,43 @@ GBufferOut GBuffer_PSMain(VSOut input)
     lightingInputs.useSunRadiance = false;
     lightingInputs.sunShadow = 1.0f;
 
-    float3 p_atmo = GetAtmospherePos(input.worldPos);
-
-    if (g_PerFrame.m_EnableSky)
+    float3 color = 0;
+    float3 directSpecular = 0;
+    if (g_PerFrame.m_RenderingMode == RENDERING_MODE_IBL)
     {
-        // Use solar_irradiance * transmittance as the direct sun radiance at surface
-        lightingInputs.sunRadiance = GetAtmosphereSunRadiance(p_atmo, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity);
-        lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
-        lightingInputs.useSunRadiance = true;
+        lightingInputs.L = g_PerFrame.m_SunDirection;
+        PrepareLightingByproducts(lightingInputs);
+        IBLComponents iblRes = ComputeIBL(lightingInputs);
+        color = iblRes.ibl;
+        directSpecular = iblRes.radiance;
+        
     }
-
-    LightingComponents directLighting = AccumulateDirectLighting(lightingInputs, g_PerFrame.m_LightCount);
-    float3 directDiffuse = directLighting.diffuse;
-    float3 directSpecular = directLighting.specular;
-
-    PrepareLightingByproducts(lightingInputs);
-
-    float3 ambient = float3(0,0,0);
-    if (g_PerFrame.m_EnableSky)
+    else
     {
-        ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
-    }
+        float3 p_atmo = GetAtmospherePos(input.worldPos);
 
-    float3 color = directDiffuse + directSpecular + ambient;
+        if (g_PerFrame.m_EnableSky)
+        {
+            // Use solar_irradiance * transmittance as the direct sun radiance at surface
+            lightingInputs.sunRadiance = GetAtmosphereSunRadiance(p_atmo, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity);
+            lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
+            lightingInputs.useSunRadiance = true;
+        }
+
+        LightingComponents directLighting = AccumulateDirectLighting(lightingInputs, g_PerFrame.m_LightCount);
+        float3 directDiffuse = directLighting.diffuse;
+        directSpecular = directLighting.specular;
+
+        PrepareLightingByproducts(lightingInputs);
+
+        float3 ambient = float3(0,0,0);
+        if (g_PerFrame.m_EnableSky)
+        {
+            ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
+        }
+
+        color = directDiffuse + directSpecular + ambient;
+    }
 
     // Refraction logic
     if (mat.m_TransmissionFactor > 0.0)
@@ -482,8 +497,9 @@ GBufferOut GBuffer_PSMain(VSOut input)
     color += emissive;
 
     // Aerial perspective
-    if (g_PerFrame.m_EnableSky)
+    if (g_PerFrame.m_RenderingMode != RENDERING_MODE_IBL && g_PerFrame.m_EnableSky)
     {
+        float3 p_atmo = GetAtmospherePos(input.worldPos);
         color = ApplyAtmosphereAerialPerspective(color, g_PerFrame.m_CameraPos.xyz, p_atmo, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity);
     }
 

@@ -14,7 +14,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableReferencePathTracer)
+        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
         {
             m_AccumulationIndex = 0;
             return false;
