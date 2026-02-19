@@ -186,11 +186,6 @@ struct PlanarViewConstants
 
     Vector2      m_ClipToWindowScale;
     Vector2      m_ClipToWindowBias;
-
-    Vector2      m_WindowToClipScale;
-    Vector2      m_WindowToClipBias;
-
-    Vector4      m_CameraDirectionOrPosition;
 };
 
 struct VertexQuantized
@@ -275,7 +270,7 @@ struct PathTracerConstants
     uint32_t pad1;
     // 
     Vector2 m_Jitter;
-    uint32_t pad2[2];
+    Vector2 pad2;
     //
     Vector3 m_SunDirection;
     uint32_t pad3;

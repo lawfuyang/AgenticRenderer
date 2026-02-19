@@ -251,11 +251,6 @@ void Camera::FillPlanarViewConstants(PlanarViewConstants& constants, float viewp
 
     constants.m_ClipToWindowScale = Vector2(0.5f * viewportWidth, -0.5f * viewportHeight);
     constants.m_ClipToWindowBias = Vector2(0.5f * viewportWidth, 0.5f * viewportHeight);
-
-    constants.m_WindowToClipScale = Vector2(1.0f / constants.m_ClipToWindowScale.x, 1.0f / constants.m_ClipToWindowScale.y);
-    constants.m_WindowToClipBias = Vector2(-constants.m_ClipToWindowBias.x * constants.m_WindowToClipScale.x, -constants.m_ClipToWindowBias.y * constants.m_WindowToClipScale.y);
-
-    constants.m_CameraDirectionOrPosition = Vector4(m_Position.x, m_Position.y, m_Position.z, 1.0f);
 }
 
 void Camera::SetFromMatrix(const Matrix& worldTransform)
