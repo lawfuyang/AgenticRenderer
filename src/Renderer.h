@@ -18,6 +18,8 @@ public:
     virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) = 0;
     virtual const char* GetName() const = 0;
 
+    virtual bool IsBasePassRenderer() const { return false; }
+
     float m_CPUTime = 0.0f;
     float m_GPUTime = 0.0f;
     nvrhi::TimerQueryHandle m_GPUQueries[2];
@@ -190,7 +192,8 @@ struct Renderer
     double m_FrameTime = 0.0;
     double m_FPS       = 0.0;
     uint32_t m_TargetFPS = 200;
-    nvrhi::PipelineStatistics m_MainViewPipelineStatistics;
+    nvrhi::PipelineStatistics m_SelectedBasePassPipelineStatistics;
+    int m_SelectedRendererIndexForPipelineStatistics = -1;
     uint32_t m_FrameNumber = 0;
 
     // Culling options

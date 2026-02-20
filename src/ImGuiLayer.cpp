@@ -291,9 +291,51 @@ void ImGuiLayer::UpdateFrame()
         }
 
         // Pipeline statistics
-        if (ImGui::TreeNode("Main View Pipeline Statistics"))
+        if (ImGui::TreeNode("Base Pass Pipeline Statistics"))
         {
-            const auto& stats = renderer->m_MainViewPipelineStatistics;
+            const char* currentRendererName = "None";
+            if (renderer->m_SelectedRendererIndexForPipelineStatistics != -1)
+            {
+                currentRendererName = renderer->m_Renderers[renderer->m_SelectedRendererIndexForPipelineStatistics]->GetName();
+            }
+
+            if (ImGui::BeginCombo("Select Base Pass Renderer", currentRendererName))
+            {
+                const bool bIsNoneSelected = (renderer->m_SelectedRendererIndexForPipelineStatistics == -1);
+                if (ImGui::Selectable("None", bIsNoneSelected))
+                {
+                    renderer->m_SelectedRendererIndexForPipelineStatistics = -1;
+                }
+                if (bIsNoneSelected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+
+                for (int i = 0; i < (int)renderer->m_Renderers.size(); ++i)
+                {
+                    const char* name = renderer->m_Renderers[i]->GetName();
+                    const bool bIsSelected = (renderer->m_SelectedRendererIndexForPipelineStatistics == i);
+                    if (renderer->m_Renderers[i]->IsBasePassRenderer())
+                    {
+                        if (ImGui::Selectable(name, bIsSelected))
+                        {
+                            renderer->m_SelectedRendererIndexForPipelineStatistics = i;
+                        }
+                    }
+                    if (bIsSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+
+                if (bIsNoneSelected)
+                {
+                    memset(&renderer->m_SelectedBasePassPipelineStatistics, 0, sizeof(renderer->m_SelectedBasePassPipelineStatistics));
+                }
+            }
+
+            const nvrhi::PipelineStatistics& stats = renderer->m_SelectedBasePassPipelineStatistics;
             ImGui::Text("Input Assembly Vertices: %llu", stats.IAVertices);
             ImGui::Text("Input Assembly Primitives: %llu", stats.IAPrimitives);
             ImGui::Text("Vertex Shader Invocations: %llu", stats.VSInvocations);

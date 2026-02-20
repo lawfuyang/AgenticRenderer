@@ -16,6 +16,41 @@ extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_HDRColor;
 RGTextureHandle g_RG_OpaqueColor;
 
+struct ScopedBasePassPipelineQuery
+{
+    nvrhi::CommandListHandle m_CommandList;
+    BasePassResources& m_Res;
+    bool m_IsSelected;
+    uint32_t m_WriteIndex;
+
+    ScopedBasePassPipelineQuery(nvrhi::CommandListHandle commandList, BasePassResources& res, IRenderer* rendererPtr)
+        : m_CommandList(commandList)
+        , m_Res(res)
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        m_IsSelected = (renderer->m_SelectedRendererIndexForPipelineStatistics != -1 && renderer->m_Renderers[renderer->m_SelectedRendererIndexForPipelineStatistics].get() == rendererPtr);
+        if (m_IsSelected)
+        {
+            nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
+
+            m_WriteIndex = renderer->m_FrameNumber % 2;
+            const uint32_t readIndex = 1 - m_WriteIndex;
+            renderer->m_SelectedBasePassPipelineStatistics = device->getPipelineStatistics(m_Res.m_PipelineQueries[readIndex]);
+
+            device->resetPipelineStatisticsQuery(m_Res.m_PipelineQueries[m_WriteIndex]);
+            m_CommandList->beginPipelineStatisticsQuery(m_Res.m_PipelineQueries[m_WriteIndex]);
+        }
+    }
+
+    ~ScopedBasePassPipelineQuery()
+    {
+        if (m_IsSelected)
+        {
+            m_CommandList->endPipelineStatisticsQuery(m_Res.m_PipelineQueries[m_WriteIndex]);
+        }
+    }
+};
+
 class BasePassRendererBase : public IRenderer
 {
 public:
@@ -47,6 +82,8 @@ public:
     {
         m_BasePassResources.Initialize();
     }
+
+    bool IsBasePassRenderer() const override { return true; }
 
 protected:
     BasePassResources m_BasePassResources;
@@ -519,6 +556,7 @@ public:
 
 void OpaquePhase1Renderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
+    ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
     Renderer* renderer = Renderer::GetInstance();
     const uint32_t numOpaque = renderer->m_Scene.m_OpaqueBucket.m_Count;
     if (numOpaque == 0) return;
@@ -581,6 +619,7 @@ public:
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
+        ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
         Renderer* renderer = Renderer::GetInstance();
         
         ResourceHandles handles;
@@ -634,6 +673,7 @@ public:
 
 void OpaquePhase2Renderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
+    ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
     Renderer* renderer = Renderer::GetInstance();
     
     const uint32_t numOpaque = renderer->m_Scene.m_OpaqueBucket.m_Count;
@@ -717,6 +757,7 @@ public:
 
 void MaskedPassRenderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
+    ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
     Renderer* renderer = Renderer::GetInstance();
     const uint32_t numMasked = renderer->m_Scene.m_MaskedBucket.m_Count;
     if (numMasked == 0) return;
@@ -779,6 +820,7 @@ public:
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
+        ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
         Renderer* renderer = Renderer::GetInstance();
         
         ResourceHandles handles;
@@ -864,6 +906,7 @@ private:
 
 void TransparentPassRenderer::Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph)
 {
+    ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
     Renderer* renderer = Renderer::GetInstance();
     const uint32_t numTransparent = renderer->m_Scene.m_TransparentBucket.m_Count;
     if (numTransparent == 0) return;
