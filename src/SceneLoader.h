@@ -18,7 +18,7 @@ public:
     };
 
     // Main GLTF loading function
-    static bool LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
+    static bool LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene);
     static bool LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
     static void ApplyEnvironmentLights(Scene& scene);
 
@@ -42,4 +42,5 @@ private:
     static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent);
     static cgltf_result decompressMeshopt(cgltf_data* data);
     static const char* cgltf_result_tostring(cgltf_result result);
+    static void SortLightsAddDefaultDirectionalLight(Scene& scene);
 };

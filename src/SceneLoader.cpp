@@ -211,7 +211,9 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 			info.textureOffset = (int)scene.m_Textures.size();
 
 			SDL_Log("[Scene] Loading model: %s", modelRelPath.c_str());
-			if (!LoadGLTFScene(scene, modelFullPath.string(), allVerticesQuantized, allIndices))
+
+			const bool bFromJSONScene = true;
+			if (!LoadGLTFScene(scene, modelFullPath.string(), allVerticesQuantized, allIndices, bFromJSONScene))
 			{
 				SDL_LOG_ASSERT_FAIL("Failed to load model", "[Scene] Failed to load model: %s", modelFullPath.string().c_str());
 			}
@@ -427,31 +429,7 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 		}
 	}
 
-	std::sort(scene.m_Lights.begin(), scene.m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
-	{
-		return a.m_Type < b.m_Type; // Directional < Point < Spot
-	});
-
-	if (scene.m_Lights.empty() || (scene.m_Lights[0].m_Type != Scene::Light::Directional))
-	{
-		Scene::Light light;
-		light.m_Name = "Default Directional";
-		light.m_Type = Scene::Light::Directional;
-		light.m_Color = Vector3{ 1.0f, 1.0f, 1.0f };
-		light.m_Intensity = 1.0f;
-		scene.m_Lights.insert(scene.m_Lights.begin(), std::move(light));
-
-		scene.m_Lights[0].m_NodeIndex = (int)scene.m_Nodes.size();
-		Scene::Node& lightNode = scene.m_Nodes.emplace_back();
-		lightNode.m_LightIndex = 0;
-
-		const Vector quat = DirectX::XMQuaternionRotationRollPitchYaw(-scene.m_SunPitch, scene.m_SunYaw, 0.0f);
-		DirectX::XMStoreFloat4(&lightNode.m_Rotation, quat);
-
-		const DirectX::XMMATRIX localM = DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&lightNode.m_Rotation));
-		DirectX::XMStoreFloat4x4(&lightNode.m_LocalTransform, localM);
-		lightNode.m_WorldTransform = lightNode.m_LocalTransform;
-	}
+	SortLightsAddDefaultDirectionalLight(scene);
 
 	// Compute world transforms for all roots
 	for (size_t i = 0; i < scene.m_Nodes.size(); ++i)
@@ -503,6 +481,35 @@ const char* SceneLoader::cgltf_result_tostring(cgltf_result result)
 	case cgltf_result_out_of_memory: return "out_of_memory";
 	case cgltf_result_legacy_gltf: return "legacy_gltf";
 	default: return "unknown";
+	}
+}
+
+void SceneLoader::SortLightsAddDefaultDirectionalLight(Scene& scene)
+{
+	std::sort(scene.m_Lights.begin(), scene.m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
+		{
+			return a.m_Type < b.m_Type; // Directional < Point < Spot
+		});
+
+	if (scene.m_Lights.empty() || (scene.m_Lights[0].m_Type != Scene::Light::Directional))
+	{
+		Scene::Light light;
+		light.m_Name = "Default Directional";
+		light.m_Type = Scene::Light::Directional;
+		light.m_Color = Vector3{ 1.0f, 1.0f, 1.0f };
+		light.m_Intensity = 1.0f;
+		scene.m_Lights.insert(scene.m_Lights.begin(), std::move(light));
+
+		scene.m_Lights[0].m_NodeIndex = (int)scene.m_Nodes.size();
+		Scene::Node& lightNode = scene.m_Nodes.emplace_back();
+		lightNode.m_LightIndex = 0;
+
+		const Vector quat = DirectX::XMQuaternionRotationRollPitchYaw(-scene.m_SunPitch, scene.m_SunYaw, 0.0f);
+		DirectX::XMStoreFloat4(&lightNode.m_Rotation, quat);
+
+		const DirectX::XMMATRIX localM = DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&lightNode.m_Rotation));
+		DirectX::XMStoreFloat4x4(&lightNode.m_LocalTransform, localM);
+		lightNode.m_WorldTransform = lightNode.m_LocalTransform;
 	}
 }
 
@@ -1697,7 +1704,7 @@ void SceneLoader::CreateAndUploadLightBuffer(Scene& scene, Renderer* renderer)
 	}
 }
 
-bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices)
+bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene)
 {
 	const cgltf_options options{};
 	cgltf_data* data = nullptr;
@@ -1748,6 +1755,13 @@ bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std:
 	ProcessLights(data, scene, offsets);
 	ProcessAnimations(data, scene, offsets);
 	ProcessMeshes(data, scene, allVerticesQuantized, allIndices, offsets);
+
+	// only do this if not loading gltf from JSON scene, as JSON scene may already have a directional light baked in and we don't want to add another one on top of it
+	if (!bFromJSONScene)
+	{
+		SortLightsAddDefaultDirectionalLight(scene);
+	}
+
 	ProcessNodesAndHierarchy(data, scene, offsets);
 
 	cgltf_free(data);

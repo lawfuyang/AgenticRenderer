@@ -58,7 +58,8 @@ void Scene::LoadScene()
 		}
 		else
 		{
-			success = SceneLoader::LoadGLTFScene(*this, scenePath, allVerticesQuantized, allIndices);
+			const bool bFromJSONScene = false;
+			success = SceneLoader::LoadGLTFScene(*this, scenePath, allVerticesQuantized, allIndices, bFromJSONScene);
 		}
 
 		if (!success)
