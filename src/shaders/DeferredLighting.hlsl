@@ -105,12 +105,6 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         }
 
         color += ambient + emissive;
-
-        // Aerial perspective
-        if (g_Deferred.m_EnableSky)
-        {
-            color = ApplyAtmosphereAerialPerspective(color, g_Deferred.m_CameraPos.xyz, p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
-        }
     }
 
     // Debug visualizations

@@ -116,9 +116,6 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         finalColor = direct.diffuse + direct.specular;
 
         finalColor += GetAtmosphereSkyIrradiance(p_atmo, inputs.N, g_PathTracer.m_SunDirection, g_Lights[0].m_Intensity) * (inputs.baseColor / PI) + pbr.emissive;
-
-        // Aerial perspective
-        finalColor = ApplyAtmosphereAerialPerspective(finalColor, g_PathTracer.m_CameraPos.xyz, p_atmo, g_PathTracer.m_SunDirection, g_Lights[0].m_Intensity);
     }
     else
     {

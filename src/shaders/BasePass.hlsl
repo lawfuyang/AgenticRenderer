@@ -494,13 +494,6 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
     color += emissive;
 
-    // Aerial perspective
-    if (g_PerFrame.m_RenderingMode != RENDERING_MODE_IBL && g_PerFrame.m_EnableSky)
-    {
-        float3 p_atmo = GetAtmospherePos(input.worldPos);
-        color = ApplyAtmosphereAerialPerspective(color, g_PerFrame.m_CameraPos.xyz, p_atmo, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity);
-    }
-
     float2 motionVectors = ComputeMotionVectors(input.worldPos, input.prevWorldPos);
 
     // Debug visualizations

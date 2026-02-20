@@ -578,14 +578,6 @@ float3 GetAtmosphereSkyIrradiance(float3 p_atmo, float3 normal, float3 sunDirect
     return skyIrradiance * sunIntensity;
 }
 
-float3 ApplyAtmosphereAerialPerspective(float3 color, float3 cameraPos, float3 p_atmo, float3 sunDirection, float sunIntensity)
-{
-    float3 cameraPos_atmo = GetAtmospherePos(cameraPos);
-    float3 transmittance;
-    float3 inScattering = GetSkyRadianceToPoint(BRUNETON_TRANSMITTANCE_TEXTURE, BRUNETON_SCATTERING_TEXTURE, cameraPos_atmo, p_atmo, 0.0, sunDirection, transmittance);
-    return color * transmittance + inScattering * sunIntensity;
-}
-
 float3 GetAtmosphereSkyRadiance(float3 cameraPos, float3 viewRay, float3 sunDirection, float sunIntensity)
 {
     float3 cameraPos_atmo = GetAtmospherePos(cameraPos);
