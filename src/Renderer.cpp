@@ -1528,27 +1528,26 @@ void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferH
 nvrhi::CommandListHandle Renderer::AcquireCommandList(bool bImmediatelyQueue)
 {
     PROFILE_FUNCTION();
+    SINGLE_THREAD_GUARD();
 
     nvrhi::CommandListHandle handle;
+
+    if (!m_CommandListFreeList.empty())
     {
-        std::lock_guard<std::mutex> lock(m_CommandListMutex);
-        if (!m_CommandListFreeList.empty())
-        {
-            handle = m_CommandListFreeList.back();
-            m_CommandListFreeList.pop_back();
-        }
-        else
-        {
-            const nvrhi::CommandListParameters params{ .enableImmediateExecution = false, .queueType = nvrhi::CommandQueue::Graphics };
-            handle = m_RHI->m_NvrhiDevice->createCommandList(params);
-        }
+        handle = m_CommandListFreeList.back();
+        m_CommandListFreeList.pop_back();
+    }
+    else
+    {
+        const nvrhi::CommandListParameters params{ .enableImmediateExecution = false, .queueType = nvrhi::CommandQueue::Graphics };
+        handle = m_RHI->m_NvrhiDevice->createCommandList(params);
+    }
 
-        SDL_assert(handle && "Failed to acquire command list");
+    SDL_assert(handle && "Failed to acquire command list");
 
-        if (bImmediatelyQueue)
-        {
-            m_PendingCommandLists.push_back(handle);
-        }
+    if (bImmediatelyQueue)
+    {
+        m_PendingCommandLists.push_back(handle);
     }
 
     return handle;
@@ -1557,7 +1556,7 @@ nvrhi::CommandListHandle Renderer::AcquireCommandList(bool bImmediatelyQueue)
 void Renderer::ExecutePendingCommandLists()
 {
     PROFILE_FUNCTION();
-     SINGLE_THREAD_GUARD();
+    SINGLE_THREAD_GUARD();
 
     // Wait for GPU to finish all work before presenting
     {

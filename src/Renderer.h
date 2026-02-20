@@ -235,7 +235,6 @@ private:
 
     // Caches
     std::mutex m_CacheMutex;
-    std::mutex m_CommandListMutex;
     std::unordered_map<size_t, nvrhi::BindingLayoutHandle> m_BindingLayoutCache;
     std::unordered_map<size_t, nvrhi::GraphicsPipelineHandle> m_GraphicsPipelineCache;
     std::unordered_map<size_t, nvrhi::MeshletPipelineHandle> m_MeshletPipelineCache;
