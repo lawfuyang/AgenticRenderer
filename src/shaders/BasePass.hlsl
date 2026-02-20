@@ -242,7 +242,7 @@ struct GBufferOut
 {
     float4 Albedo        : SV_TARGET0;
     float2 Normal        : SV_TARGET1;
-    float4 ORM           : SV_TARGET2;
+    float2 ORM           : SV_TARGET2;
     float4 Emissive      : SV_TARGET3;
     float2 MotionVectors : SV_TARGET4;
 };
@@ -365,13 +365,11 @@ GBufferOut GBuffer_PSMain(VSOut input)
     // Material properties (roughness, metallic)
     float roughness = mat.m_RoughnessMetallic.x;
     float metallic = mat.m_RoughnessMetallic.y;
-    float occlusion = 1.0f;
     if (hasORM)
     {
-        // ORM texture layout: R = occlusion, G = roughness, B = metallic
-        occlusion = ormSample.x;
-        roughness = ormSample.y;
-        metallic = ormSample.z;
+        // ORM texture layout: R = roughness, G = metallic
+        roughness = ormSample.x;
+        metallic = ormSample.y;
     }
 
     // Prevent perfectly smooth surfaces to avoid artifacts
@@ -531,7 +529,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     GBufferOut output;
     output.Albedo = float4(baseColor, alpha);
     output.Normal = EncodeNormal(N);
-    output.ORM = float4(occlusion, roughness, metallic, 0.0f);
+    output.ORM = float2(roughness, metallic);
     output.Emissive = float4(emissive, 1.0f);
 
     output.MotionVectors = ComputeMotionVectors(input.worldPos, input.prevWorldPos);
@@ -546,7 +544,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
             float3 debugColor = GetDebugColor(g_PerFrame.m_DebugMode, input.instanceID, input.meshletID, input.lodIndex);
             output.Albedo = float4(debugColor, alpha);
             output.Normal = float2(0.5f, 0.5f); // Default normal
-            output.ORM = float4(1.0f, 0.5f, 0.0f, 0.0f); // Default ORM
+            output.ORM = float2(0.5f, 0.0f); // Default ORM
             output.Emissive = float4(0.0f, 0.0f, 0.0f, 1.0f); // No emissive
         }
     }

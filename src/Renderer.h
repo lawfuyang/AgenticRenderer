@@ -79,7 +79,7 @@ struct Renderer
     static constexpr nvrhi::Format HDR_COLOR_FORMAT = nvrhi::Format::R11G11B10_FLOAT;
     static constexpr nvrhi::Format GBUFFER_ALBEDO_FORMAT    = nvrhi::Format::RGBA8_UNORM;
     static constexpr nvrhi::Format GBUFFER_NORMALS_FORMAT   = nvrhi::Format::RG16_FLOAT;
-    static constexpr nvrhi::Format GBUFFER_ORM_FORMAT       = nvrhi::Format::RGBA8_UNORM;
+    static constexpr nvrhi::Format GBUFFER_ORM_FORMAT       = nvrhi::Format::RG8_UNORM;
     static constexpr nvrhi::Format GBUFFER_EMISSIVE_FORMAT  = nvrhi::Format::RGBA8_UNORM;
     static constexpr nvrhi::Format GBUFFER_MOTION_FORMAT    = nvrhi::Format::RG16_FLOAT;
 

@@ -11,7 +11,7 @@ cbuffer DeferredCB : register(b0)
 
 Texture2D<float4> g_GBufferAlbedo    : register(t0);
 Texture2D<float2> g_GBufferNormals   : register(t1);
-Texture2D<float4> g_GBufferORM       : register(t2);
+Texture2D<float2> g_GBufferORM       : register(t2);
 Texture2D<float4> g_GBufferEmissive  : register(t3);
 Texture2D<float2> g_GBufferMotion    : register(t7);
 Texture2D<float>  g_Depth            : register(t4);
@@ -46,10 +46,9 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     float alpha = albedoAlpha.a;
 
     float3 N = DecodeNormal(g_GBufferNormals.Load(uint3(uvInt, 0)));
-    float4 orm = g_GBufferORM.Load(uint3(uvInt, 0));
-    float occlusion = orm.r;
-    float roughness = orm.g;
-    float metallic = orm.b;
+    float2 orm = g_GBufferORM.Load(uint3(uvInt, 0));
+    float roughness = orm.r;
+    float metallic = orm.g;
 
     float3 emissive = g_GBufferEmissive.Load(uint3(uvInt, 0)).rgb;
 
