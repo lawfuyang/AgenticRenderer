@@ -662,9 +662,7 @@ void Renderer::Initialize()
     m_GPUQueries[1] = m_RHI->m_NvrhiDevice->createTimerQuery();
 
     // Load scene (if configured) after all renderer resources are ready
-    m_TaskScheduler->SetThreadCount(std::thread::hardware_concurrency());
     m_Scene.LoadScene();
-    m_TaskScheduler->SetThreadCount(TaskScheduler::kRuntimeThreadCount);
 
     // Initialize renderers with scene-dependent resources
     for (const std::shared_ptr<IRenderer>& renderer : m_Renderers)
