@@ -302,6 +302,12 @@ void Scene::FinalizeLoadedScene()
 		m_SunDirection = Vector3{ fwd3.x, fwd3.y, fwd3.z };
 	}
 
+	for (const Scene::Node& node : m_Nodes)
+	{
+		const DirectX::BoundingSphere nodeSphere(node.m_Center, node.m_Radius);
+		DirectX::BoundingSphere::CreateMerged(m_SceneBoundingSphere, m_SceneBoundingSphere, nodeSphere);
+	}
+
     SDL_Log("[Scene] Finalized: Instances: Opaque: %u, Masked: %u, Transparent: %u", m_OpaqueBucket.m_Count, m_MaskedBucket.m_Count, m_TransparentBucket.m_Count);
 }
 

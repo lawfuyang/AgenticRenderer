@@ -218,6 +218,8 @@ public:
     nvrhi::rt::AccelStructHandle m_TLAS;
     std::vector<nvrhi::rt::InstanceDesc> m_RTInstanceDescs;
 
+    DirectX::BoundingSphere m_SceneBoundingSphere;
+
     // Load the scene from the path configured in `Config::Get().m_ScenePath`.
     // Only mesh vertex/index data and node hierarchy are loaded for now.
     void LoadScene();
@@ -240,6 +242,8 @@ public:
     Vector3 m_SunDirection = Vector3(0.0f, 1.0f, 0.0f);
 
     float GetSunIntensity() const { return m_Lights.at(0).m_Intensity; } // 1st light is always the sun
+
+    float GetSceneBoundingRadius() const { return m_SceneBoundingSphere.Radius; }
 
     // Binary Scene Cache
     bool LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& allIndices, std::vector<VertexQuantized>& allVerticesQuantized);
