@@ -10,6 +10,12 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/stb_image.h")
     file(DOWNLOAD "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" "${CMAKE_SOURCE_DIR}/external/stb_image.h" SHOW_PROGRESS)
 endif()
 
+# Download SH.hlsli if not present
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/SH.hlsli")
+    message(STATUS "Downloading SH.hlsli...")
+    file(DOWNLOAD "https://raw.githubusercontent.com/TheRealMJP/SHforHLSL/refs/heads/main/SH.hlsli" "${CMAKE_SOURCE_DIR}/external/SH.hlsli" SHOW_PROGRESS)
+endif()
+
 # Speed up MSVC builds by enabling multi-processor compilation.
 if(MSVC)
     add_compile_options(/MP)
