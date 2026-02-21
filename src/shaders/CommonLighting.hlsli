@@ -115,6 +115,76 @@ float DisneyBurleyDiffuse(float NdotL, float NdotV, float LdotH, float perceptua
     return Fd * NdotL / PI;
 }
 
+float3 SampleHemisphereCosine(float2 u, float3 normal)
+{
+    float phi = 2.0f * PI * u.x;
+    float cosTheta = sqrt(u.y);
+    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    
+    float3 localDir = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
+    
+    float3 up = abs(normal.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    float3 tangent = normalize(cross(up, normal));
+    float3 bitangent = cross(normal, tangent);
+    
+    return tangent * localDir.x + normal * localDir.y + bitangent * localDir.z;
+}
+
+float3 SampleHemisphereUniform(float2 u, float3 normal)
+{
+    float phi = 2.0f * PI * u.x;
+    float cosTheta = u.y;
+    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    
+    float3 localDir = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
+    
+    float3 up = abs(normal.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    float3 tangent = normalize(cross(up, normal));
+    float3 bitangent = cross(normal, tangent);
+    
+    return tangent * localDir.x + normal * localDir.y + bitangent * localDir.z;
+}
+
+float ConvertToClipZ(float SceneDepth, float2 InvDeviceZToWorldZTransform)
+{
+    return (1.0f / SceneDepth + InvDeviceZToWorldZTransform[1]) / InvDeviceZToWorldZTransform[0];
+}
+
+float ComputeZSliceFromDepth(float SceneDepth, float3 GridZParams)
+{
+	return log2(SceneDepth * GridZParams.x + GridZParams.y) * GridZParams.z;
+}
+
+float ComputeDepthFromZSlice(float ZSlice, float3 GridZParams)
+{
+	return (exp2(ZSlice / GridZParams.z) - GridZParams.y) / GridZParams.x;
+}
+
+float3 ComputeCellViewSpacePosition(uint3 GridCoordinate, float3 GridZParams, uint3 ViewGridSize, float2 InvDeviceZToWorldZTransform, float4x4 ClipToView, out float viewSpaceZ)
+{
+	float2 VolumeUV = (GridCoordinate.xy + float2(0.5f, 0.5f)) / ViewGridSize.xy;
+	float2 VolumeNDC = (VolumeUV * 2 - 1) * float2(1, -1);
+
+	viewSpaceZ = ComputeDepthFromZSlice(GridCoordinate.z + 0.5f, GridZParams);
+
+	float ClipZ = ConvertToClipZ(viewSpaceZ, InvDeviceZToWorldZTransform);
+	float4 CenterPosition = mul(float4(VolumeNDC, ClipZ, 1), ClipToView);
+	return CenterPosition.xyz / CenterPosition.w;
+}
+
+float3 ComputeCellViewSpacePosition(uint3 GridCoordinate, float3 GridZParams, uint3 ViewGridSize, float2 InvDeviceZToWorldZTransform, float4x4 ClipToView)
+{
+	float ViewSpaceZ;
+    return ComputeCellViewSpacePosition(GridCoordinate, GridZParams, ViewGridSize, InvDeviceZToWorldZTransform, ClipToView, ViewSpaceZ);
+}
+
+float GetSkyVisibility(float viewDepth, float2 uv, float3 GridZParams, uint ZCount, Texture3D skyVisibilityTex, SamplerState linearClampSampler)
+{
+    float zSlice = ComputeZSliceFromDepth(viewDepth, GridZParams);
+    float3 froxelCoordUVZ = float3(uv, (zSlice + 0.5f) / float(ZCount));
+    return skyVisibilityTex.SampleLevel(linearClampSampler, froxelCoordUVZ, 0.0f).r;
+}
+
 struct LightingInputs
 {
     float3 N;

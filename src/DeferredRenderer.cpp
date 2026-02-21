@@ -10,6 +10,7 @@ extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferEmissive;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_HDRColor;
+extern RGTextureHandle g_RG_SkyVisibility;
 
 class DeferredRenderer : public IRenderer
 {
@@ -26,6 +27,12 @@ public:
         renderGraph.ReadTexture(g_RG_GBufferORM);
         renderGraph.ReadTexture(g_RG_GBufferEmissive);
         renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
+
+        if (renderer->m_EnableSky)
+        {
+            renderGraph.ReadTexture(g_RG_SkyVisibility);
+        }
+
         renderGraph.WriteTexture(g_RG_HDRColor);
 
         return true;
@@ -43,9 +50,11 @@ public:
         nvrhi::TextureHandle gbufferORM = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Read);
         nvrhi::TextureHandle gbufferEmissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Read);
         nvrhi::TextureHandle gbufferMotionVectors = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle skyVisibility = renderer->m_EnableSky ? renderGraph.GetTexture(g_RG_SkyVisibility, RGResourceAccessMode::Read) : CommonResources::GetInstance().DefaultTexture3DWhite;
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
 
         const Vector3 camPos = renderer->m_Camera.GetPosition();
+        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius() * 0.5f;
 
         // Deferred CB
         const nvrhi::BufferDesc deferredCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DeferredLightingConstants), "DeferredCB", 1);
@@ -58,6 +67,9 @@ public:
         dcb.m_EnableSky = renderer->m_EnableSky ? 1 : 0;
         dcb.m_RenderingMode = (uint32_t)renderer->m_Mode;
         dcb.m_RadianceMipCount = CommonResources::GetInstance().m_RadianceMipCount;
+        dcb.m_SkyVisibilityZCount = (uint32_t)renderer->m_SkyVisibilityZCount;
+        dcb.m_SkyVisibilityFar = skyVisFarPlane;
+        dcb.m_SkyVisibilityGridZParams = CalculateGridZParams(0.1f, skyVisFarPlane, 1.0f, renderer->m_SkyVisibilityZCount);
         dcb.m_LightCount = renderer->m_Scene.m_LightCount;
         dcb.m_EnableRTShadows = renderer->m_EnableRTShadows ? 1 : 0;
         dcb.m_DebugMode = renderer->m_DebugMode;
@@ -78,7 +90,8 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(11, renderer->m_Scene.m_MaterialConstantsBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(12, renderer->m_Scene.m_VertexBufferQuantized),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(13, renderer->m_Scene.m_MeshDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_IndexBuffer)
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_IndexBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(15, skyVisibility)
         };
 
         nvrhi::FramebufferDesc fbDesc;

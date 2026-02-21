@@ -25,9 +25,9 @@ Vector3 CalculateGridZParams(float NearPlane, float FarPlane, float DepthDistrib
     float NearOffset = .095 * 100;
 
     // Space out the slices so they aren't all clustered at the near plane
-    float S = DepthDistributionScale;
+    float S = DepthDistributionScale * GridSizeZ / log2(FarPlane / NearPlane);
 
-    float N = NearPlane + NearOffset;
+    float N = NearPlane;// + NearOffset;
     float F = FarPlane;
 
     float O = (F - N * exp2(GridSizeZ / S)) / (F - N);

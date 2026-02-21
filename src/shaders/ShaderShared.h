@@ -122,10 +122,15 @@ static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
 #define DEBUG_MODE_EMISSIVE 7
 #define DEBUG_MODE_LOD 8
 #define DEBUG_MODE_MOTION_VECTORS 9
+#define DEBUG_MODE_SKY_VISIBILITY 10
 
 #define RENDERING_MODE_NORMAL 0
 #define RENDERING_MODE_IBL 1
 #define RENDERING_MODE_PATH_TRACER 2
+
+#define VOLUMETRIC_SKY_VISIBILITY_MODE_SCREEN_SPACE 0
+#define VOLUMETRIC_SKY_VISIBILITY_MODE_HYBRID 1
+#define VOLUMETRIC_SKY_VISIBILITY_MODE_PURE_RT 2
 
 #define TEXFLAG_ALBEDO (1u << 0)
 #define TEXFLAG_NORMAL (1u << 1)
@@ -240,6 +245,10 @@ struct ForwardLightingPerFrameData
   uint32_t m_EnableSky;
   uint32_t m_RenderingMode;
   uint32_t m_RadianceMipCount;
+  uint32_t m_SkyVisibilityZCount;
+  //
+  Vector3 m_SkyVisibilityGridZParams;
+  float m_SkyVisibilityFar;
 };
 
 struct SkyConstants
@@ -263,7 +272,14 @@ struct DeferredLightingConstants
   uint32_t m_DebugMode;
   uint32_t m_EnableSky;
   uint32_t m_RenderingMode;
+  //
   uint32_t m_RadianceMipCount;
+  uint32_t m_SkyVisibilityZCount;
+  float m_SkyVisibilityFar;
+  uint32_t pad0;
+  //
+  Vector3 m_SkyVisibilityGridZParams;
+  uint32_t pad1;
 };
 
 struct PathTracerConstants
@@ -280,6 +296,27 @@ struct PathTracerConstants
     //
     Vector3 m_SunDirection;
     uint32_t pad3;
+};
+
+struct VolumetricSkyVisibilityConstants
+{
+    PlanarViewConstants m_View;
+    PlanarViewConstants m_PrevView;
+    Vector4 m_CameraPos;
+    //
+    Vector3 m_SunDirection;
+    uint32_t m_ResolutionX;
+    //
+    uint32_t m_ResolutionY;
+    uint32_t m_ResolutionZ;
+    uint32_t m_RaysPerFroxel;
+    uint32_t m_FrameIndex;
+    //
+    Vector3 m_SkyVisibilityGridZParams;
+    float m_SkyVisibilityFar;
+    //
+    Vector2 m_InvDeviceZToWorldZTransform;
+    Vector2 pad0;
 };
 
 // Material constants (persistent, per-material data)

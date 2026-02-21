@@ -22,6 +22,7 @@ StructuredBuffer<VertexQuantized> g_Vertices : register(t12);
 StructuredBuffer<MeshData> g_MeshData : register(t13);
 StructuredBuffer<uint> g_Indices : register(t14);
 StructuredBuffer<GPULight> g_Lights : register(t6);
+Texture3D g_SkyVisibility : register(t15);
 
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
@@ -102,6 +103,10 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         if (g_Deferred.m_EnableSky)
         {
             ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
+
+            // SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+            // float visibility = GetSkyVisibility(worldPos, uv, g_Deferred.m_View.m_MatWorldToView, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler);
+            // ambient *= visibility;
         }
 
         color += ambient + emissive;
@@ -122,7 +127,13 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             color = emissive;
         else if (g_Deferred.m_DebugMode == DEBUG_MODE_MOTION_VECTORS)
             color = float3(abs(g_GBufferMotion.Load(uint3(uvInt, 0)).xy), 0.0f);
-        
+        else if (g_Deferred.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
+        {
+            float viewDepth = length(g_Deferred.m_CameraPos.xyz - worldPos);
+            SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+            color = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler).rrr;
+        }
+
         if (g_Deferred.m_DebugMode == DEBUG_MODE_INSTANCES ||
             g_Deferred.m_DebugMode == DEBUG_MODE_MESHLETS ||
             g_Deferred.m_DebugMode == DEBUG_MODE_LOD)
