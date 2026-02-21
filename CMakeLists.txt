@@ -4,18 +4,6 @@ project(AgenticRenderer)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Download stb_image.h if not present
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/stb_image.h")
-    message(STATUS "Downloading stb_image.h...")
-    file(DOWNLOAD "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" "${CMAKE_SOURCE_DIR}/external/stb_image.h" SHOW_PROGRESS)
-endif()
-
-# Download SH.hlsli if not present
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/SH.hlsli")
-    message(STATUS "Downloading SH.hlsli...")
-    file(DOWNLOAD "https://raw.githubusercontent.com/TheRealMJP/SHforHLSL/refs/heads/main/SH.hlsli" "${CMAKE_SOURCE_DIR}/external/SH.hlsli" SHOW_PROGRESS)
-endif()
-
 # Speed up MSVC builds by enabling multi-processor compilation.
 if(MSVC)
     add_compile_options(/MP)
