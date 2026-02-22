@@ -242,7 +242,6 @@ void RenderGraph::BeginSetup()
 {
     SDL_assert(!m_IsInsideSetup);
     m_IsInsideSetup = true;
-    m_DidAccessInSetup = false;
     m_PendingPassAccess = {};
     m_PendingDeclaredTextures.clear();
     m_PendingDeclaredBuffers.clear();
@@ -253,18 +252,12 @@ void RenderGraph::EndSetup(bool bEnabled)
     SDL_assert(m_IsInsideSetup);
     if (!bEnabled)
     {
-        if (m_DidAccessInSetup)
-        {
-            SDL_assert(false && "Renderer returned false in Setup but accessed/declared RG resources");
-        }
-        
-        // Safety: clear any pending state just in case
-        for (uint32_t texIdx : m_PendingDeclaredTextures) m_Textures[texIdx].m_IsDeclaredThisFrame = false;
-        for (uint32_t bufIdx : m_PendingDeclaredBuffers) m_Buffers[bufIdx].m_IsDeclaredThisFrame = false;
-
-        m_PendingPassAccess = {};
-        m_PendingDeclaredTextures.clear();
-        m_PendingDeclaredBuffers.clear();
+        SDL_assert(m_PendingDeclaredTextures.empty());
+        SDL_assert(m_PendingDeclaredBuffers.empty());
+        SDL_assert(m_PendingPassAccess.m_ReadTextures.empty());
+        SDL_assert(m_PendingPassAccess.m_WriteTextures.empty());
+        SDL_assert(m_PendingPassAccess.m_ReadBuffers.empty());
+        SDL_assert(m_PendingPassAccess.m_WriteBuffers.empty());
     }
     m_IsInsideSetup = false;
 }
@@ -284,7 +277,6 @@ uint16_t RenderGraph::GetActivePassIndex() const
 bool RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTextureHandle& outputHandle)
 {
     SDL_assert(m_IsInsideSetup && "DeclareTexture must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     size_t hash = desc.ComputeHash();
 
@@ -352,7 +344,6 @@ bool RenderGraph::DeclareTexture(const RGTextureDesc& desc, RGTextureHandle& out
 bool RenderGraph::DeclareBuffer(const RGBufferDesc& desc, RGBufferHandle& outputHandle)
 {
     SDL_assert(m_IsInsideSetup && "DeclareBuffer must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     size_t hash = desc.ComputeHash();
 
@@ -437,7 +428,6 @@ bool RenderGraph::DeclarePersistentBuffer(const RGBufferDesc& desc, RGBufferHand
 void RenderGraph::ReadTexture(RGTextureHandle handle)
 {
     SDL_assert(m_IsInsideSetup && "ReadTexture must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
@@ -459,7 +449,6 @@ void RenderGraph::ReadTexture(RGTextureHandle handle)
 void RenderGraph::WriteTexture(RGTextureHandle handle)
 {
     SDL_assert(m_IsInsideSetup && "WriteTexture must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
@@ -481,7 +470,6 @@ void RenderGraph::WriteTexture(RGTextureHandle handle)
 void RenderGraph::ReadBuffer(RGBufferHandle handle)
 {
     SDL_assert(m_IsInsideSetup && "ReadBuffer must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {
@@ -503,7 +491,6 @@ void RenderGraph::ReadBuffer(RGBufferHandle handle)
 void RenderGraph::WriteBuffer(RGBufferHandle handle)
 {
     SDL_assert(m_IsInsideSetup && "WriteBuffer must be called during Setup phase");
-    m_DidAccessInSetup = true;
 
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {

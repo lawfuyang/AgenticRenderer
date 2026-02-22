@@ -250,7 +250,6 @@ private:
     
     // Setup state
     bool m_IsInsideSetup = false;
-    bool m_DidAccessInSetup = false;
     PassAccess m_PendingPassAccess;
     std::vector<uint32_t> m_PendingDeclaredTextures;
     std::vector<uint32_t> m_PendingDeclaredBuffers;
