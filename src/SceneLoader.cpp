@@ -767,8 +767,10 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 
 		if (!std::filesystem::exists(fullPath))
 		{
-				SDL_LOG_ASSERT_FAIL("Texture file not found", "[Scene] Texture file not found: %s", fullPath.string().c_str());
+			SDL_LOG_ASSERT_FAIL("Texture file not found", "[Scene] Texture file not found: %s", fullPath.string().c_str());
 		}
+
+		SDL_Log("[Scene] Loading texture: %s", fullPath.string().c_str());
 
 		nvrhi::TextureDesc desc;
 		std::unique_ptr<ITextureDataReader> imgData;
