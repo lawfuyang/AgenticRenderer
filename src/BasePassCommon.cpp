@@ -12,7 +12,7 @@ void BasePassResources::Initialize()
     m_PipelineQueries[1] = renderer->m_RHI->m_NvrhiDevice->createPipelineStatisticsQuery();
 }
 
-void BasePassResources::DeclareResources(RenderGraph& rg)
+void BasePassResources::DeclareResources(RenderGraph& rg, std::string_view rendererName)
 {
     Renderer* renderer = Renderer::GetInstance();
 
@@ -27,7 +27,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setIsDrawIndirectArgs(true)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
-            .setDebugName("VisibleCount");
+            .setDebugName((std::string(rendererName) + "_VisibleCount").c_str());
         rg.DeclareBuffer(desc, m_VisibleCountBuffer);
     }
 
@@ -39,7 +39,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
             .setCanHaveUAVs(true)
             .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
             .setKeepInitialState(true)
-            .setDebugName("VisibleIndirectBuffer");
+            .setDebugName((std::string(rendererName) + "_VisibleIndirectBuffer").c_str());
         rg.DeclareBuffer(desc, m_VisibleIndirectBuffer);
     }
 
@@ -52,7 +52,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("OccludedCount");
+                .setDebugName((std::string(rendererName) + "_OccludedCount").c_str());
 
             rg.DeclareBuffer(desc, m_OccludedCountBuffer);
         }
@@ -65,7 +65,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("OccludedIndirectBuffer");
+                .setDebugName((std::string(rendererName) + "_OccludedIndirectBuffer").c_str());
 
             rg.DeclareBuffer(desc, m_OccludedIndirectBuffer);
         }
@@ -77,7 +77,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("OccludedIndices");
+                .setDebugName((std::string(rendererName) + "_OccludedIndices").c_str());
 
             rg.DeclareBuffer(desc, m_OccludedIndicesBuffer);
         }
@@ -93,7 +93,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("MeshletJobCount");
+                .setDebugName((std::string(rendererName) + "_MeshletJobCount").c_str());
 
             rg.DeclareBuffer(desc, m_MeshletJobCountBuffer);
         }
@@ -106,7 +106,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("MeshletIndirectBuffer");
+                .setDebugName((std::string(rendererName) + "_MeshletIndirectBuffer").c_str());
 
             rg.DeclareBuffer(desc, m_MeshletIndirectBuffer);
         }
@@ -118,7 +118,7 @@ void BasePassResources::DeclareResources(RenderGraph& rg)
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)
-                .setDebugName("MeshletJobBuffer");
+                .setDebugName((std::string(rendererName) + "_MeshletJobBuffer").c_str());
 
             rg.DeclareBuffer(desc, m_MeshletJobBuffer);
         }

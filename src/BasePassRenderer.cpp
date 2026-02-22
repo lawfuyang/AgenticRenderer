@@ -52,6 +52,55 @@ struct ScopedBasePassPipelineQuery
     }
 };
 
+static void GenerateHZBMips(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph, nvrhi::BufferHandle spdAtomicCounter)
+{
+    PROFILE_FUNCTION();
+
+    Renderer* renderer = Renderer::GetInstance();
+
+    if (!renderer->m_EnableOcclusionCulling || renderer->m_FreezeCullingCamera)
+    {
+        return;
+    }
+
+    nvrhi::TextureHandle depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
+    nvrhi::TextureHandle hzb = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
+
+    nvrhi::utils::ScopedMarker commandListMarker{ commandList, "Generate HZB Mips" };
+
+    // First, build HZB mip 0 from depth texture
+    {
+        nvrhi::utils::ScopedMarker hzbFromDepthMarker{ commandList, "HZB From Depth" };
+
+        HZBFromDepthConstants hzbFromDepthData;
+        hzbFromDepthData.m_Width = hzb->getDesc().width;
+        hzbFromDepthData.m_Height = hzb->getDesc().height;
+
+        nvrhi::BindingSetDesc hzbFromDepthBset;
+        hzbFromDepthBset.bindings =
+        {
+            nvrhi::BindingSetItem::PushConstants(0, sizeof(HZBFromDepthConstants)),
+            nvrhi::BindingSetItem::Texture_SRV(0, depth),
+            nvrhi::BindingSetItem::Texture_UAV(0, hzb,  nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
+            nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
+        };
+
+        const uint32_t dispatchX = DivideAndRoundUp(hzbFromDepthData.m_Width, 8);
+        const uint32_t dispatchY = DivideAndRoundUp(hzbFromDepthData.m_Height, 8);
+
+        Renderer::RenderPassParams params;
+        params.commandList = commandList;
+        params.shaderName = "HZBFromDepth_HZBFromDepth_CSMain";
+        params.bindingSetDesc = hzbFromDepthBset;
+        params.dispatchParams = { .x = dispatchX, .y = dispatchY, .z = 1 };
+        params.pushConstants = &hzbFromDepthData;
+        params.pushConstantsSize = sizeof(hzbFromDepthData);
+        renderer->AddComputePass(params);
+    }
+
+    renderer->GenerateMipsUsingSPD(hzb, spdAtomicCounter, commandList, "Generate HZB Mips", SPD_REDUCTION_MIN);
+}
+
 class BasePassRendererBase : public IRenderer
 {
 public:
@@ -101,55 +150,6 @@ protected:
         const char* m_BucketName;
         bool m_BackFaceCull = false;
     };
-
-    void GenerateHZBMips(nvrhi::CommandListHandle commandList, const ResourceHandles& handles, nvrhi::BufferHandle spdAtomicCounter)
-    {
-        PROFILE_FUNCTION();
-
-        Renderer* renderer = Renderer::GetInstance();
-
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_FreezeCullingCamera)
-        {
-            return;
-        }
-
-        // Get transient depth texture from resource handles
-        nvrhi::TextureHandle depthTexture = handles.depth;
-
-        nvrhi::utils::ScopedMarker commandListMarker{ commandList, "Generate HZB Mips" };
-
-        // First, build HZB mip 0 from depth texture
-        {
-            nvrhi::utils::ScopedMarker hzbFromDepthMarker{ commandList, "HZB From Depth" };
-
-            HZBFromDepthConstants hzbFromDepthData;
-            hzbFromDepthData.m_Width = handles.hzb->getDesc().width;
-            hzbFromDepthData.m_Height = handles.hzb->getDesc().height;
-
-            nvrhi::BindingSetDesc hzbFromDepthBset;
-            hzbFromDepthBset.bindings =
-            {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(HZBFromDepthConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, depthTexture),
-                nvrhi::BindingSetItem::Texture_UAV(0, handles.hzb,  nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
-                nvrhi::BindingSetItem::Sampler(0, CommonResources::GetInstance().MinReductionClamp)
-            };
-
-            const uint32_t dispatchX = DivideAndRoundUp(hzbFromDepthData.m_Width, 8);
-            const uint32_t dispatchY = DivideAndRoundUp(hzbFromDepthData.m_Height, 8);
-
-            Renderer::RenderPassParams params;
-            params.commandList = commandList;
-            params.shaderName = "HZBFromDepth_HZBFromDepth_CSMain";
-            params.bindingSetDesc = hzbFromDepthBset;
-            params.dispatchParams = { .x = dispatchX, .y = dispatchY, .z = 1 };
-            params.pushConstants = &hzbFromDepthData;
-            params.pushConstantsSize = sizeof(hzbFromDepthData);
-            renderer->AddComputePass(params);
-        }
-
-        renderer->GenerateMipsUsingSPD(handles.hzb, spdAtomicCounter, commandList, "Generate HZB Mips", SPD_REDUCTION_MIN);
-    }
 
     void ComputeFrustumPlanes(const Matrix& proj, Vector4 frustumPlanes[5])
     {
@@ -516,26 +516,45 @@ protected:
     }
 };
 
-class OpaquePhase1Renderer : public BasePassRendererBase
+class OpaqueRenderer : public BasePassRendererBase
 {
+    const uint32_t m_Phase;
+
 public:
+    explicit OpaqueRenderer(uint32_t phase) : m_Phase(phase)
+    {
+        SDL_assert(phase < 2);
+    }
+
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
+        if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
+            return false;
+
+        if (m_Phase == 1 && !renderer->m_EnableOcclusionCulling)
+            return false;
 
         BasePassResources& res = m_BasePassResources;
-        res.DeclareResources(renderGraph);
+        res.DeclareResources(renderGraph, GetName());
+
+        if (m_Phase == 1)
+        {
+            renderGraph.ReadTexture(g_RG_HZBTexture);
+            renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
+        }
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        if (renderer->m_EnableOcclusionCulling)
+
+        if (m_Phase == 0 && renderer->m_EnableOcclusionCulling)
         {
             renderGraph.ReadTexture(g_RG_HZBTexture);
             renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
             renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
             renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
         }
+
         if (renderer->m_UseMeshletRendering)
         {
             renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
@@ -557,6 +576,7 @@ public:
     {
         ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
         Renderer* renderer = Renderer::GetInstance();
+
         const uint32_t numOpaque = renderer->m_Scene.m_OpaqueBucket.m_Count;
         if (numOpaque == 0) return;
 
@@ -568,123 +588,18 @@ public:
         BasePassResources& res = m_BasePassResources;
         handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
         handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-        handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
-        handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
-        handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
-        handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
-        handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
-        handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
-        handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
-        handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Read) : nullptr;
-        handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
-        handles.normals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
-        handles.orm = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
-        handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
-        handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
-
-        ClearAllCounters(commandList, handles);
-
-        BasePassRenderingArgs args;
-        args.m_FrustumPlanes = frustumPlanes;
-        args.m_View = view;
-        args.m_ViewProj = viewProjForCulling;
-        args.m_NumInstances = numOpaque;
-        args.m_InstanceBaseIndex = renderer->m_Scene.m_OpaqueBucket.m_BaseIndex;
-        args.m_BucketName = "Opaque";
-        args.m_CullingPhase = 0;
-        args.m_AlphaMode = ALPHA_MODE_OPAQUE;
-
-        PerformOcclusionCulling(commandList, args, handles);
-        RenderInstances(commandList, args, handles);
-    }
-    const char* GetName() const override { return "OpaquePhase1"; }
-};
-
-class HZBGenerator : public BasePassRendererBase
-{
-public:
-    bool Setup(RenderGraph& renderGraph) override
-    {
-        Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
-
-        renderGraph.ReadTexture(g_RG_DepthTexture);
-        renderGraph.WriteTexture(g_RG_HZBTexture);
-
-        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("HZB SPD Atomic Counter"), m_RG_SPDAtomicCounter);
-        renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
-
-        return true;
-    }
-
-    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
-    {
-        ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
-        Renderer* renderer = Renderer::GetInstance();
-        
-        ResourceHandles handles;
-        handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
-        handles.hzb = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
-        nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
-        GenerateHZBMips(commandList, handles, spdAtomicCounter);
-    }
-    const char* GetName() const override { return "HZBGenerator"; }
-
-private:
-    RGBufferHandle m_RG_SPDAtomicCounter;
-};
-
-class OpaquePhase2Renderer : public BasePassRendererBase
-{
-public:
-    bool Setup(RenderGraph& renderGraph) override
-    {
-        Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
-
-        BasePassResources& res = m_BasePassResources;
-        res.DeclareResources(renderGraph);
-
-        renderGraph.ReadTexture(g_RG_HZBTexture);
-        renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
-        
-        renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
-        renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        if (renderer->m_UseMeshletRendering)
+        if (m_Phase == 0)
         {
-            renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
-            renderGraph.WriteBuffer(res.m_MeshletJobCountBuffer);
-            renderGraph.WriteBuffer(res.m_MeshletIndirectBuffer);
+            handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
+            handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
+            handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
+        }
+        else
+        {
+            handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read) : nullptr;
         }
 
-        renderGraph.WriteTexture(g_RG_DepthTexture);
-        renderGraph.WriteTexture(g_RG_GBufferAlbedo);
-        renderGraph.WriteTexture(g_RG_GBufferNormals);
-        renderGraph.WriteTexture(g_RG_GBufferORM);
-        renderGraph.WriteTexture(g_RG_GBufferEmissive);
-        renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
-
-        return true;
-    }
-
-    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
-    {
-        ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
-        Renderer* renderer = Renderer::GetInstance();
-        
-        const uint32_t numOpaque = renderer->m_Scene.m_OpaqueBucket.m_Count;
-        if (numOpaque == 0) return;
-
-        Matrix view, viewProjForCulling;
-        Vector4 frustumPlanes[5];
-        PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
-
-        ResourceHandles handles;
-        BasePassResources& res = m_BasePassResources;
-        handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
-        handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-        handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read) : nullptr;
         handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
         handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
         handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
@@ -697,20 +612,38 @@ public:
         handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
         handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
 
+        if (m_Phase == 0)
+        {
+            ClearVisibleCounters(commandList, handles);
+        }
+
         BasePassRenderingArgs args;
         args.m_FrustumPlanes = frustumPlanes;
         args.m_View = view;
         args.m_ViewProj = viewProjForCulling;
         args.m_NumInstances = numOpaque;
         args.m_InstanceBaseIndex = renderer->m_Scene.m_OpaqueBucket.m_BaseIndex;
-        args.m_BucketName = "Opaque (Occluded)";
-        args.m_CullingPhase = 1;
+        args.m_BucketName = m_Phase == 0 ? "Opaque" : "Opaque (Occluded)";
+        args.m_CullingPhase = m_Phase;
         args.m_AlphaMode = ALPHA_MODE_OPAQUE;
 
         PerformOcclusionCulling(commandList, args, handles);
         RenderInstances(commandList, args, handles);
     }
-    const char* GetName() const override { return "OpaquePhase2"; }
+};
+
+class OpaquePhase1Renderer : public OpaqueRenderer
+{
+public:
+    OpaquePhase1Renderer() : OpaqueRenderer(0) {}
+    const char* GetName() const override { return "Opaque Phase1"; }
+};
+
+class OpaquePhase2Renderer : public OpaqueRenderer
+{
+public:
+    OpaquePhase2Renderer() : OpaqueRenderer(1) {}
+    const char* GetName() const override { return "Opaque Phase2"; }
 };
 
 class MaskedPassRenderer : public BasePassRendererBase
@@ -722,10 +655,11 @@ public:
         if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = m_BasePassResources;
-        res.DeclareResources(renderGraph);
+        res.DeclareResources(renderGraph, GetName());
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+
         if (renderer->m_EnableOcclusionCulling)
         {
             renderGraph.ReadTexture(g_RG_HZBTexture);
@@ -795,41 +729,8 @@ public:
         PerformOcclusionCulling(commandList, args, handles);
         RenderInstances(commandList, args, handles);
     }
+
     const char* GetName() const override { return "MaskedPass"; }
-};
-
-class HZBGeneratorPhase2 : public BasePassRendererBase
-{
-public:
-    bool Setup(RenderGraph& renderGraph) override
-    {
-        Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
-
-        renderGraph.ReadTexture(g_RG_DepthTexture);
-        renderGraph.WriteTexture(g_RG_HZBTexture);
-
-        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("HZB Phase 2 SPD Atomic Counter"), m_RG_SPDAtomicCounter);
-        renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
-
-        return true;
-    }
-
-    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
-    {
-        ScopedBasePassPipelineQuery query{ commandList, m_BasePassResources, this };
-        Renderer* renderer = Renderer::GetInstance();
-        
-        ResourceHandles handles;
-        handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
-        handles.hzb = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
-        nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
-        GenerateHZBMips(commandList, handles, spdAtomicCounter);
-    }
-    const char* GetName() const override { return "HZBGeneratorPhase2"; }
-
-private:
-    RGBufferHandle m_RG_SPDAtomicCounter;
 };
 
 class TransparentPassRenderer : public BasePassRendererBase
@@ -841,12 +742,12 @@ public:
         if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = m_BasePassResources;
-        res.DeclareResources(renderGraph);
+        res.DeclareResources(renderGraph, GetName());
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
-        // Opaque Color Texture (used for transmission/refraction)
+        // Opaque Color Texture (used for transmission/refract1ion)
         {
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width = width;
@@ -874,6 +775,7 @@ public:
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
+        
         if (renderer->m_UseMeshletRendering)
         {
             renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
@@ -956,9 +858,50 @@ private:
     RGBufferHandle m_RG_SPDAtomicCounter;
 };
 
+class HZBGenerator : public IRenderer
+{
+public:
+    bool Setup(RenderGraph& renderGraph) override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
+
+        renderGraph.ReadTexture(g_RG_DepthTexture);
+        renderGraph.WriteTexture(g_RG_HZBTexture);
+
+        const std::string counterName = std::string{ GetName() } + " HZB SPD Atomic Counter";
+
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc(counterName.c_str()), m_RG_SPDAtomicCounter);
+        renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
+
+        return true;
+    }
+
+    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    {
+        nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
+        GenerateHZBMips(commandList, renderGraph, spdAtomicCounter);
+    }
+
+private:
+    RGBufferHandle m_RG_SPDAtomicCounter;
+};
+
+class HZBGeneratorRenderer : public HZBGenerator
+{
+public:
+    const char* GetName() const override { return "HZBGeneratorRenderer"; }
+};
+
+class HZBGeneratorPhase2 : public HZBGenerator
+{
+public:
+    const char* GetName() const override { return "HZBGeneratorPhase2"; }
+};
+
 REGISTER_RENDERER(OpaquePhase1Renderer);
 REGISTER_RENDERER(HZBGenerator);
+REGISTER_RENDERER(HZBGeneratorPhase2);
 REGISTER_RENDERER(OpaquePhase2Renderer);
 REGISTER_RENDERER(MaskedPassRenderer);
-REGISTER_RENDERER(HZBGeneratorPhase2);
 REGISTER_RENDERER(TransparentPassRenderer);

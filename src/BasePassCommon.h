@@ -18,5 +18,5 @@ struct BasePassResources
     nvrhi::PipelineStatisticsQueryHandle m_PipelineQueries[2];
 
     void Initialize();
-    void DeclareResources(RenderGraph& rg);
+    void DeclareResources(RenderGraph& rg, std::string_view rendererName);
 };

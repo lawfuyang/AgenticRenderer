@@ -15,8 +15,8 @@ public:
     virtual void Initialize() {}
     virtual void PostSceneLoad() {}
     virtual bool Setup(RenderGraph& renderGraph) { return false; }
-    virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) = 0;
-    virtual const char* GetName() const = 0;
+    virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) {}
+    virtual const char* GetName() const { return "Unnamed Renderer"; }
 
     virtual bool IsBasePassRenderer() const { return false; }
 
