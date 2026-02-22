@@ -33,6 +33,7 @@ public:
     nvrhi::SamplerHandle AnisotropicWrap;  // Anisotropic filtering, wrap
     nvrhi::SamplerHandle MaxReductionClamp; // Max reduction, clamp to edge
     nvrhi::SamplerHandle MinReductionClamp; // Min reduction, clamp to edge
+    nvrhi::SamplerHandle LinearClampBorderWhite; // Bilinear filtering, clamp to border (white color)
 
     // Common raster states
     nvrhi::RasterState RasterCullNone;        // Solid fill, no cull

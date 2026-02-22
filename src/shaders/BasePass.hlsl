@@ -448,9 +448,10 @@ GBufferOut GBuffer_PSMain(VSOut input)
         {
             ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
 
-            // float2 uv = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            // SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
-            // float visibility = GetSkyVisibility(input.worldPos, uv, g_PerFrame.m_View.m_MatWorldToView, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility,linearClampSampler);
+            // float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
+            // SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
+            // float viewDepth = length(g_PerFrame.m_View.m_CameraPos.xyz - input.worldPos);
+            // float visibility = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
             // ambient *= visibility;
         }
 
@@ -523,9 +524,10 @@ GBufferOut GBuffer_PSMain(VSOut input)
             color = emissive;
         else if (g_PerFrame.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
         {
-            // float2 uv = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            // SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
-            // color = GetSkyVisibility(input.worldPos, uv, g_PerFrame.m_View.m_MatWorldToView, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler).rrr;
+            float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
+            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
+            float viewDepth = length(g_PerFrame.m_CameraPos.xyz - input.worldPos);
+            color = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler).rrr;
         }
     }
 
@@ -554,10 +556,11 @@ GBufferOut GBuffer_PSMain(VSOut input)
         }
         else if (g_PerFrame.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
         {
-            // float2 uv = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            // SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
-            // float visibility = GetSkyVisibility(input.worldPos, uv, g_PerFrame.m_View.m_MatWorldToView, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler);
-            // output.Albedo = float4(visibility.rrr, alpha);
+            float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
+            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
+            float viewDepth = length(g_PerFrame.m_CameraPos.xyz - input.worldPos);
+            float visibility = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
+            output.Albedo = float4(visibility.rrr, alpha);
         }
     }
     

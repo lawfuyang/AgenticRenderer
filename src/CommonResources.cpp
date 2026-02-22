@@ -76,6 +76,13 @@ void CommonResources::Initialize()
         desc.reductionType = nvrhi::SamplerReductionType::Minimum;
         MinReductionClamp = createSampler("MinReductionClamp", desc);
     }
+    {
+        nvrhi::SamplerDesc desc;
+        desc.setAllFilters(true);
+        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Border);
+        desc.borderColor = nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f);
+        LinearClampBorderWhite = createSampler("LinearClampBorderWhite", desc);
+    }
 
     // Register common samplers with global sampler descriptor heap
     renderer->RegisterSamplerAtIndex(SAMPLER_ANISOTROPIC_CLAMP_INDEX, AnisotropicClamp);
@@ -86,6 +93,7 @@ void CommonResources::Initialize()
     renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_WRAP_INDEX, LinearWrap);
     renderer->RegisterSamplerAtIndex(SAMPLER_MIN_REDUCTION_INDEX, MinReductionClamp);
     renderer->RegisterSamplerAtIndex(SAMPLER_MAX_REDUCTION_INDEX, MaxReductionClamp);
+    renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX, LinearClampBorderWhite);
 
     // Initialize common raster states
     // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding

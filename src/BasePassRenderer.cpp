@@ -362,7 +362,7 @@ protected:
         const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset);
         const nvrhi::BindingSetHandle bindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(bset, layout);
 
-        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius() * 0.5f;
+        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius();
 
         ForwardLightingPerFrameData cb{};
         cb.m_View = renderer->m_Scene.m_View;

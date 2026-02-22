@@ -104,8 +104,9 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         {
             ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
 
-            // SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
-            // float visibility = GetSkyVisibility(worldPos, uv, g_Deferred.m_View.m_MatWorldToView, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler);
+            // float viewDepth = length(g_Deferred.m_CameraPos.xyz - worldPos);
+            // SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
+            // float visibility = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
             // ambient *= visibility;
         }
 
@@ -130,8 +131,8 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         else if (g_Deferred.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
         {
             float viewDepth = length(g_Deferred.m_CameraPos.xyz - worldPos);
-            SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
-            color = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, linearClampSampler).rrr;
+            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
+            color = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler).rrr;
         }
 
         if (g_Deferred.m_DebugMode == DEBUG_MODE_INSTANCES ||

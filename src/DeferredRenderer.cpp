@@ -54,7 +54,7 @@ public:
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
 
         const Vector3 camPos = renderer->m_Scene.m_Camera.GetPosition();
-        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius() * 0.5f;
+        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius();
 
         // Deferred CB
         const nvrhi::BufferDesc deferredCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DeferredLightingConstants), "DeferredCB", 1);

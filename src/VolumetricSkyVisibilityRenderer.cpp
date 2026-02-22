@@ -63,7 +63,7 @@ public:
         nvrhi::TextureHandle historyTex = renderGraph.GetTexture(g_RG_HistorySkyVisibility, RGResourceAccessMode::Read);
         nvrhi::TextureHandle depthBuffer = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
 
-        float farPlane = scene.GetSceneBoundingRadius() * 0.5f;
+        float farPlane = scene.GetSceneBoundingRadius();
 
         VolumetricSkyVisibilityConstants consts{};
         consts.m_View = renderer->m_Scene.m_View;
