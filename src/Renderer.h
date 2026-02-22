@@ -224,6 +224,13 @@ struct Renderer
     float m_UpsampleRadius = 0.85f;
 
     int m_DebugMode = 0;
+    int m_ActiveDebugMode = 0;
+    struct {
+        bool m_EnableBloom;
+        bool m_EnableAutoExposure;
+        float m_ExposureValue;
+        float m_ExposureCompensation;
+    } m_DebugBackup{};
 
     // Environment Lighting settings
     bool m_EnableSky = true;

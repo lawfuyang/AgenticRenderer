@@ -776,6 +776,40 @@ void Renderer::Run()
         m_ViewPrev = m_View;
         m_Camera.Update();
 
+        // Handle debug mode settings
+        if (m_DebugMode != m_ActiveDebugMode)
+        {
+            if (m_DebugMode != DEBUG_MODE_NONE && m_ActiveDebugMode == DEBUG_MODE_NONE)
+            {
+                // Entering debug mode: save current state
+                m_DebugBackup.m_EnableBloom = m_EnableBloom;
+                m_DebugBackup.m_EnableAutoExposure = m_EnableAutoExposure;
+                m_DebugBackup.m_ExposureValue = m_Camera.m_ExposureValue;
+                m_DebugBackup.m_ExposureCompensation = m_Camera.m_ExposureCompensation;
+
+                // Set debug defaults
+                m_EnableBloom = false;
+                m_EnableAutoExposure = false;
+            }
+            else if (m_DebugMode == DEBUG_MODE_NONE && m_ActiveDebugMode != DEBUG_MODE_NONE)
+            {
+                // Leaving debug mode: restore state
+                m_EnableBloom = m_DebugBackup.m_EnableBloom;
+                m_EnableAutoExposure = m_DebugBackup.m_EnableAutoExposure;
+                m_Camera.m_ExposureValue = m_DebugBackup.m_ExposureValue;
+                m_Camera.m_ExposureCompensation = m_DebugBackup.m_ExposureCompensation;
+            }
+            m_ActiveDebugMode = m_DebugMode;
+        }
+
+        if (m_DebugMode != DEBUG_MODE_NONE)
+        {
+            // Lock settings in debug mode for consistent raw output
+            m_EnableBloom = false;
+            m_EnableAutoExposure = false;
+            m_Camera.m_Exposure = 1.0f;
+        }
+
         int windowW, windowH;
         SDL_GetWindowSize(m_Window, &windowW, &windowH);
         m_Camera.FillPlanarViewConstants(m_View, (float)windowW, (float)windowH);
