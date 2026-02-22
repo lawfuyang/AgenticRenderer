@@ -841,9 +841,7 @@ void Renderer::Run()
 
         extern IRenderer* g_TLASRenderer;
         extern IRenderer* g_ClearRenderer;
-        extern IRenderer* g_OpaquePhase1Renderer;
-        extern IRenderer* g_HZBGenerator;
-        extern IRenderer* g_OpaquePhase2Renderer;
+        extern IRenderer* g_OpaqueRenderer;
         extern IRenderer* g_MaskedPassRenderer;
         extern IRenderer* g_HZBGeneratorPhase2;
         extern IRenderer* g_DeferredRenderer;
@@ -864,9 +862,7 @@ void Renderer::Run()
         }
         else
         {
-            m_RenderGraph.ScheduleRenderer(g_OpaquePhase1Renderer);
-            m_RenderGraph.ScheduleRenderer(g_HZBGenerator);
-            m_RenderGraph.ScheduleRenderer(g_OpaquePhase2Renderer);
+            m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
             m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
             m_RenderGraph.ScheduleRenderer(g_VolumetricSkyVisibilityRenderer);

@@ -518,38 +518,24 @@ protected:
 
 class OpaqueRenderer : public BasePassRendererBase
 {
-    const uint32_t m_Phase;
+    RGBufferHandle m_RG_SPDAtomicCounter;
 
 public:
-    explicit OpaqueRenderer(uint32_t phase) : m_Phase(phase)
-    {
-        SDL_assert(phase < 2);
-    }
-
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
         if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
             return false;
 
-        if (m_Phase == 1 && !renderer->m_EnableOcclusionCulling)
-            return false;
-
         BasePassResources& res = m_BasePassResources;
         res.DeclareResources(renderGraph, GetName());
-
-        if (m_Phase == 1)
-        {
-            renderGraph.ReadTexture(g_RG_HZBTexture);
-            renderGraph.ReadBuffer(res.m_OccludedIndirectBuffer);
-        }
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
 
-        if (m_Phase == 0 && renderer->m_EnableOcclusionCulling)
+        if (renderer->m_EnableOcclusionCulling)
         {
-            renderGraph.ReadTexture(g_RG_HZBTexture);
+            renderGraph.WriteTexture(g_RG_HZBTexture);
             renderGraph.WriteBuffer(res.m_OccludedCountBuffer);
             renderGraph.WriteBuffer(res.m_OccludedIndicesBuffer);
             renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
@@ -568,6 +554,10 @@ public:
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
+
+        const std::string counterName = std::string{ GetName() } + " HZB SPD Atomic Counter";
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc(counterName.c_str()), m_RG_SPDAtomicCounter);
+        renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
 
         return true;
     }
@@ -588,34 +578,22 @@ public:
         BasePassResources& res = m_BasePassResources;
         handles.visibleCount = renderGraph.GetBuffer(res.m_VisibleCountBuffer, RGResourceAccessMode::Write);
         handles.visibleIndirect = renderGraph.GetBuffer(res.m_VisibleIndirectBuffer, RGResourceAccessMode::Write);
-
-        if (m_Phase == 0)
-        {
-            handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
-            handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
-            handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
-        }
-        else
-        {
-            handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Read) : nullptr;
-        }
-
+        handles.occludedCount = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedCountBuffer, RGResourceAccessMode::Write) : nullptr;
+        handles.occludedIndices = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndicesBuffer, RGResourceAccessMode::Write) : nullptr;
+        handles.occludedIndirect = renderer->m_EnableOcclusionCulling ? renderGraph.GetBuffer(res.m_OccludedIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
         handles.meshletJob = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobBuffer, RGResourceAccessMode::Write) : nullptr;
         handles.meshletJobCount = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletJobCountBuffer, RGResourceAccessMode::Write) : nullptr;
         handles.meshletIndirect = renderer->m_UseMeshletRendering ? renderGraph.GetBuffer(res.m_MeshletIndirectBuffer, RGResourceAccessMode::Write) : nullptr;
 
         handles.depth = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
-        handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Read) : nullptr;
+        handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write) : nullptr;
         handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
         handles.normals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
         handles.orm = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
         handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
         handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
 
-        if (m_Phase == 0)
-        {
-            ClearVisibleCounters(commandList, handles);
-        }
+        ClearVisibleCounters(commandList, handles);
 
         BasePassRenderingArgs args;
         args.m_FrustumPlanes = frustumPlanes;
@@ -623,27 +601,23 @@ public:
         args.m_ViewProj = viewProjForCulling;
         args.m_NumInstances = numOpaque;
         args.m_InstanceBaseIndex = renderer->m_Scene.m_OpaqueBucket.m_BaseIndex;
-        args.m_BucketName = m_Phase == 0 ? "Opaque" : "Opaque (Occluded)";
-        args.m_CullingPhase = m_Phase;
+        args.m_BucketName = "Opaque";
+        args.m_CullingPhase = 0;
         args.m_AlphaMode = ALPHA_MODE_OPAQUE;
 
         PerformOcclusionCulling(commandList, args, handles);
         RenderInstances(commandList, args, handles);
+
+        args.m_BucketName = "Opaque (Occluded)";
+        args.m_CullingPhase = 1;
+        PerformOcclusionCulling(commandList, args, handles);
+        RenderInstances(commandList, args, handles);
+
+        nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
+        GenerateHZBMips(commandList, renderGraph, spdAtomicCounter);
     }
-};
 
-class OpaquePhase1Renderer : public OpaqueRenderer
-{
-public:
-    OpaquePhase1Renderer() : OpaqueRenderer(0) {}
-    const char* GetName() const override { return "Opaque Phase1"; }
-};
-
-class OpaquePhase2Renderer : public OpaqueRenderer
-{
-public:
-    OpaquePhase2Renderer() : OpaqueRenderer(1) {}
-    const char* GetName() const override { return "Opaque Phase2"; }
+    const char* GetName() const override { return "Opaque Renderer"; }
 };
 
 class MaskedPassRenderer : public BasePassRendererBase
@@ -775,7 +749,7 @@ public:
 
         renderGraph.WriteBuffer(res.m_VisibleCountBuffer);
         renderGraph.WriteBuffer(res.m_VisibleIndirectBuffer);
-        
+
         if (renderer->m_UseMeshletRendering)
         {
             renderGraph.WriteBuffer(res.m_MeshletJobBuffer);
@@ -858,7 +832,7 @@ private:
     RGBufferHandle m_RG_SPDAtomicCounter;
 };
 
-class HZBGenerator : public IRenderer
+class HZBGeneratorPhase2 : public IRenderer
 {
 public:
     bool Setup(RenderGraph& renderGraph) override
@@ -885,23 +859,11 @@ public:
 
 private:
     RGBufferHandle m_RG_SPDAtomicCounter;
-};
 
-class HZBGeneratorRenderer : public HZBGenerator
-{
-public:
-    const char* GetName() const override { return "HZBGeneratorRenderer"; }
-};
-
-class HZBGeneratorPhase2 : public HZBGenerator
-{
-public:
     const char* GetName() const override { return "HZBGeneratorPhase2"; }
 };
 
-REGISTER_RENDERER(OpaquePhase1Renderer);
-REGISTER_RENDERER(HZBGenerator);
+REGISTER_RENDERER(OpaqueRenderer);
 REGISTER_RENDERER(HZBGeneratorPhase2);
-REGISTER_RENDERER(OpaquePhase2Renderer);
 REGISTER_RENDERER(MaskedPassRenderer);
 REGISTER_RENDERER(TransparentPassRenderer);
