@@ -489,17 +489,6 @@ protected:
         ComputeFrustumPlanes(cam->GetProjMatrix(), outFrustumPlanes);
     }
 
-    void ClearVisibleCounters(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
-    {
-        Renderer* renderer = Renderer::GetInstance();
-        nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear Visible Counters" };
-        commandList->clearBufferUInt(handles.visibleCount, 0);
-        if (renderer->m_UseMeshletRendering)
-        {
-            commandList->clearBufferUInt(handles.meshletJobCount, 0);
-        }
-    }
-
     void ClearAllCounters(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
     {
         Renderer* renderer = Renderer::GetInstance();
@@ -593,7 +582,7 @@ public:
         handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
         handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
 
-        ClearVisibleCounters(commandList, handles);
+        ClearAllCounters(commandList, handles);
 
         BasePassRenderingArgs args;
         args.m_FrustumPlanes = frustumPlanes;
@@ -809,7 +798,7 @@ public:
         Vector4 frustumPlanes[5];
         PrepareRenderingData(view, viewProjForCulling, frustumPlanes);
 
-        ClearVisibleCounters(commandList, handles);
+        ClearAllCounters(commandList, handles);
 
         BasePassRenderingArgs args;
         args.m_FrustumPlanes = frustumPlanes;
