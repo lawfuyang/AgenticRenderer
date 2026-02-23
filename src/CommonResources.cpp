@@ -424,4 +424,5 @@ void CommonResources::Shutdown()
     LinearClamp = nullptr;
     MaxReductionClamp = nullptr;
     MinReductionClamp = nullptr;
+    LinearClampBorderWhite = nullptr;
 }
