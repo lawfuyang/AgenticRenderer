@@ -199,8 +199,6 @@ struct Renderer
     bool m_EnableFrustumCulling = true;
     bool m_EnableConeCulling = false;
     bool m_FreezeCullingCamera = false;
-    Matrix m_FrozenCullingViewMatrix;
-    Vector3 m_FrozenCullingCameraPos;
     bool m_EnableOcclusionCulling = true;
 
     // Rendering mode

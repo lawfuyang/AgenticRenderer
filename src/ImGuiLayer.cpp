@@ -299,8 +299,8 @@ void ImGuiLayer::UpdateFrame()
             ImGui::Checkbox("Freeze Culling Camera", &renderer->m_FreezeCullingCamera);
             if (!prevFreeze && renderer->m_FreezeCullingCamera)
             {
-                renderer->m_FrozenCullingViewMatrix = scene.m_Camera.GetViewMatrix();
-                renderer->m_FrozenCullingCameraPos = scene.m_Camera.GetPosition();
+                scene.m_FrozenCullingViewMatrix = scene.m_Camera.GetViewMatrix();
+                scene.m_FrozenCullingCameraPos = scene.m_Camera.GetPosition();
             }
 
             ImGui::TreePop();

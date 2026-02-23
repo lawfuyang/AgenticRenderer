@@ -36,6 +36,12 @@ Vector3 CalculateGridZParams(float NearPlane, float FarPlane, float DepthDistrib
 
 Vector2 CreateInvDeviceZToWorldZTransform(const Matrix& ProjMatrix);
 
+std::vector<uint8_t> ReadBinaryFile(const std::filesystem::path& path);
+
+uint32_t HashToUint(size_t hash);
+
+void ChooseWindowSize(int* outWidth, int* outHeight);
+
 struct SimpleTimer
 {
     uint64_t freq = SDL_GetPerformanceFrequency();

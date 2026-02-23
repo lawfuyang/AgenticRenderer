@@ -180,6 +180,8 @@ public:
     std::vector<int> m_DynamicNodeIndices; // Topologically sorted
 
     ::Camera m_Camera;
+    Matrix m_FrozenCullingViewMatrix;
+    Vector3 m_FrozenCullingCameraPos;
     PlanarViewConstants m_View;
     PlanarViewConstants m_ViewPrev;
     int m_SelectedCameraIndex = -1;

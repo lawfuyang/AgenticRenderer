@@ -375,7 +375,7 @@ protected:
         Vector3 cullingCamPos = camPos;
         if (renderer->m_FreezeCullingCamera)
         {
-            cullingCamPos = renderer->m_FrozenCullingCameraPos;
+            cullingCamPos = renderer->m_Scene.m_FrozenCullingCameraPos;
         }
         cb.m_CullingCameraPos = Vector4{ cullingCamPos.x, cullingCamPos.y, cullingCamPos.z, 0.0f };
 
@@ -480,9 +480,9 @@ protected:
         outViewProjForCulling = viewProj;
         if (renderer->m_FreezeCullingCamera)
         {
-            outView = renderer->m_FrozenCullingViewMatrix;
+            outView = renderer->m_Scene.m_FrozenCullingViewMatrix;
             const Matrix proj = cam->GetProjMatrix();
-            const DirectX::XMMATRIX v = DirectX::XMLoadFloat4x4(&renderer->m_FrozenCullingViewMatrix);
+            const DirectX::XMMATRIX v = DirectX::XMLoadFloat4x4(&renderer->m_Scene.m_FrozenCullingViewMatrix);
             const DirectX::XMMATRIX p = DirectX::XMLoadFloat4x4(&proj);
             DirectX::XMStoreFloat4x4(&outViewProjForCulling, v * p);
         }
