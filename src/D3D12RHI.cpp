@@ -138,7 +138,7 @@ public:
                 // Ignore specific warnings
                 D3D12_MESSAGE_ID deniedMessages[] = {
                     D3D12_MESSAGE_ID_CREATERESOURCE_STATE_IGNORED,
-                    D3D12_MESSAGE_ID_RESOURCE_BARRIER_DUPLICATE_SUBRESOURCE_TRANSITIONS // temp until fix to force depth attachment to shader_read state if both SRV & DSV
+                    //D3D12_MESSAGE_ID_RESOURCE_BARRIER_DUPLICATE_SUBRESOURCE_TRANSITIONS // temp until fix to force depth attachment to shader_read state if both SRV & DSV
                 };
                 D3D12_INFO_QUEUE_FILTER filter = {};
                 filter.DenyList.NumIDs = _countof(deniedMessages);
