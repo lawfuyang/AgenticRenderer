@@ -78,7 +78,6 @@ public:
             .commandList = commandList,
             .shaderName = "Sky_Sky_PSMain",
             .bindingSetDesc = bset,
-            .useBindlessResources = true,
             .framebuffer = framebuffer,
             .depthStencilState = &ds
         };

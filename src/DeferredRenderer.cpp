@@ -118,7 +118,6 @@ public:
             .commandList = commandList,
             .shaderName = "DeferredLighting_DeferredLighting_PSMain",
             .bindingSetDesc = bset,
-            .useBindlessResources = true,
             .framebuffer = framebuffer,
             .depthStencilState = &ds
         };

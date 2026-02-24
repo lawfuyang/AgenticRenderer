@@ -128,7 +128,6 @@ struct Renderer
         nvrhi::CommandListHandle commandList;
         std::string_view shaderName;
         nvrhi::BindingSetDesc bindingSetDesc;
-        bool useBindlessResources = false;
         const void* pushConstants = nullptr;
         size_t pushConstantsSize = 0;
         // Compute specific

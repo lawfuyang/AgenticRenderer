@@ -1122,14 +1122,11 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
     desc.bindingLayouts.push_back(layout);
     bindingSets.push_back(bindingSet);
 
-    if (params.useBindlessResources)
-    {
-        desc.bindingLayouts.push_back(GetStaticTextureBindingLayout());
-        bindingSets.push_back(GetStaticTextureDescriptorTable());
+    desc.bindingLayouts.push_back(GetStaticTextureBindingLayout());
+    bindingSets.push_back(GetStaticTextureDescriptorTable());
 
-        desc.bindingLayouts.push_back(GetStaticSamplerBindingLayout());
-        bindingSets.push_back(GetStaticSamplerDescriptorTable());
-    }
+    desc.bindingLayouts.push_back(GetStaticSamplerBindingLayout());
+    bindingSets.push_back(GetStaticSamplerDescriptorTable());
 
     desc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
     desc.renderState.depthStencilState = params.depthStencilState ? *params.depthStencilState : CommonResources::GetInstance().DepthDisabled;
@@ -1178,14 +1175,11 @@ void Renderer::AddComputePass(const RenderPassParams& params)
     layouts.push_back(layout);
     bindingSets.push_back(bindingSet);
 
-    if (params.useBindlessResources)
-    {
-        layouts.push_back(GetStaticTextureBindingLayout());
-        bindingSets.push_back(GetStaticTextureDescriptorTable());
+    layouts.push_back(GetStaticTextureBindingLayout());
+    bindingSets.push_back(GetStaticTextureDescriptorTable());
 
-        layouts.push_back(GetStaticSamplerBindingLayout());
-        bindingSets.push_back(GetStaticSamplerDescriptorTable());
-    }
+    layouts.push_back(GetStaticSamplerBindingLayout());
+    bindingSets.push_back(GetStaticSamplerDescriptorTable());
 
     nvrhi::ComputeState state;
     state.pipeline = GetOrCreateComputePipeline(GetShaderHandle(params.shaderName), layouts);

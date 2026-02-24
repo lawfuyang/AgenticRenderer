@@ -89,7 +89,6 @@ public:
             .commandList = commandList,
             .shaderName = "PathTracer_PathTracer_CSMain",
             .bindingSetDesc = bset,
-            .useBindlessResources = true,
             .dispatchParams = {
                 .x = DivideAndRoundUp(hdrDesc.width, 8),
                 .y = DivideAndRoundUp(hdrDesc.height, 8),
