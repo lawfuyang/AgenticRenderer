@@ -100,14 +100,11 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         color = directLighting.diffuse + directLighting.specular;
         
         float3 ambient = 0.0;
+
+        // TODO: get rid of this when we have restir GI
         if (g_Deferred.m_EnableSky)
         {
             ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
-
-            // float viewDepth = length(g_Deferred.m_CameraPos.xyz - worldPos);
-            // SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
-            // float visibility = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
-            // ambient *= visibility;
         }
 
         color += ambient + emissive;
@@ -128,12 +125,6 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             color = emissive;
         else if (g_Deferred.m_DebugMode == DEBUG_MODE_MOTION_VECTORS)
             color = float3(abs(g_GBufferMotion.Load(uint3(uvInt, 0)).xy), 0.0f);
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
-        {
-            float viewDepth = length(g_Deferred.m_CameraPos.xyz - worldPos);
-            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
-            color = GetSkyVisibility(viewDepth, uv, g_Deferred.m_SkyVisibilityGridZParams, g_Deferred.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler).rrr;
-        }
 
         if (g_Deferred.m_DebugMode == DEBUG_MODE_INSTANCES ||
             g_Deferred.m_DebugMode == DEBUG_MODE_MESHLETS ||

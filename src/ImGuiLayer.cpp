@@ -108,31 +108,6 @@ void ImGuiLayer::UpdateFrame()
             ImGui::TreePop();
         }
 
-        if (renderer->m_EnableSky)
-        {
-            if (ImGui::TreeNode("Sky Visibility"))
-            {
-                ImGui::Checkbox("Enable Temporal", &renderer->m_EnableSkyVisibilityTemporal);
-                ImGui::Checkbox("Enable Random Rays", &renderer->m_EnableSkyVisibilityRandomRays);
-
-                ImGui::SliderInt("Rays Per Froxel", &renderer->m_SkyVisibilityRays, 1, 32);
-
-                const char* zSlices[] = { "64", "96", "128" };
-                int currentZIndex = 0;
-                if (renderer->m_SkyVisibilityZCount == 96) currentZIndex = 1;
-                else if (renderer->m_SkyVisibilityZCount == 128) currentZIndex = 2;
-
-                if (ImGui::Combo("Z-slice count", &currentZIndex, zSlices, IM_ARRAYSIZE(zSlices)))
-                {
-                    if (currentZIndex == 0) renderer->m_SkyVisibilityZCount = 64;
-                    else if (currentZIndex == 1) renderer->m_SkyVisibilityZCount = 96;
-                    else if (currentZIndex == 2) renderer->m_SkyVisibilityZCount = 128;
-                }
-
-                ImGui::TreePop();
-            }
-        }
-
         // Post-processing settings
         if (ImGui::TreeNode("Post-Processing"))
         {

@@ -14,7 +14,6 @@ extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferEmissive;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_HDRColor;
-extern RGTextureHandle g_RG_SkyVisibility;
 RGTextureHandle g_RG_OpaqueColor;
 
 struct ScopedBasePassPipelineQuery
@@ -124,7 +123,6 @@ public:
         nvrhi::TextureHandle motion;
         nvrhi::TextureHandle hdr;
         nvrhi::TextureHandle opaque;
-        nvrhi::TextureHandle skyVis;
     };
     
     virtual void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override = 0;
@@ -287,7 +285,6 @@ protected:
         nvrhi::TextureHandle depthTexture = handles.depth;
         nvrhi::TextureHandle hdrColor = handles.hdr;
         nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? handles.opaque : CommonResources::GetInstance().DefaultTextureBlack;
-        nvrhi::TextureHandle skyVis = handles.skyVis;
 
         char marker[256];
         sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
@@ -356,13 +353,10 @@ protected:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(10, renderer->m_Scene.m_IndexBuffer),
             nvrhi::BindingSetItem::Texture_SRV(11, opaqueColor),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(12, renderer->m_Scene.m_LightBuffer),
-            nvrhi::BindingSetItem::Texture_SRV(13, handles.skyVis ? handles.skyVis : CommonResources::GetInstance().DefaultTexture3DWhite),
         };
 
         const nvrhi::BindingLayoutHandle layout = renderer->GetOrCreateBindingLayoutFromBindingSetDesc(bset);
         const nvrhi::BindingSetHandle bindingSet = renderer->m_RHI->m_NvrhiDevice->createBindingSet(bset, layout);
-
-        float skyVisFarPlane = renderer->m_Scene.GetSceneBoundingRadius();
 
         ForwardLightingPerFrameData cb{};
         cb.m_View = renderer->m_Scene.m_View;
@@ -395,9 +389,6 @@ protected:
         cb.m_SunDirection = renderer->m_Scene.m_SunDirection;
         cb.m_RenderingMode = (uint32_t)renderer->m_Mode;
         cb.m_RadianceMipCount = CommonResources::GetInstance().m_RadianceMipCount;
-        cb.m_SkyVisibilityZCount = (uint32_t)renderer->m_SkyVisibilityZCount;
-        cb.m_SkyVisibilityFar = skyVisFarPlane;
-        cb.m_SkyVisibilityGridZParams = CalculateGridZParams(0.1f, skyVisFarPlane, 1.0f, cb.m_SkyVisibilityZCount);
 
         commandList->writeBuffer(perFrameCB, &cb, sizeof(cb), 0);
 
@@ -753,11 +744,6 @@ public:
             renderGraph.WriteBuffer(res.m_OccludedIndirectBuffer);
         }
 
-        if (renderer->m_EnableSky)
-        {
-            renderGraph.ReadTexture(g_RG_SkyVisibility);
-        }
-
         renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("Transparent SPD Atomic Counter"), m_RG_SPDAtomicCounter);
         renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
 
@@ -786,7 +772,6 @@ public:
         handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Read) : nullptr;
         handles.hdr = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
         handles.opaque = renderGraph.GetTexture(g_RG_OpaqueColor, RGResourceAccessMode::Write);
-        handles.skyVis = renderer->m_EnableSky ? renderGraph.GetTexture(g_RG_SkyVisibility, RGResourceAccessMode::Read) : nullptr;
 
         // Capture the opaque scene for refraction
         commandList->copyTexture(handles.opaque, nvrhi::TextureSlice(), handles.hdr, nvrhi::TextureSlice());

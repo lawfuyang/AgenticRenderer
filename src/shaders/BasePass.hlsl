@@ -22,7 +22,6 @@ Texture2D<float> g_HZB : register(t8);
 RaytracingAccelerationStructure g_SceneAS : register(t9);
 Texture2D g_OpaqueColor : register(t11);
 StructuredBuffer<GPULight> g_Lights : register(t12);
-Texture3D g_SkyVisibility : register(t13);
 
 void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
 {
@@ -444,15 +443,11 @@ GBufferOut GBuffer_PSMain(VSOut input)
         PrepareLightingByproducts(lightingInputs);
 
         float3 ambient = float3(0,0,0);
+
+        // TODO: get rid of this when we have restir GI
         if (g_PerFrame.m_EnableSky)
         {
             ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
-
-            // float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            // SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
-            // float viewDepth = length(g_PerFrame.m_View.m_CameraPos.xyz - input.worldPos);
-            // float visibility = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
-            // ambient *= visibility;
         }
 
         color = directDiffuse + directSpecular + ambient;
@@ -522,13 +517,6 @@ GBufferOut GBuffer_PSMain(VSOut input)
             color = metallic.xxx;
         else if (g_PerFrame.m_DebugMode == DEBUG_MODE_EMISSIVE)
             color = emissive;
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
-        {
-            float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
-            float viewDepth = length(g_PerFrame.m_CameraPos.xyz - input.worldPos);
-            color = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler).rrr;
-        }
     }
 
     return float4(color, alpha);
@@ -553,14 +541,6 @@ GBufferOut GBuffer_PSMain(VSOut input)
             output.Normal = float2(0.5f, 0.5f); // Default normal
             output.ORM = float2(0.5f, 0.0f); // Default ORM
             output.Emissive = float4(0.0f, 0.0f, 0.0f, 1.0f); // No emissive
-        }
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_SKY_VISIBILITY)
-        {
-            float2 screenUV = input.Position.xy / g_PerFrame.m_View.m_ViewportSize;
-            SamplerState skyvisSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX];
-            float viewDepth = length(g_PerFrame.m_CameraPos.xyz - input.worldPos);
-            float visibility = GetSkyVisibility(viewDepth, screenUV, g_PerFrame.m_SkyVisibilityGridZParams, g_PerFrame.m_SkyVisibilityZCount, g_SkyVisibility, skyvisSampler);
-            output.Albedo = float4(visibility.rrr, alpha);
         }
     }
     

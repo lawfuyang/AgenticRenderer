@@ -178,13 +178,6 @@ float3 ComputeCellViewSpacePosition(uint3 GridCoordinate, float3 GridZParams, ui
     return ComputeCellViewSpacePosition(GridCoordinate, GridZParams, ViewGridSize, InvDeviceZToWorldZTransform, ClipToView, ViewSpaceZ);
 }
 
-float GetSkyVisibility(float viewDepth, float2 uv, float3 GridZParams, uint ZCount, Texture3D skyVisibilityTex, SamplerState linearClampSampler)
-{
-    float zSlice = ComputeZSliceFromDepth(viewDepth, GridZParams);
-    float3 froxelCoordUVZ = float3(uv, (zSlice + 0.5f) / float(ZCount));
-    return skyVisibilityTex.SampleLevel(linearClampSampler, froxelCoordUVZ, 0.0f).r;
-}
-
 struct LightingInputs
 {
     float3 N;

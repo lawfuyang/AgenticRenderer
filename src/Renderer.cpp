@@ -559,7 +559,6 @@ void Renderer::Run()
         extern IRenderer* g_HDRRenderer;
         extern IRenderer* g_ImGuiRenderer;
         extern IRenderer* g_PathTracerRenderer;
-        extern IRenderer* g_VolumetricSkyVisibilityRenderer;
 
         m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
         m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
@@ -573,7 +572,6 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
             m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
-            m_RenderGraph.ScheduleRenderer(g_VolumetricSkyVisibilityRenderer);
             m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
             m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
