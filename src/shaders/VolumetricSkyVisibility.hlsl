@@ -97,26 +97,23 @@ void TemporalCS(uint3 id : SV_DispatchThreadID)
         id.z >= g_Consts.m_ResolutionZ)
         return;
 
-    float currentVisibility = g_OutputVisibility[id].r;
-    
-    float2 uv = (float2(id.xy) + 0.5f) / float2(g_Consts.m_ResolutionX, g_Consts.m_ResolutionY);
-    float viewDepth = ComputeDepthFromZSlice(float(id.z) + 0.5f, g_Consts.m_SkyVisibilityGridZParams);
-    
-    float4 clipPos = float4(uv.x * 2.0f - 1.0f, (1.0f - uv.y) * 2.0f - 1.0f, 0.0f, 1.0f);
-    float4 viewPosDir = MatrixMultiply(clipPos, g_Consts.m_View.m_MatClipToViewNoOffset);
-    float3 viewDir = normalize(viewPosDir.xyz / viewPosDir.w);
-    float3 viewPos = viewDir * (viewDepth / viewDir.z);
+    float viewSpaceZ;
+    uint3 gridSize = uint3(g_Consts.m_ResolutionX, g_Consts.m_ResolutionY, g_Consts.m_ResolutionZ);
+    float3 viewPos = ComputeCellViewSpacePosition(id, g_Consts.m_SkyVisibilityGridZParams, gridSize, g_Consts.m_InvDeviceZToWorldZTransform, g_Consts.m_View.m_MatClipToViewNoOffset, viewSpaceZ);
     float3 worldPos = MatrixMultiply(float4(viewPos, 1.0f), g_Consts.m_View.m_MatViewToWorld).xyz;
 
-    float4 prevClipPos = MatrixMultiply(float4(worldPos, 1.0f), g_Consts.m_PrevView.m_MatWorldToClip);
+    float prevViewSpaceZ;
+    float3 prevViewPos = ComputeCellViewSpacePosition(id, g_Consts.m_SkyVisibilityGridZParams, gridSize, g_Consts.m_InvDeviceZToWorldZTransform, g_Consts.m_PrevView.m_MatClipToViewNoOffset, prevViewSpaceZ);
+    float3 prevWorldPos = MatrixMultiply(float4(prevViewPos, 1.0f), g_Consts.m_PrevView.m_MatViewToWorld).xyz;
+
+    float4 prevClipPos = MatrixMultiply(float4(prevWorldPos, 1.0f), g_Consts.m_PrevView.m_MatWorldToClip);
     float3 prevNDC = prevClipPos.xyz / prevClipPos.w;
     float2 prevUV = prevNDC.xy * 0.5f + 0.5f;
     prevUV.y = 1.0f - prevUV.y;
     
-    float4 prevViewPos = MatrixMultiply(float4(worldPos, 1.0f), g_Consts.m_PrevView.m_MatWorldToView);
-    float prevViewDepth = prevViewPos.z;
-    float prevFroxelZ = ComputeZSliceFromDepth(prevViewDepth, g_Consts.m_SkyVisibilityGridZParams);
+    float prevFroxelZ = ComputeZSliceFromDepth(prevViewSpaceZ, g_Consts.m_SkyVisibilityGridZParams);
     
+    float currentVisibility = g_OutputVisibility[id].r;
     float visibility = currentVisibility;
     float lerpFactor = 0.5f;
 
