@@ -41,9 +41,7 @@ float3 SampleStratifiedSkyVisibility(float2 u)
 [numthreads(8, 8, 1)]
 void VisibilityCS(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= g_Consts.m_ResolutionX || 
-        id.y >= g_Consts.m_ResolutionY || 
-        id.z >= g_Consts.m_ResolutionZ)
+    if (id.x >= g_Consts.m_ResolutionX || id.y >= g_Consts.m_ResolutionY)
         return;
 
     float viewSpaceZ;
