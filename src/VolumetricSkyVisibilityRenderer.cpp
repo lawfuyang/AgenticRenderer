@@ -101,7 +101,7 @@ public:
             params.commandList = commandList;
             params.shaderName = "VolumetricSkyVisibility_VisibilityCS";
             params.bindingSetDesc = bsetDesc;
-            params.dispatchParams = { DivideAndRoundUp(resX, 4), DivideAndRoundUp(resY, 4), DivideAndRoundUp(resZ, 4) };
+            params.dispatchParams = { DivideAndRoundUp(resX, 8), DivideAndRoundUp(resY, 8), resZ };
             renderer->AddComputePass(params);
         }
 

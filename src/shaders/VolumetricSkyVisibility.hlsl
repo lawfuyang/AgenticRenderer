@@ -38,7 +38,7 @@ float3 SampleStratifiedSkyVisibility(float2 u)
     }
 }
 
-[numthreads(4, 4, 4)]
+[numthreads(8, 8, 1)]
 void VisibilityCS(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= g_Consts.m_ResolutionX || 
