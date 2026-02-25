@@ -188,19 +188,21 @@ PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, fl
     pbrAttr.roughness = mat.m_RoughnessMetallic.x;
     if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
-        pbrAttr.roughness *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).g;
+        pbrAttr.roughness = SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).g;
     }
+
+    pbrAttr.roughness = max(pbrAttr.roughness, 0.04f);
     
     pbrAttr.metallic = mat.m_RoughnessMetallic.y;
     if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
-        pbrAttr.metallic *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).b;
+        pbrAttr.metallic = SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).b;
     }
 
     pbrAttr.emissive = mat.m_EmissiveFactor.xyz;
     if ((mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
     {
-        pbrAttr.emissive += SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, attr.m_Uv, lod).xyz;
+        pbrAttr.emissive *= SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, attr.m_Uv, lod).xyz;
     }
 
     // Normal (from normal map when available)

@@ -272,6 +272,15 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
         }
     }
 
+    // ── Firefly clamp ────────────────────────────────────────────────────────
+    // Cap per-sample radiance to suppress rare, extreme contributions that can't
+    // practically average out (e.g. NEE specular spike on smooth surfaces without
+    // MIS, or errant emissive hits through thin gaps).
+    // This is a biased estimator but is the standard pragmatic solution until full
+    // MIS is implemented. 
+    const float kFireflyClamp = 1e3f;
+    accumulatedRadiance = min(accumulatedRadiance, float3(kFireflyClamp, kFireflyClamp, kFireflyClamp));
+
     // ── Accumulation ────────────────────────────────────────────────────────
     float4 accum = float4(accumulatedRadiance, 1.0f);
     if (g_PathTracer.m_AccumulationIndex > 0)

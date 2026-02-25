@@ -359,7 +359,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     }
 
     // Prevent perfectly smooth surfaces to avoid artifacts
-    roughness = max(roughness, 0.05f);
+    roughness = max(roughness, 0.04f);
 
     // Emissive
     float3 emissive = mat.m_EmissiveFactor.xyz;
