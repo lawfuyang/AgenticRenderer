@@ -36,10 +36,7 @@
       #define PUSH_CONSTANT 
       #define VK_IMAGE_FORMAT(f)
   #else
-      #define DRAW_INDEX_ARG_COMMA , uint drawIndex : DRAW_INDEX
-      #define GET_DRAW_INDEX() drawIndex
-      #define PUSH_CONSTANT 
-      #define VK_IMAGE_FORMAT(f)
+      #error "Unknown shader compilation target. Define either SPIRV or DXIL."
   #endif
 
   struct FullScreenVertexOut
