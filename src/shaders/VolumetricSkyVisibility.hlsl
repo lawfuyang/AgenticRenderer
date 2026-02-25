@@ -54,7 +54,12 @@ void VisibilityCS(uint3 id : SV_DispatchThreadID)
     float visibility = 0.0f;
 
     float2 uv = (float2(id.xy) + 0.5f) / float2(g_Consts.m_ResolutionX, g_Consts.m_ResolutionY);
-    float seed = 0;//InterleavedGradientNoise(uv * 1337.0f + g_Consts.m_FrameIndex * 1.618f);
+
+    float seed = 0;
+    if (g_Consts.m_EnableRandomRays)
+    {
+        seed = InterleavedGradientNoise(uv * 1337.0f + g_Consts.m_FrameIndex * 1.618f);
+    }
 
     for (uint i = 0; i < g_Consts.m_RaysPerFroxel; ++i)
     {

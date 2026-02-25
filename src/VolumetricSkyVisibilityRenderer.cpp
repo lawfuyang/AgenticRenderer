@@ -78,6 +78,7 @@ public:
         consts.m_SkyVisibilityFar = farPlane;
         consts.m_SkyVisibilityGridZParams = CalculateGridZParams(0.1f, farPlane, 1.0f, renderer->m_SkyVisibilityZCount);
         consts.m_InvDeviceZToWorldZTransform = CreateInvDeviceZToWorldZTransform(renderer->m_Scene.m_Camera.GetProjMatrix());
+        consts.m_EnableRandomRays = renderer->m_EnableSkyVisibilityRandomRays ? 1 : 0;
 
         const nvrhi::BufferDesc cbDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(consts), "SkyVisibility_Constants", 1);
         nvrhi::BufferHandle cb = renderer->m_RHI->m_NvrhiDevice->createBuffer(cbDesc);

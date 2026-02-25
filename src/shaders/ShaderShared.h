@@ -317,7 +317,8 @@ struct VolumetricSkyVisibilityConstants
     float m_SkyVisibilityFar;
     //
     Vector2 m_InvDeviceZToWorldZTransform;
-    Vector2 pad0;
+    uint32_t m_EnableRandomRays;
+    uint32_t pad0;
 };
 
 // Material constants (persistent, per-material data)

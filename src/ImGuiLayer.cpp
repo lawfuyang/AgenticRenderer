@@ -113,6 +113,7 @@ void ImGuiLayer::UpdateFrame()
             if (ImGui::TreeNode("Sky Visibility"))
             {
                 ImGui::Checkbox("Enable Temporal", &renderer->m_EnableSkyVisibilityTemporal);
+                ImGui::Checkbox("Enable Random Rays", &renderer->m_EnableSkyVisibilityRandomRays);
 
                 ImGui::SliderInt("Rays Per Froxel", &renderer->m_SkyVisibilityRays, 1, 32);
 

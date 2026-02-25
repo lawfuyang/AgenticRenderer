@@ -230,6 +230,7 @@ struct Renderer
     // Environment Lighting settings
     bool m_EnableSky = true;
     bool m_EnableSkyVisibilityTemporal = false;
+    bool m_EnableSkyVisibilityRandomRays = false;
     int m_SkyVisibilityRays = 16;
     int m_SkyVisibilityZCount = 64;
     std::string m_IrradianceTexturePath = "irradiance.dds";
