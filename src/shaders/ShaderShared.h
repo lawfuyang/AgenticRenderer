@@ -449,7 +449,8 @@ struct TonemapConstants
     uint32_t m_Height;
     float m_BloomIntensity;
     uint32_t m_EnableBloom;    uint32_t m_DebugBloom;
-    uint32_t m_Pad;};
+    uint32_t m_Pad;
+};
 
 struct BloomConstants
 {
