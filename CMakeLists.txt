@@ -246,8 +246,8 @@ add_custom_target(build_shaders
             --vulkanVersion 1.3
             --vulkanMemoryLayout dx
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
+            --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
             --relaxedInclude "pch.h"
-            --verbose
 
     # DXIL output for D3D12
     COMMAND ${SHADERMAKE_PATH_GENEX}
@@ -260,6 +260,7 @@ add_custom_target(build_shaders
             --shaderModel 6_8
             --hlsl2021
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
+            --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
             --relaxedInclude "pch.h"
             --verbose
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}

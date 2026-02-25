@@ -1,6 +1,6 @@
 #include "RTXDIApplicationBridge.hlsli"
 
-#include <Rtxdi/RtxdiParameters.h>
+#include "Rtxdi/RtxdiParameters.h"
 
 // RTXDI resources
 StructuredBuffer<uint4> g_RTXDI_NeighborOffsets : register(t0);
@@ -11,14 +11,14 @@ RWStructuredBuffer<RTXDI_PackedDIReservoir> g_RTXDI_LightReservoirBuffer : regis
 #define RTXDI_RIS_BUFFER g_RTXDI_RISBuffer
 #define RTXDI_LIGHT_RESERVOIR_BUFFER g_RTXDI_LightReservoirBuffer
 
-#include <Rtxdi/Utils/Math.hlsli>
-#include <Rtxdi/DI/BoilingFilter.hlsli>
-#include <Rtxdi/DI/InitialSampling.hlsli>
-#include <Rtxdi/DI/PairwiseStreaming.hlsli>
-#include <Rtxdi/DI/Reservoir.hlsli>
-#include <Rtxdi/DI/SpatialResampling.hlsli>
-#include <Rtxdi/DI/SpatioTemporalResampling.hlsli>
-#include <Rtxdi/DI/TemporalResampling.hlsli>
+#include "Rtxdi/Utils/Math.hlsli"
+#include "Rtxdi/DI/BoilingFilter.hlsli"
+#include "Rtxdi/DI/InitialSampling.hlsli"
+#include "Rtxdi/DI/PairwiseStreaming.hlsli"
+#include "Rtxdi/DI/Reservoir.hlsli"
+#include "Rtxdi/DI/SpatialResampling.hlsli"
+#include "Rtxdi/DI/SpatioTemporalResampling.hlsli"
+#include "Rtxdi/DI/TemporalResampling.hlsli"
 
 /*
  * In a full implementation, this would:
