@@ -16,7 +16,7 @@ StructuredBuffer<MaterialConstants> g_Materials : register(t4);
 StructuredBuffer<uint> g_Indices : register(t5);
 StructuredBuffer<VertexQuantized> g_Vertices : register(t6);
 
-VK_IMAGE_FORMAT_UNKNOWN
+VK_IMAGE_FORMAT("rgba32f")
 RWTexture2D<float4> g_Output : register(u0);
 
 VK_IMAGE_FORMAT("rgba32f")

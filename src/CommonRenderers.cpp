@@ -46,7 +46,7 @@ public:
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width = width;
             desc.m_NvrhiDesc.height = height;
-            desc.m_NvrhiDesc.format = Renderer::HDR_COLOR_FORMAT;
+            desc.m_NvrhiDesc.format = renderer->m_Mode == RenderingMode::ReferencePathTracer ? Renderer::PATH_TRACER_HDR_COLOR_FORMAT : Renderer::HDR_COLOR_FORMAT;
             desc.m_NvrhiDesc.debugName = "HDRColorTexture_RG";
             desc.m_NvrhiDesc.isRenderTarget = true;
             desc.m_NvrhiDesc.isUAV = true;
