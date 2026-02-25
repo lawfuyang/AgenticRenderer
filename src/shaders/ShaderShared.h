@@ -329,7 +329,7 @@ struct PathTracerConstants
     Vector2 pad2;
     //
     Vector3 m_SunDirection;
-    uint32_t pad3;
+    float m_CosSunAngularRadius; // cos(half-angle of sun disc)
 };
 
 // Material constants (persistent, per-material data)

@@ -915,7 +915,12 @@ void SceneLoader::ProcessLights(const cgltf_data* data, Scene& scene, const Scen
 	for (cgltf_size i = 0; i < data->lights_count; ++i)
 	{
 		const cgltf_light& cgLight = data->lights[i];
-		if (cgLight.type == cgltf_light_type_point)
+
+		// All light types are supported. Point lights participate in path-tracer
+		// NEE with optional sphere-area soft shadows via GPULight::m_Radius.
+		if (cgLight.type != cgltf_light_type_directional &&
+		    cgLight.type != cgltf_light_type_point &&
+		    cgLight.type != cgltf_light_type_spot)
 			continue;
 
 		Scene::Light light;
@@ -923,12 +928,19 @@ void SceneLoader::ProcessLights(const cgltf_data* data, Scene& scene, const Scen
 		light.m_Color = Vector3{ cgLight.color[0], cgLight.color[1], cgLight.color[2] };
 		light.m_Intensity = cgLight.intensity;
 		light.m_Range = cgLight.range;
+		// cgltf 1.15 does not expose a radius field for KHR_lights_punctual.
+		// Set to 0 (hard-shadow point) by default; the JSON scene format can
+		// override this via the "radius" key when loading .scene files.
 		light.m_Radius = 0.0f;
 		light.m_SpotInnerConeAngle = cgLight.spot_inner_cone_angle;
 		light.m_SpotOuterConeAngle = cgLight.spot_outer_cone_angle;
 		if (cgLight.type == cgltf_light_type_directional)
 		{
 			light.m_Type = Scene::Light::Directional;
+		}
+		else if (cgLight.type == cgltf_light_type_point)
+		{
+			light.m_Type = Scene::Light::Point;
 		}
 		else if (cgLight.type == cgltf_light_type_spot)
 		{

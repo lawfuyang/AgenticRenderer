@@ -22,39 +22,6 @@ RWTexture2D<float4> g_Output : register(u0);
 VK_IMAGE_FORMAT("rgba32f")
 RWTexture2D<float4> g_Accumulation : register(u1);
 
-// ─── PCG Random Number Generator ─────────────────────────────────────────────
-// From: https://www.pcg-random.org/
-struct RNG
-{
-    uint state;
-};
-
-uint PCGHash(uint seed)
-{
-    uint state = seed * 747796405u + 2891336453u;
-    uint word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
-
-RNG InitRNG(uint2 pixel, uint accumIndex)
-{
-    RNG rng;
-    uint seed    = pixel.x + pixel.y * 65536u + accumIndex * 6700417u;
-    rng.state    = PCGHash(seed);
-    return rng;
-}
-
-float NextFloat(inout RNG rng)
-{
-    rng.state = PCGHash(rng.state);
-    return float(rng.state) * (1.0f / 4294967296.0f);
-}
-
-float2 NextFloat2(inout RNG rng)
-{
-    return float2(NextFloat(rng), NextFloat(rng));
-}
-
 // ─── GGX VNDF Importance Sampling ────────────────────────────────────────────
 // Heitz 2018: "Sampling the GGX Distribution of Visible Normals"
 // Returns the sampled microfacet half-vector in world space.
@@ -230,11 +197,11 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             inputs.sunRadiance      = GetAtmosphereSunRadiance(p_atmo, g_PathTracer.m_SunDirection, g_Lights[0].m_Intensity);
             inputs.sunDirection     = g_PathTracer.m_SunDirection;
             inputs.useSunRadiance   = true;
-            inputs.sunShadow        = CalculateRTShadow(inputs, g_PathTracer.m_SunDirection, 1e10f);
+            inputs.sunShadow        = 0.0f; // unused in PATH_TRACER_MODE — each sample casts its own shadow ray
 
             PrepareLightingByproducts(inputs);
 
-            LightingComponents direct = AccumulateDirectLighting(inputs, g_PathTracer.m_LightCount);
+            LightingComponents direct = AccumulateDirectLighting(inputs, g_PathTracer.m_LightCount, g_PathTracer.m_CosSunAngularRadius, rng);
             accumulatedRadiance += throughput * (direct.diffuse + direct.specular);
 
             // ── Russian Roulette termination (start after bounce 2) ────────

@@ -69,6 +69,15 @@ public:
         cb.m_MaxBounces = renderer->m_PathTracerMaxBounces;
         cb.m_Jitter = Vector2{ Halton(m_AccumulationIndex + 1, 2) - 0.5f, Halton(m_AccumulationIndex + 1, 3) - 0.5f };
         cb.m_SunDirection = renderer->m_Scene.m_SunDirection;
+        {
+            // Sun angular radius for soft shadows — use the directional light's m_AngularSize field.
+            // m_Lights[0] is guaranteed to be a directional light (ensured by SortLightsAddDefaultDirectionalLight).
+            const float angularSizeDeg = !renderer->m_Scene.m_Lights.empty()
+                ? renderer->m_Scene.m_Lights[0].m_AngularSize
+                : 0.533f; // fallback to real sun size in degrees
+            const float halfAngleRad = angularSizeDeg * 0.5f * (DirectX::XM_PI / 180.0f);
+            cb.m_CosSunAngularRadius = cosf(halfAngleRad);
+        }
 
         commandList->writeBuffer(pathTracerCB, &cb, sizeof(cb), 0);
 

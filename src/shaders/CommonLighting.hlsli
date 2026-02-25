@@ -4,6 +4,14 @@
 #include "ShaderShared.h"
 #include "RaytracingCommon.hlsli"
 
+// Number of shadow-ray samples used for soft-shadow estimation (path-tracer mode only)
+#define LIGHT_SHADOW_SAMPLES 8
+
+#ifdef PATH_TRACER_MODE
+// RNG for stochastic sampling — only present in path-tracer compute kernels, not rasterized passes
+#include "PathTracerRNG.hlsli"
+#endif
+
 // Octahedral encoding for normals
 // From: http://jcgt.org/published/0003/02/01/
 float2 octWrap(float2 v)
@@ -319,6 +327,11 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
     return 1.0f;
 }
 
+// ─── Rasterized lighting path (deterministic, single-ray hard shadows) ────────
+// These implementations are used by all rasterized passes (forward, deferred, sky).
+// No RNG — shadows are either pre-computed (sunShadow field) or single RT queries.
+#ifndef PATH_TRACER_MODE
+
 LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight light)
 {
     LightingComponents result;
@@ -422,6 +435,236 @@ LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCou
     }
     return total;
 }
+
+#else // PATH_TRACER_MODE
+
+// ─── Path-tracer lighting path (stochastic, multi-sample soft shadows) ────────
+// All functions below require the RNG defined in PathTracerRNG.hlsli.
+// They are ONLY compiled when PATH_TRACER_MODE is defined (PathTracer.hlsl).
+// Rasterized passes MUST NOT define PATH_TRACER_MODE.
+
+// Samples a direction uniformly within a solid-angle cone cap around `dir`.
+// cosHalfAngle = cos(half-angle of cone); u = two uniform randoms in [0,1).
+// PDF = 1 / (2*PI*(1 - cosHalfAngle)); caller averages N samples so PDFs cancel.
+float3 SampleConeSolidAngle(float3 dir, float cosHalfAngle, float2 u)
+{
+    // Map u.x linearly so cosTheta ranges from 1 (cone centre) to cosHalfAngle (edge)
+    float cosTheta = 1.0f - u.x * (1.0f - cosHalfAngle);
+    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    float phi      = 2.0f * PI * u.y;
+
+    float3 localDir = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
+
+    // Build ONB with dir as the local +Y axis
+    float3 up        = abs(dir.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    float3 tangent   = normalize(cross(up, dir));
+    float3 bitangent = cross(dir, tangent);
+
+    return tangent * localDir.x + dir * localDir.y + bitangent * localDir.z;
+}
+
+// Directional (sun) light with multi-sample soft shadow across the sun disc.
+// cosSunAngularRadius = cos(half-angular-diameter of sun disc) from PathTracerConstants.
+// Shadow rays are distributed uniformly over the disc solid angle; averaging N
+// samples gives an unbiased penumbra estimate without explicit PDF weighting
+// because EvaluateDirectLight already applies NdotL and the disc is treated as
+// a uniform emitter (radiance is constant across the visible disc).
+LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight light, float cosSunAngularRadius, inout RNG rng)
+{
+    LightingComponents result;
+    result.diffuse  = 0;
+    result.specular = 0;
+
+    // Early-out: back-facing to sun centre
+    if (dot(inputs.N, inputs.sunDirection) <= 0.0f) return result;
+
+    float3 radiance = inputs.useSunRadiance ? inputs.sunRadiance : (light.m_Color * light.m_Intensity);
+
+    [unroll]
+    for (int s = 0; s < LIGHT_SHADOW_SAMPLES; ++s)
+    {
+        float3 L_s = SampleConeSolidAngle(inputs.sunDirection, cosSunAngularRadius, NextFloat2(rng));
+        if (dot(inputs.N, L_s) <= 0.0f) continue;
+
+        inputs.L = L_s;
+        PrepareLightingByproducts(inputs);
+
+        float shadow = CalculateRTShadow(inputs, L_s, 1e10f);
+        LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
+        result.diffuse  += comp.diffuse;
+        result.specular += comp.specular;
+    }
+
+    result.diffuse  /= float(LIGHT_SHADOW_SAMPLES);
+    result.specular /= float(LIGHT_SHADOW_SAMPLES);
+    return result;
+}
+
+// Point light with sphere-area soft shadow.
+// When m_Radius == 0 the sphere jitter collapses to zero and this behaves like
+// a hard-shadow point light (but still fires LIGHT_SHADOW_SAMPLES identical rays;
+// reduce LIGHT_SHADOW_SAMPLES or set radius > 0 for efficiency).
+// Attenuation is evaluated at the light centre, same as the rasterized path.
+LightingComponents ComputePointLighting(LightingInputs inputs, GPULight light, inout RNG rng)
+{
+    LightingComponents result;
+    result.diffuse  = 0;
+    result.specular = 0;
+
+    if (light.m_Intensity <= 0.0f) return result;
+
+    float3 toLight = light.m_Position - inputs.worldPos;
+    float  distSq  = dot(toLight, toLight);
+
+    // Range cull
+    if (light.m_Range > 0.0f && distSq > light.m_Range * light.m_Range) return result;
+
+    float dist = sqrt(distSq);
+
+    // Distance attenuation evaluated at centre  (same formula as rasterized spot)
+    float distAttenuation = 1.0f / (distSq + 1.0f);
+    if (light.m_Range > 0.0f)
+        distAttenuation *= pow(saturate(1.0f - pow(dist / light.m_Range, 4.0f)), 2.0f);
+
+    float3 radiance = light.m_Color * light.m_Intensity * distAttenuation;
+
+    [unroll]
+    for (int s = 0; s < LIGHT_SHADOW_SAMPLES; ++s)
+    {
+        // Uniform sample on the sphere surface; offset = 0 when m_Radius == 0
+        float2 u         = NextFloat2(rng);
+        float  cosT      = 1.0f - 2.0f * u.x;
+        float  sinT      = sqrt(max(0.0f, 1.0f - cosT * cosT));
+        float  phi_s     = 2.0f * PI * u.y;
+        float3 sphereDir = float3(sinT * cos(phi_s), cosT, sinT * sin(phi_s));
+
+        float3 samplePos  = light.m_Position + sphereDir * light.m_Radius;
+        float3 toSample   = samplePos - inputs.worldPos;
+        float  sampleDist = length(toSample);
+        float3 L_s        = toSample / sampleDist;
+
+        if (dot(inputs.N, L_s) <= 0.0f) continue;
+
+        inputs.L = L_s;
+        PrepareLightingByproducts(inputs);
+
+        float shadow = CalculateRTShadow(inputs, L_s, sampleDist);
+        LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
+        result.diffuse  += comp.diffuse;
+        result.specular += comp.specular;
+    }
+
+    result.diffuse  /= float(LIGHT_SHADOW_SAMPLES);
+    result.specular /= float(LIGHT_SHADOW_SAMPLES);
+    return result;
+}
+
+// Spot light with radius-based sphere-area soft shadow.
+// Cone attenuation is evaluated with the unperturbed centre direction to avoid
+// incorrect penumbra / banding at cone edges when m_Radius > 0.
+LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light, inout RNG rng)
+{
+    LightingComponents result;
+    result.diffuse  = 0;
+    result.specular = 0;
+
+    if (light.m_Intensity <= 0.0f) return result;
+
+    float3 L_unnorm   = light.m_Position - inputs.worldPos;
+    float  distSq     = dot(L_unnorm, L_unnorm);
+
+    // Range cull
+    if (light.m_Range > 0.0f && distSq > light.m_Range * light.m_Range) return result;
+
+    float  dist      = sqrt(distSq);
+    float3 L_center  = L_unnorm / dist;
+
+    // Front-face cull with centre direction
+    if (dot(inputs.N, L_center) <= 0.0f) return result;
+
+    // Spot cone attenuation — use centre direction only (not jittered sample)
+    float3 lightDir        = normalize(light.m_Direction);
+    float  cosTheta_center = dot(L_center, lightDir);
+    float  cosOuter        = cos(light.m_SpotOuterConeAngle);
+    if (cosTheta_center > cosOuter) return result;
+
+    float cosInner        = cos(light.m_SpotInnerConeAngle);
+    float spotAttenuation = saturate((cosTheta_center - cosOuter) / (cosInner - cosOuter));
+
+    // Distance attenuation
+    float distAttenuation = 1.0f / (distSq + 1.0f);
+    if (light.m_Range > 0.0f)
+        distAttenuation *= pow(saturate(1.0f - pow(dist / light.m_Range, 4.0f)), 2.0f);
+
+    float3 radiance = light.m_Color * light.m_Intensity * spotAttenuation * distAttenuation;
+
+    [unroll]
+    for (int s = 0; s < LIGHT_SHADOW_SAMPLES; ++s)
+    {
+        // Uniform sample on the sphere surface; offset = 0 when m_Radius == 0
+        float2 u         = NextFloat2(rng);
+        float  cosT      = 1.0f - 2.0f * u.x;
+        float  sinT      = sqrt(max(0.0f, 1.0f - cosT * cosT));
+        float  phi_s     = 2.0f * PI * u.y;
+        float3 sphereDir = float3(sinT * cos(phi_s), cosT, sinT * sin(phi_s));
+
+        float3 samplePos  = light.m_Position + sphereDir * light.m_Radius;
+        float3 toSample   = samplePos - inputs.worldPos;
+        float  sampleDist = length(toSample);
+        float3 L_s        = toSample / sampleDist;
+
+        if (dot(inputs.N, L_s) <= 0.0f) continue;
+
+        inputs.L = L_s;
+        PrepareLightingByproducts(inputs);
+
+        float shadow = CalculateRTShadow(inputs, L_s, sampleDist);
+        LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
+        result.diffuse  += comp.diffuse;
+        result.specular += comp.specular;
+    }
+
+    result.diffuse  /= float(LIGHT_SHADOW_SAMPLES);
+    result.specular /= float(LIGHT_SHADOW_SAMPLES);
+    return result;
+}
+
+// AccumulateDirectLighting — path-tracer version
+// Signature extended with cosSunAngularRadius and inout RNG rng.
+LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCount, float cosSunAngularRadius, inout RNG rng)
+{
+    LightingComponents total;
+    total.diffuse  = 0;
+    total.specular = 0;
+
+    for (uint i = 0; i < lightCount; ++i)
+    {
+        GPULight light = inputs.lights[i];
+
+        [branch]
+        if (light.m_Type == 0) // Directional
+        {
+            LightingComponents comp = ComputeDirectionalLighting(inputs, light, cosSunAngularRadius, rng);
+            total.diffuse  += comp.diffuse;
+            total.specular += comp.specular;
+        }
+        else if (light.m_Type == 1) // Point
+        {
+            LightingComponents comp = ComputePointLighting(inputs, light, rng);
+            total.diffuse  += comp.diffuse;
+            total.specular += comp.specular;
+        }
+        else if (light.m_Type == 2) // Spot
+        {
+            LightingComponents comp = ComputeSpotLighting(inputs, light, rng);
+            total.diffuse  += comp.diffuse;
+            total.specular += comp.specular;
+        }
+    }
+    return total;
+}
+
+#endif // PATH_TRACER_MODE
 
 IBLComponents ComputeIBL(LightingInputs inputs)
 {
