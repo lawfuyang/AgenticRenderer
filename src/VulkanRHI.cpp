@@ -604,6 +604,8 @@ public:
         deviceFeatures.fragmentStoresAndAtomics = VK_TRUE;
         deviceFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
         deviceFeatures.shaderInt64 = VK_TRUE;
+        deviceFeatures.shaderStorageImageReadWithoutFormat = VK_TRUE;
+        deviceFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 
         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
         rtPipelineFeatures.rayTracingPipeline = VK_TRUE;

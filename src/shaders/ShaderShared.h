@@ -25,6 +25,11 @@
       #define GET_DRAW_INDEX() drawIndex
       #define PUSH_CONSTANT [[vk::push_constant]]
       #define VK_IMAGE_FORMAT(f) [[vk::image_format(f)]]
+
+      // Allows RWTexture2D<float4> to map to any compatible type
+      // see https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#formats-without-shader-storage-format
+      // shaderStorageImageWriteWithoutFormat and shaderStorageImageReadWithoutFormat 
+      #define VK_IMAGE_FORMAT_UNKNOWN [[vk::image_format("unknown")]]
   #elif defined(DXIL)
       // DrawID is bound to b255 in space0 for D3D12 when useDrawIndex is enabled in the pipeline.
       cbuffer DrawIDCB : register(b255)
@@ -35,6 +40,7 @@
       #define GET_DRAW_INDEX() g_DrawID
       #define PUSH_CONSTANT 
       #define VK_IMAGE_FORMAT(f)
+      #define VK_IMAGE_FORMAT_UNKNOWN
   #else
       #error "Unknown shader compilation target. Define either SPIRV or DXIL."
   #endif
