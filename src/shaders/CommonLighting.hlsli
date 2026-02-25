@@ -7,10 +7,8 @@
 // Number of shadow-ray samples used for soft-shadow estimation (path-tracer mode only)
 #define LIGHT_SHADOW_SAMPLES 8
 
-#ifdef PATH_TRACER_MODE
 // RNG for stochastic sampling — only present in path-tracer compute kernels, not rasterized passes
 #include "PathTracerRNG.hlsli"
-#endif
 
 // Octahedral encoding for normals
 // From: http://jcgt.org/published/0003/02/01/
@@ -330,8 +328,6 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
 // ─── Rasterized lighting path (deterministic, single-ray hard shadows) ────────
 // These implementations are used by all rasterized passes (forward, deferred, sky).
 // No RNG — shadows are either pre-computed (sunShadow field) or single RT queries.
-#ifndef PATH_TRACER_MODE
-
 LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight light)
 {
     LightingComponents result;
@@ -435,8 +431,6 @@ LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCou
     }
     return total;
 }
-
-#else // PATH_TRACER_MODE
 
 // ─── Path-tracer lighting path (stochastic, multi-sample soft shadows) ────────
 // All functions below require the RNG defined in PathTracerRNG.hlsli.
@@ -663,8 +657,6 @@ LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCou
     }
     return total;
 }
-
-#endif // PATH_TRACER_MODE
 
 IBLComponents ComputeIBL(LightingInputs inputs)
 {

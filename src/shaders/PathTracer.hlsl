@@ -161,9 +161,9 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
 
             FullHitAttributes attr = GetFullHitAttributes(hit, ray, inst, mesh, g_Indices, g_Vertices);
-            PBRAttributes     pbr  = GetPBRAttributes(attr.m_Uv, mat, 0.0f);
+            PBRAttributes     pbr  = GetPBRAttributes(attr, mat, 0.0f);
 
-            float3 N = attr.m_WorldNormal;
+            float3 N = pbr.normal;
             float3 V = -ray.Direction;
 
             // Flip normal for back-face hits so lighting is consistent
@@ -251,7 +251,7 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             throughput *= brdfWeight;
 
             // Bail out if path contribution is negligible
-            if (max(throughput.r, max(throughput.g, throughput.b)) < 1e-5f)
+            if (max(throughput.r, max(throughput.g, throughput.b)) < 0.01f)
                 break;
 
             // ── Advance ray ────────────────────────────────────────────────

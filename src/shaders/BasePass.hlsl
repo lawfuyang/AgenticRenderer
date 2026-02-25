@@ -219,14 +219,6 @@ void MSMain(
     }
 }
 
-// Unpacks a 2 channel normal to xyz
-float3 TwoChannelNormalX2(float2 normal)
-{
-    float2 xy = 2.0f * normal - 1.0f;
-    float z = sqrt(saturate(1.0f - dot(xy, xy)));
-    return float3(xy.x, xy.y, z);
-}
-
 float3 HashColor(uint id)
 {
     uint h = id * 0x27D4EB2Du;
@@ -346,13 +338,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     float3 N;
     if (hasNormal)
     {
-        float3 normalMap = TwoChannelNormalX2(nmSample.xy);
-        float3 n_w = normalize(input.normal);
-        float3 t_w = normalize(input.tangent.xyz);
-        t_w = normalize(t_w - n_w * dot(t_w, n_w));
-        float3 b_w = normalize(cross(n_w, t_w) * input.tangent.w);
-        float3x3 TBN = float3x3(t_w, b_w, n_w);
-        N = normalize(MatrixMultiply(normalMap, TBN));
+        N = TransformNormalWithTBN(nmSample.xy, input.normal, input.tangent.xyz, input.tangent.w);
     }
     else
     {

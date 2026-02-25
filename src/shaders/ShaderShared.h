@@ -109,6 +109,25 @@
       return normalize(v);
   }
 
+  // Unpacks a 2 channel normal to xyz
+  float3 TwoChannelNormalX2(float2 normal)
+  {
+      float2 xy = 2.0f * normal - 1.0f;
+      float z = sqrt(saturate(1.0f - dot(xy, xy)));
+      return float3(xy.x, xy.y, z);
+  }
+
+  float3 TransformNormalWithTBN(float2 nmSample, float3 normal, float3 tangent, float tangentSign)
+  {
+      float3 normalMap = TwoChannelNormalX2(nmSample);
+      float3 n_w = normalize(normal);
+      float3 t_w = normalize(tangent);
+      t_w = normalize(t_w - n_w * dot(t_w, n_w));
+      float3 b_w = normalize(cross(n_w, t_w) * tangentSign);
+      float3x3 TBN = float3x3(t_w, b_w, n_w);
+      return normalize(MatrixMultiply(normalMap, TBN));
+  }
+
 #define DEPTH_NEAR 1.0f
 #define DEPTH_FAR 0.0f
 

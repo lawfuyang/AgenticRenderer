@@ -16,6 +16,8 @@ struct FullHitAttributes
 {
     float3 m_WorldPos;
     float3 m_WorldNormal;
+    float3 m_WorldTangent;
+    float m_TangentSign;
     float2 m_Uv;
 };
 
@@ -59,6 +61,10 @@ FullHitAttributes GetFullHitAttributes(
     
     float3 localNormal = tv.v0.m_Normal * bary.x + tv.v1.m_Normal * bary.y + tv.v2.m_Normal * bary.z;
     attr.m_WorldNormal = TransformNormal(localNormal, inst.m_World);
+    
+    float3 localTangent = tv.v0.m_Tangent.xyz * bary.x + tv.v1.m_Tangent.xyz * bary.y + tv.v2.m_Tangent.xyz * bary.z;
+    attr.m_WorldTangent = TransformNormal(localTangent, inst.m_World);
+    attr.m_TangentSign = tv.v0.m_Tangent.w * bary.x + tv.v1.m_Tangent.w * bary.y + tv.v2.m_Tangent.w * bary.z;
     
     attr.m_Uv = tv.v0.m_Uv * bary.x + tv.v1.m_Uv * bary.y + tv.v2.m_Uv * bary.z;
 
@@ -167,39 +173,48 @@ struct PBRAttributes
     float roughness;
     float metallic;
     float3 emissive;
+    float3 normal;
 };
 
-PBRAttributes GetPBRAttributes(
-    float2 uv,
-    MaterialConstants mat,
-    float lod = 0.0f)
+PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, float lod = 0.0f)
 {
-    PBRAttributes attr;
-    attr.baseColor = mat.m_BaseColor.xyz;
+    PBRAttributes pbrAttr;
+    pbrAttr.baseColor = mat.m_BaseColor.xyz;
     if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
     {
-        attr.baseColor *= SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, lod).xyz;
+        pbrAttr.baseColor *= SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, attr.m_Uv, lod).xyz;
     }
 
-    attr.roughness = mat.m_RoughnessMetallic.x;
+    pbrAttr.roughness = mat.m_RoughnessMetallic.x;
     if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
-        attr.roughness *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, uv, lod).g;
+        pbrAttr.roughness *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).g;
     }
     
-    attr.metallic = mat.m_RoughnessMetallic.y;
+    pbrAttr.metallic = mat.m_RoughnessMetallic.y;
     if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
-        attr.metallic *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, uv, lod).b;
+        pbrAttr.metallic *= SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).b;
     }
 
-    attr.emissive = mat.m_EmissiveFactor.xyz;
+    pbrAttr.emissive = mat.m_EmissiveFactor.xyz;
     if ((mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
     {
-        attr.emissive += SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, uv, lod).xyz;
+        pbrAttr.emissive += SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, attr.m_Uv, lod).xyz;
     }
 
-    return attr;
+    // Normal (from normal map when available)
+    if ((mat.m_TextureFlags & TEXFLAG_NORMAL) != 0)
+    {
+        float2 normalSample = SampleBindlessTextureLevel(mat.m_NormalTextureIndex, mat.m_NormalSamplerIndex, attr.m_Uv, lod).xy;
+        pbrAttr.normal = TransformNormalWithTBN(normalSample, attr.m_WorldNormal, attr.m_WorldTangent, attr.m_TangentSign);
+    }
+    else
+    {
+        pbrAttr.normal = normalize(attr.m_WorldNormal);
+    }
+
+    return pbrAttr;
 }
 
 #endif // RAYTRACING_COMMON_HLSLI
