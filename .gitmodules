@@ -13,3 +13,6 @@
 [submodule "external/microprofile"]
 	path = external/microprofile
 	url = https://github.com/jonasmr/microprofile
+[submodule "external/rtxdi"]
+	path = external/rtxdi
+	url = https://github.com/NVIDIA-RTX/RTXDI-Library
