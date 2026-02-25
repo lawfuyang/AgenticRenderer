@@ -170,6 +170,7 @@ bool AlphaTestGrad(
 struct PBRAttributes
 {
     float3 baseColor;
+    float alpha;
     float roughness;
     float metallic;
     float3 emissive;
@@ -180,9 +181,12 @@ PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, fl
 {
     PBRAttributes pbrAttr;
     pbrAttr.baseColor = mat.m_BaseColor.xyz;
+    pbrAttr.alpha = mat.m_BaseColor.w;
     if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
     {
-        pbrAttr.baseColor *= SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, attr.m_Uv, lod).xyz;
+        float4 albedoSample = SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, attr.m_Uv, lod);
+        pbrAttr.baseColor *= albedoSample.xyz;
+        pbrAttr.alpha *= albedoSample.w;
     }
 
     pbrAttr.roughness = mat.m_RoughnessMetallic.x;

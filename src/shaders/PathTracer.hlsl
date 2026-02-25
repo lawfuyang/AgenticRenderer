@@ -170,6 +170,61 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             if (dot(N, V) < 0.0f)
                 N = -N;
 
+            // ── Thin Transmissive Approximation ───────────────────────────
+            // Gate: either explicit transmission factor, or alpha blending mode
+            if (mat.m_TransmissionFactor > 0.0f || mat.m_AlphaMode == ALPHA_MODE_BLEND)
+            {
+                // Fresnel: blend F0 toward base color by metallic
+                float3 F0_trans = lerp(float3(0.04f, 0.04f, 0.04f), pbr.baseColor.rgb, pbr.metallic);
+                float  NdotV_t  = saturate(dot(N, V));
+                float3 Fresnel  = F_Schlick(F0_trans, NdotV_t);
+
+                // Effective transmission factor combines user control and alpha (if blended)
+                float transmissionFactor = max(mat.m_TransmissionFactor, pbr.alpha < 0.99f ? (1.0f - pbr.alpha) : 0.0f);
+                
+                // Transmission probability: (1 - Fresnel) weighted by material transmission and surface alpha
+                float probT = clamp((1.0f - Fresnel.r) * transmissionFactor, 0.01f, 0.99f);
+
+                if (NextFloat(rng) < probT)
+                {
+                    // ---- Transmission path ----
+                    float3 refractedDir = refract(ray.Direction, N, 1.0f / mat.m_IOR);
+                    if (dot(refractedDir, refractedDir) < 1e-8f)
+                        refractedDir = reflect(ray.Direction, N); // total internal reflection fallback
+
+                    // Roughness perturbation via GGX microfacet normal
+                    if (pbr.roughness > 0.08f)
+                    {
+                        float3 H_t   = SampleGGX_VNDF(NextFloat2(rng), N, V, pbr.roughness * 1.5f);
+                        float3 rDir2 = refract(ray.Direction, H_t, 1.0f / mat.m_IOR);
+                        if (dot(rDir2, rDir2) >= 1e-8f)
+                            refractedDir = rDir2;
+                        else
+                            refractedDir = reflect(ray.Direction, H_t);
+                    }
+
+                    // Volume attenuation via Beer–Lambert: pow(attenuationColor, thicknessFactor * attenuationDistance)
+                    float3 volumeAttenuation = float3(1.0f, 1.0f, 1.0f);
+                    if (mat.m_ThicknessFactor > 0.0f && mat.m_AttenuationDistance > 0.0f)
+                    {
+                        volumeAttenuation = pow(max(mat.m_AttenuationColor, float3(0.0001f, 0.0001f, 0.0001f)), 
+                                                 float3(mat.m_ThicknessFactor * mat.m_AttenuationDistance, 
+                                                         mat.m_ThicknessFactor * mat.m_AttenuationDistance, 
+                                                         mat.m_ThicknessFactor * mat.m_AttenuationDistance));
+                    }
+
+                    throughput *= pbr.baseColor.rgb * transmissionFactor * volumeAttenuation / probT;
+
+                    // Push origin to the exit side of the surface (against N)
+                    ray.Origin    = attr.m_WorldPos - N * 0.001f;
+                    ray.Direction = normalize(refractedDir);
+                    ray.TMin      = 1e-4f;
+                    ray.TMax      = 1e10f;
+                    continue;
+                }
+                // Reflection fallback: fall through to emissive + direct lighting + BRDF sampling
+            }
+
             // ── Emissive radiance ──────────────────────────────────────────
             accumulatedRadiance += throughput * pbr.emissive;
 
@@ -278,7 +333,7 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
     // MIS, or errant emissive hits through thin gaps).
     // This is a biased estimator but is the standard pragmatic solution until full
     // MIS is implemented. 
-    const float kFireflyClamp = 1e3f;
+    const float kFireflyClamp = 10.0f;
     accumulatedRadiance = min(accumulatedRadiance, float3(kFireflyClamp, kFireflyClamp, kFireflyClamp));
 
     // ── Accumulation ────────────────────────────────────────────────────────

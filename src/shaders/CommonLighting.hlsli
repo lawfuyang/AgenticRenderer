@@ -271,7 +271,11 @@ LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, f
     return components;
 }
 
-float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
+// ─── Transmissive shadow for path tracer ──────────────────────────────────
+// with 'bWithTransmission', accumulates transmission through semi-transparent (ALPHA_MODE_BLEND) surfaces
+// during shadow ray tracing. Returns transmission factor: 1.0 = unshadowed, 
+// [0, 1) = partially transmitted light, 0.0 = fully blocked opaque geometry.
+float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist, bool bWithTransmission = false)
 {
     if (!inputs.enableRTShadows) return 1.0f;
 
@@ -283,6 +287,8 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
 
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     q.TraceRayInline(inputs.sceneAS, RAY_FLAG_NONE, 0xFF, ray);
+
+    float transmission = 1.0f; // Accumulate transmission through translucent surfaces
     
     while (q.Proceed())
     {
@@ -308,7 +314,19 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
             }
             else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
             {
-                // ignore
+                if (bWithTransmission)
+                {
+                    // Sample albedo texture and compute opacity for transmission
+                    float2 uvSample = GetInterpolatedUV(primitiveIndex, bary, mesh, inputs.indices, inputs.vertices);
+                    
+                    float opacity = mat.m_BaseColor.w * (1.0f - mat.m_TransmissionFactor);
+                    if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+                    {
+                        opacity *= SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uvSample).w;
+                    }
+                    transmission *= (1.0f - opacity); // Accumulate transmission through surface
+                }
+                // Do not commit hit; continue through translucent surface
             }
             else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
             {
@@ -322,7 +340,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
         return 0.0f;
     }
 
-    return 1.0f;
+    return transmission;
 }
 
 // ─── Rasterized lighting path (deterministic, single-ray hard shadows) ────────
@@ -400,7 +418,7 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light)
     inputs.L = L;
     PrepareLightingByproducts(inputs);
     
-    float shadow = CalculateRTShadow(inputs, L, dist);
+    float shadow = CalculateRTShadow(inputs, L, dist, true);
 
     return EvaluateDirectLight(inputs, radiance, shadow);
 }
@@ -483,7 +501,7 @@ LightingComponents ComputeDirectionalLighting(LightingInputs inputs, GPULight li
         inputs.L = L_s;
         PrepareLightingByproducts(inputs);
 
-        float shadow = CalculateRTShadow(inputs, L_s, 1e10f);
+        float shadow = CalculateRTShadow(inputs, L_s, 1e10f, true);
         LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
         result.diffuse  += comp.diffuse;
         result.specular += comp.specular;
@@ -542,7 +560,7 @@ LightingComponents ComputePointLighting(LightingInputs inputs, GPULight light, i
         inputs.L = L_s;
         PrepareLightingByproducts(inputs);
 
-        float shadow = CalculateRTShadow(inputs, L_s, sampleDist);
+        float shadow = CalculateRTShadow(inputs, L_s, sampleDist, true);
         LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
         result.diffuse  += comp.diffuse;
         result.specular += comp.specular;
@@ -612,7 +630,7 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light, in
         inputs.L = L_s;
         PrepareLightingByproducts(inputs);
 
-        float shadow = CalculateRTShadow(inputs, L_s, sampleDist);
+        float shadow = CalculateRTShadow(inputs, L_s, sampleDist, true);
         LightingComponents comp = EvaluateDirectLight(inputs, radiance, shadow);
         result.diffuse  += comp.diffuse;
         result.specular += comp.specular;
