@@ -4,6 +4,9 @@
 #include "CommonResources.h"
 #include "SceneLoader.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../external/microprofile/stb/stb_image_write.h"
+
 #define FFX_CPU
 #define FFX_STATIC static
 using FfxUInt32 = uint32_t;
@@ -309,6 +312,61 @@ nvrhi::TextureHandle Renderer::GetCurrentBackBufferTexture() const
     return m_RHI->m_NvrhiSwapchainTextures[m_SwapChainImageIdx];
 }
 
+void Renderer::SaveBackBufferScreenshot()
+{
+    PROFILE_FUNCTION();
+    
+    // Get the backbuffer texture
+    nvrhi::TextureHandle backbuffer = GetCurrentBackBufferTexture();
+
+    // Get backbuffer dimensions
+    const nvrhi::TextureDesc& bbDesc = backbuffer->getDesc();
+    uint32_t width = bbDesc.width;
+    uint32_t height = bbDesc.height;
+    nvrhi::Format format = bbDesc.format;
+
+    SDL_assert(width > 0 && height > 0 && "Backbuffer has invalid dimensions");
+    SDL_assert(format != nvrhi::Format::UNKNOWN && "Backbuffer has unknown format");
+
+    // Create a staging texture for readback  
+    nvrhi::TextureDesc stagingDesc;
+    stagingDesc.width = width;
+    stagingDesc.height = height;
+    stagingDesc.format = format;
+    stagingDesc.debugName = "Screenshot Staging Texture";
+
+    nvrhi::StagingTextureHandle stagingTexture = m_RHI->m_NvrhiDevice->createStagingTexture(stagingDesc, nvrhi::CpuAccessMode::Read);
+
+    // Acquire a command list for the copy operation
+    nvrhi::CommandListHandle cmdList = AcquireCommandList();
+
+    {
+        // Copy from backbuffer to staging texture
+        ScopedCommandList scoped(cmdList, "Screenshot Copy");
+        cmdList->copyTexture(stagingTexture, nvrhi::TextureSlice{}, backbuffer, nvrhi::TextureSlice{});
+    }
+
+    // Execute the command list immediately - this will synchronize
+    ExecutePendingCommandLists();
+
+    // Map the staging texture and read the data
+    size_t rowPitch = 0;
+    void* mappedData = m_RHI->m_NvrhiDevice->mapStagingTexture(stagingTexture, nvrhi::TextureSlice{}, nvrhi::CpuAccessMode::Read, &rowPitch);
+    SDL_assert(mappedData && "Failed to map staging texture for screenshot");
+
+    // Get the base path where to save the screenshot
+    const char* basePath = SDL_GetBasePath();
+    std::string screenshotPath{ basePath };
+    screenshotPath += "screenshot.jpg";
+
+    // Write the image as JPEG
+    int writeResult = stbi_write_jpg(screenshotPath.c_str(), (int)width, (int)height, 4, mappedData, 0);
+    SDL_assert(writeResult && "Failed to write screenshot using stb_image_write");
+
+    // Unmap the staging texture
+    m_RHI->m_NvrhiDevice->unmapStagingTexture(stagingTexture);
+}
+
 void Renderer::Initialize()
 {
     ScopedTimerLog initScope{"[Timing] Init phase:"};
@@ -419,6 +477,11 @@ void Renderer::Run()
                     if (event.key.scancode == SDL_SCANCODE_F5)
                     {
                         m_RequestedShaderReload = true;
+                    }
+
+                    if ((event.key.mod & SDL_KMOD_CTRL) != 0 && event.key.scancode == SDL_SCANCODE_P)
+                    {
+                        SaveBackBufferScreenshot();
                     }
                 }
             }

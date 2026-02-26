@@ -100,6 +100,7 @@ struct Renderer
 
     // Swapchain / Backbuffer
     nvrhi::TextureHandle GetCurrentBackBufferTexture() const;
+    void SaveBackBufferScreenshot();
 
     // Binding Layouts & Pipelines
     nvrhi::BindingLayoutHandle GetOrCreateBindingLayoutFromBindingSetDesc(const nvrhi::BindingSetDesc& setDesc, uint32_t registerSpace = 0);
