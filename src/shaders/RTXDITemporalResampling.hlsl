@@ -58,9 +58,9 @@ void CSMain(
     // Load current surface
     RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
 
-    // Load the reservoir produced by the initial sampling pass
+    // Load the reservoir produced by the initial sampling pass (current frame's new candidates)
     RTXDI_DIReservoir curReservoir = RTXDI_LoadDIReservoir(rbp, pixelPosition,
-        g_RTXDIConst.m_TemporalResamplingInputBufferIndex);
+        g_RTXDIConst.m_InitialSamplingOutputBufferIndex);
 
     // Motion vector — stored as pixel-space velocity (dx, dy).
     float3 mv = g_GBufferMV.Load(int3(iPixel, 0)).xyz;

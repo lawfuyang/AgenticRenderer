@@ -574,14 +574,21 @@ struct RTXDIConstants
     uint32_t m_TemporalResamplingInputBufferIndex;
     uint32_t m_TemporalResamplingOutputBufferIndex;
     uint32_t m_SpatialResamplingInputBufferIndex;
+    //
     uint32_t m_SpatialResamplingOutputBufferIndex;
     uint32_t m_ShadingInputBufferIndex;
     uint32_t m_EnableSky;
+    uint32_t m_SpatialNumSamples;       // number of spatial neighbour candidates
+    //
+    float    m_SpatialSamplingRadius;   // pixel-space search radius for spatial resampling
+    uint32_t m_BufferIdxPad1;
     uint32_t m_BufferIdxPad2;
+    uint32_t pad0;
 
     // ---- Camera: current & previous frame view matrices for reprojection ----
     PlanarViewConstants m_View;
     PlanarViewConstants m_PrevView;
 
     Vector3 m_SunDirection;
+    uint32_t pad1;
 };

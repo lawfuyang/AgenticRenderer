@@ -306,6 +306,11 @@ public:
         cb.m_ShadingInputBufferIndex             = bix.shadingInputBufferIndex;
         cb.m_EnableSky                           = renderer->m_EnableSky ? 1u : 0u;
 
+        // Spatial resampling parameters
+        const ReSTIRDI_SpatialResamplingParameters& spatialParams = m_Context->GetSpatialResamplingParameters();
+        cb.m_SpatialNumSamples        = spatialParams.numSpatialSamples;
+        cb.m_SpatialSamplingRadius    = spatialParams.spatialSamplingRadius;
+
         // View matrices
         cb.m_View     = renderer->m_Scene.m_View;
         cb.m_PrevView = renderer->m_Scene.m_ViewPrev;
@@ -394,7 +399,25 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // Pass 3 — Shade Samples → write to DI output
+        // Pass 3 — Spatial Resampling (conditional)
+        // ------------------------------------------------------------------
+        if (renderer->m_ReSTIRDI_EnableSpatial)
+        {
+            Renderer::RenderPassParams params{
+                .commandList  = commandList,
+                .shaderName   = "RTXDISpatialResampling_CSMain",
+                .bindingSetDesc = bset,
+                .dispatchParams = {
+                    .x = DivideAndRoundUp(width,  8u),
+                    .y = DivideAndRoundUp(height, 8u),
+                    .z = 1u
+                }
+            };
+            renderer->AddComputePass(params);
+        }
+
+        // ------------------------------------------------------------------
+        // Pass 4 — Shade Samples → write to DI output
         // ------------------------------------------------------------------
         {
             Renderer::RenderPassParams params{

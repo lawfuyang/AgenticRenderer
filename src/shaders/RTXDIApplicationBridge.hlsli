@@ -114,27 +114,13 @@ RAB_Material RAB_EmptyMaterial()
 RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
 {
     RAB_Material material = RAB_EmptyMaterial();
-    
-    // For the previous frame position apply motion-vector reprojection
-    int2 samplePos = pixelPosition;
-    if (previousFrame)
-    {
-        // Load MV in NDC space and convert to pixel displacement
-        float3 mvNDC = float3(g_GBufferMV.Load(int3(pixelPosition, 0)).xy, 0.0);
-        float2 vpSize = float2(g_RTXDIConst.m_ViewportSize);
-        float3 mvPixel = float3(mvNDC.xy * vpSize * float2(0.5, -0.5), 0.0);
-        
-        // Apply viewport size correction if resolution changed between frames
-        mvPixel = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, pixelPosition, mvPixel);
-        
-        samplePos = clamp(
-            pixelPosition + int2(mvPixel.xy),
-            int2(0, 0),
-            int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
-    }
+
+    // NOTE: pixelPosition is already the reprojected position (computed by the RTXDI SDK).
+    // Do NOT apply the motion vector again here — that would cause double-reprojection.
+    int2 samplePos = clamp(pixelPosition, int2(0, 0), int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
 
     // Bounds check
-    if (any(samplePos < int2(0, 0)) || any(samplePos >= int2(g_RTXDIConst.m_ViewportSize)))
+    if (any(pixelPosition < int2(0, 0)) || any(pixelPosition >= int2(g_RTXDIConst.m_ViewportSize)))
         return material;
 
     // Load from respective G-buffers
@@ -235,29 +221,17 @@ float3 ReconstructWorldPos(uint2 pixelPos, float depth, PlanarViewConstants view
 
 RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
 {
-    PlanarViewConstants view;
-    if (previousFrame)
-        view = g_RTXDIConst.m_PrevView;
-    else
-        view = g_RTXDIConst.m_View;
+    // NOTE: pixelPosition is already the reprojected previous-frame pixel position when
+    // previousFrame == true (computed internally by the RTXDI SDK via screenSpaceMotion).
+    // Do NOT re-apply the motion vector here — that causes double-reprojection.
+    //
+    // We don't have separate history depth/normal buffers, so we read the current frame's
+    // G-buffer at the reprojected position and always use the current-frame view for world-pos
+    // reconstruction. This keeps depth and world-pos mutually consistent and is a good
+    // approximation for mostly-static geometry.
+    PlanarViewConstants view = g_RTXDIConst.m_View;
 
-    // For the previous frame position apply motion-vector reprojection
-    int2 samplePos = pixelPosition;
-    if (previousFrame)
-    {
-        // Load MV in NDC space and convert to pixel displacement
-        float3 mvNDC = float3(g_GBufferMV.Load(int3(pixelPosition, 0)).xy, 0.0);
-        float2 vpSize = float2(g_RTXDIConst.m_ViewportSize);
-        float3 mvPixel = float3(mvNDC.xy * vpSize * float2(0.5, -0.5), 0.0);
-        
-        // Apply viewport size correction if resolution changed between frames
-        mvPixel = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, pixelPosition, mvPixel);
-        
-        samplePos = clamp(
-            pixelPosition - int2(mvPixel.xy),
-            int2(0, 0),
-            int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
-    }
+    int2 samplePos = clamp(pixelPosition, int2(0, 0), int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
 
     float depth = g_Depth.Load(int3(samplePos, 0));
 
