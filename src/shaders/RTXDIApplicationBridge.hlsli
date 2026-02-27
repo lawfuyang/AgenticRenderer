@@ -333,7 +333,7 @@ RAB_LightInfo RAB_LoadLightInfo(uint lightIndex, bool previousFrame)
     GPULight gl = g_Lights[lightIndex];
     RAB_LightInfo li;
     li.position     = gl.m_Position;
-    li.direction    = normalize(gl.m_Direction);
+    li.direction    = lightIndex == 0 ? g_RTXDIConst.m_SunDirection : normalize(gl.m_Direction);
     li.color        = gl.m_Color;
     li.intensity    = gl.m_Intensity;
     li.range        = gl.m_Range;

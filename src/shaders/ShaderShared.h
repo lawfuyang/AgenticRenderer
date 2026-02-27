@@ -582,4 +582,6 @@ struct RTXDIConstants
     // ---- Camera: current & previous frame view matrices for reprojection ----
     PlanarViewConstants m_View;
     PlanarViewConstants m_PrevView;
+
+    Vector3 m_SunDirection;
 };

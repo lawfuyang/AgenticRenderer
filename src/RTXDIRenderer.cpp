@@ -252,6 +252,8 @@ public:
         cb.m_View     = renderer->m_Scene.m_View;
         cb.m_PrevView = renderer->m_Scene.m_ViewPrev;
 
+        cb.m_SunDirection = renderer->m_Scene.m_SunDirection;
+
         // Upload constant buffer (volatile — recreated every frame)
         const nvrhi::BufferHandle rtxdiCB = device->createBuffer(
             nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(RTXDIConstants), "RTXDIConstantsCB", 1));
