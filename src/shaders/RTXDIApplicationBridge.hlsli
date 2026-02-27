@@ -42,6 +42,8 @@ Texture2D<float2>                               g_GBufferNormals            : re
 Texture2D<float4>                               g_GBufferAlbedo             : register(t3);
 Texture2D<float2>                               g_GBufferORM                : register(t4);
 Texture2D<float3>                               g_GBufferMV                 : register(t5);
+Texture2D<float4>                               g_GBufferAlbedoHistory      : register(t8);
+Texture2D<float2>                               g_GBufferORMHistory         : register(t9);
 StructuredBuffer<GPULight>                      g_Lights                    : register(t6);
 RaytracingAccelerationStructure                 g_SceneAS                   : register(t7);
 
@@ -106,10 +108,6 @@ RAB_Material RAB_EmptyMaterial()
     return m;
 }
 
-float3 RAB_GetDiffuseAlbedo(RAB_Material material) { return material.diffuseAlbedo; }
-float3 RAB_GetSpecularF0(RAB_Material material)     { return material.specularF0; }
-float  RAB_GetRoughness(RAB_Material material)      { return material.roughness; }
-
 RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
 {
     RAB_Material material = RAB_EmptyMaterial();
@@ -118,10 +116,16 @@ RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
     int2 samplePos = pixelPosition;
     if (previousFrame)
     {
-        float2 mv     = g_GBufferMV.Load(int3(pixelPosition, 0)).xy;
+        // Load MV in NDC space and convert to pixel displacement
+        float3 mvNDC = float3(g_GBufferMV.Load(int3(pixelPosition, 0)).xy, 0.0);
         float2 vpSize = float2(g_RTXDIConst.m_ViewportSize);
+        float3 mvPixel = float3(mvNDC.xy * vpSize * float2(0.5, -0.5), 0.0);
+        
+        // Apply viewport size correction if resolution changed between frames
+        mvPixel = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, pixelPosition, mvPixel);
+        
         samplePos = clamp(
-            pixelPosition - int2(mv * vpSize * float2(0.5, -0.5)),
+            pixelPosition - int2(mvPixel.xy),
             int2(0, 0),
             int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
     }
@@ -136,13 +140,13 @@ RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
     
     if (previousFrame)
     {
-        // Would load from previous frame buffers if available
-        // For now, use current frame as fallback
-        albedoSample = g_GBufferAlbedo.Load(int3(samplePos, 0));
-        orm          = g_GBufferORM.Load(int3(samplePos, 0));
+        // Load from history buffers (previous frame data)
+        albedoSample = g_GBufferAlbedoHistory.Load(int3(samplePos, 0));
+        orm          = g_GBufferORMHistory.Load(int3(samplePos, 0));
     }
     else
     {
+        // Load from current frame G-buffers
         albedoSample = g_GBufferAlbedo.Load(int3(samplePos, 0));
         orm          = g_GBufferORM.Load(int3(samplePos, 0));
     }
@@ -185,11 +189,6 @@ bool RAB_AreMaterialsSimilar(RAB_Material a, RAB_Material b)
     return true;
 }
 
-bool RAB_MaterialWithoutSpecularity(RAB_Material material)
-{
-    return all(material.specularF0 < float3(0.05, 0.05, 0.05));
-}
-
 // ============================================================================
 // RAB_Surface
 // ============================================================================
@@ -220,7 +219,6 @@ float3 RAB_GetSurfaceWorldPos(RAB_Surface s)       { return s.worldPos; }
 float3 RAB_GetSurfaceNormal(RAB_Surface s)         { return s.normal; }
 float3 RAB_GetSurfaceViewDirection(RAB_Surface s)  { return s.viewDir; }
 float  RAB_GetSurfaceLinearDepth(RAB_Surface s)    { return s.linearDepth; }
-float  RAB_GetSurfaceAlpha(RAB_Surface s)          { return 1.0; }
 RAB_Material RAB_GetMaterial(RAB_Surface s)        { return s.material; }
 
 // ---- World-position reconstruction from depth + view constants -------------
@@ -244,11 +242,16 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
     int2 samplePos = pixelPosition;
     if (previousFrame)
     {
-        float2 mv     = g_GBufferMV.Load(int3(pixelPosition, 0)).xy;
+        // Load MV in NDC space and convert to pixel displacement
+        float3 mvNDC = float3(g_GBufferMV.Load(int3(pixelPosition, 0)).xy, 0.0);
         float2 vpSize = float2(g_RTXDIConst.m_ViewportSize);
-        // Motion vectors are stored as per-pixel displacement in NDC; convert to pixel offset
+        float3 mvPixel = float3(mvNDC.xy * vpSize * float2(0.5, -0.5), 0.0);
+        
+        // Apply viewport size correction if resolution changed between frames
+        mvPixel = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, pixelPosition, mvPixel);
+        
         samplePos = clamp(
-            pixelPosition - int2(mv * vpSize * float2(0.5, -0.5)),
+            pixelPosition - int2(mvPixel.xy),
             int2(0, 0),
             int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
     }
@@ -301,19 +304,6 @@ float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 direction)
     return NdotL / PI;
 }
 
-float RAB_GetBrdfSampleTargetPdfForSurface(RAB_Surface surface, float3 direction)
-{
-    float NdotL = max(0.0, dot(surface.normal, direction));
-    return NdotL / PI;
-}
-
-float3 RAB_SampleDiffuseDirection(RAB_Surface surface, inout RAB_RandomSamplerState rng)
-{
-    float r1 = RAB_GetNextRandom(rng);
-    float r2 = RAB_GetNextRandom(rng);
-    return SampleHemisphereCosine(float2(r1, r2), surface.normal);
-}
-
 // ============================================================================
 // RAB_LightSample
 // ============================================================================
@@ -352,11 +342,6 @@ void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
 {
     lightDir      = lightSample.direction;
     lightDistance = lightSample.distance;
-}
-
-float RAB_GetLightRayLength(RAB_Surface surface, RAB_LightSample sample)
-{
-    return sample.distance;
 }
 
 // ============================================================================
@@ -502,16 +487,6 @@ float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
     return (1.0 + luminance) / float(total);
 }
 
-bool RAB_IsLocalLight(RAB_LightInfo lightInfo)
-{
-    return lightInfo.lightType != 0;
-}
-
-float RAB_GetLightSolidAnglePdf(uint lightIndex)
-{
-    return RAB_EvaluateLocalLightSourcePdf(lightIndex);
-}
-
 // ============================================================================
 // RAB_SamplePolymorphicLight
 // ============================================================================
@@ -642,41 +617,14 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
     return RAB_GetConservativeVisibility(currentSurface, samplePosition);
 }
 
-// ============================================================================
-// Scene light counts & index translation
-// ============================================================================
-uint RAB_GetLightCount()     { return g_RTXDIConst.m_LightCount; }
-int  RAB_GetLightIndexCount(){ return int(g_RTXDIConst.m_LightCount); }
-
 int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
 {
     return int(lightIndex); // Lights are stable permanently
 }
 
-// ============================================================================
-// Viewport helpers
-// ============================================================================
-float RAB_GetViewportWidth()  { return float(g_RTXDIConst.m_ViewportSize.x); }
-float RAB_GetViewportHeight() { return float(g_RTXDIConst.m_ViewportSize.y); }
-
 int2 RAB_ClampSamplePositionIntoView(int2 samplePosition, bool previousFrame)
 {
     return clamp(samplePosition, int2(0, 0), int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
-}
-
-// ============================================================================
-// Neighbor validity
-// ============================================================================
-bool RAB_IsValidNeighborForResampling(RAB_Surface centerSurface, RAB_Surface neighborSurface,
-    float maxDepthThreshold, float maxNormalThreshold)
-{
-    float depthDiff = abs(RAB_GetSurfaceLinearDepth(centerSurface) - RAB_GetSurfaceLinearDepth(neighborSurface));
-    if (depthDiff > maxDepthThreshold * RAB_GetSurfaceLinearDepth(centerSurface))
-        return false;
-    float normalDot = dot(RAB_GetSurfaceNormal(centerSurface), RAB_GetSurfaceNormal(neighborSurface));
-    if (normalDot < maxNormalThreshold)
-        return false;
-    return true;
 }
 
 float RAB_GetBoilingFilterStrength() { return 0.25; }
@@ -690,30 +638,6 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 direction)
     uv.x = atan2(direction.z, direction.x) / (2.0 * PI) + 0.5;
     uv.y = acos(clamp(direction.y, -1.0, 1.0)) / PI;
     return uv;
-}
-
-float3 RAB_GetEnvironmentMapValueFromUV(float2 uv)
-{
-    // Reconstruct direction from UV coordinates
-    float phi = uv.x * 2.0 * PI;
-    float theta = uv.y * PI;
-    float3 direction = float3(
-        sin(theta) * cos(phi),
-        cos(theta),
-        sin(theta) * sin(phi)
-    );
-    
-    // Sample from atmosphere sky
-    float3 cameraPos = float3(0.0, 0.0, 0.0);  // Observer at surface
-    float sunIntensity = g_Lights[0].m_Intensity;  // Get intensity from sun light
-    float3 sunDir = g_RTXDIConst.m_SunDirection;
-    
-    return GetAtmosphereSkyRadiance(cameraPos, direction, sunDir, sunIntensity, true);
-}
-
-float3 RAB_SampleEnvironmentMap(float2 uv)
-{
-    return RAB_GetEnvironmentMapValueFromUV(uv);
 }
 
 float RAB_EvaluateEnvironmentMapSamplingPdf(float3 direction)
@@ -738,21 +662,6 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 direction)
 // ============================================================================
 // Ray tracing helper stubs
 // ============================================================================
-RAB_RayPayload RAB_EmptyRayPayload()
-{
-    RAB_RayPayload p;
-    p.hitDistance = 0.0;
-    p.throughput  = float3(1.0, 1.0, 1.0);
-    return p;
-}
-
-RAB_RayPayload RAB_TraceRayForVisibility(float3 origin, float3 direction, float maxDistance)
-{
-    RAB_RayPayload p;
-    p.throughput  = float3(1.0, 1.0, 1.0);
-    p.hitDistance = maxDistance;
-    return p;
-}
 
 bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax,
     out uint o_lightIndex, out float2 o_randXY)

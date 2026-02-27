@@ -39,6 +39,16 @@ public:
     nvrhi::BufferHandle m_LightReservoirBuffer;
 
     // ------------------------------------------------------------------
+    // Persistent textures (G-buffer history for previous frame)
+    // ------------------------------------------------------------------
+    RGTextureHandle m_GBufferAlbedoHistory;
+    RGTextureHandle m_GBufferORMHistory;
+
+    // Tracks if history textures are newly created in current frame
+    bool m_AlbedoHistoryIsNew = false;
+    bool m_ORMHistoryIsNew    = false;
+
+    // ------------------------------------------------------------------
     // RTXDI context (owns frame-index tracking and buffer-index bookkeeping)
     // ------------------------------------------------------------------
     std::unique_ptr<rtxdi::ReSTIRDIContext> m_Context;
@@ -163,6 +173,29 @@ public:
             renderGraph.DeclareTexture(desc, g_RG_RTXDIDIOutput);
         }
 
+        // ------------------------------------------------------------------
+        // Declare / retrieve persistent G-buffer history textures
+        // ------------------------------------------------------------------
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = Renderer::GBUFFER_ALBEDO_FORMAT;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.debugName = "GBufferAlbedoHistory";
+            m_AlbedoHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GBufferAlbedoHistory);
+        }
+
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = Renderer::GBUFFER_ORM_FORMAT;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.debugName = "GBufferORMHistory";
+            m_ORMHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GBufferORMHistory);
+        }
+
         // Register accesses
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);
@@ -267,6 +300,20 @@ public:
         nvrhi::TextureHandle ormTex     = renderGraph.GetTexture(g_RG_GBufferORM,            RGResourceAccessMode::Read);
         nvrhi::TextureHandle motionTex  = renderGraph.GetTexture(g_RG_GBufferMotionVectors,  RGResourceAccessMode::Read);
         nvrhi::TextureHandle diOutput   = renderGraph.GetTexture(g_RG_RTXDIDIOutput,         RGResourceAccessMode::Write);
+        nvrhi::TextureHandle albedoHistoryTex = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle ormHistoryTex    = renderGraph.GetTexture(m_GBufferORMHistory,    RGResourceAccessMode::Write);
+
+        // ------------------------------------------------------------------
+        // Initialize history textures on first frame
+        // ------------------------------------------------------------------
+        if (m_AlbedoHistoryIsNew)
+        {
+            commandList->copyTexture(albedoHistoryTex, nvrhi::TextureSlice{}, albedoTex, nvrhi::TextureSlice{});
+        }
+        if (m_ORMHistoryIsNew)
+        {
+            commandList->copyTexture(ormHistoryTex, nvrhi::TextureSlice{}, ormTex, nvrhi::TextureSlice{});
+        }
 
         nvrhi::BindingSetDesc bset;
         bset.bindings = {
@@ -276,6 +323,8 @@ public:
             nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
             nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
             nvrhi::BindingSetItem::Texture_SRV(5,  motionTex),
+            nvrhi::BindingSetItem::Texture_SRV(8,  albedoHistoryTex),
+            nvrhi::BindingSetItem::Texture_SRV(9,  ormHistoryTex),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
             nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_NeighborOffsetsBuffer),
@@ -335,6 +384,12 @@ public:
             };
             renderer->AddComputePass(params);
         }
+
+        // ------------------------------------------------------------------
+        // Copy current G-buffer to history textures for next frame
+        // ------------------------------------------------------------------
+        commandList->copyTexture(albedoHistoryTex, nvrhi::TextureSlice{}, albedoTex, nvrhi::TextureSlice{});
+        commandList->copyTexture(ormHistoryTex, nvrhi::TextureSlice{}, ormTex, nvrhi::TextureSlice{});
     }
 
     const char* GetName() const override { return "RTXDIRenderer"; }
