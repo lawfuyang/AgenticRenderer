@@ -588,10 +588,8 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
-    float  D  = DistributionGGX(NdotH, surface.roughness);
-    float  G  = GeometrySmith(NdotV, NdotL, surface.roughness);
 
-    float3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
+    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness);
     float  kD       = 1.0 - Luminance(F0); // simplified metallic proxy
     float3 diffuse  = kD * surface.material.diffuseAlbedo / PI;
 
@@ -789,29 +787,3 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
 
     return false;
 }
-
-// ============================================================================
-// Previous-frame surface helpers
-// ============================================================================
-RAB_Surface RAB_GetPreviousSurface(int2 pixelPosition, out float2 motionVector)
-{
-    motionVector = float2(0.0, 0.0);
-    return RAB_GetGBufferSurface(pixelPosition, true);
-}
-
-float3 RAB_GetSurfaceWorldPosPrev(RAB_Surface surface) { return RAB_GetSurfaceWorldPos(surface); }
-
-RAB_Surface RAB_CreateSurfaceFromGBuffer(int2 pixelPosition)
-{
-    return RAB_GetGBufferSurface(pixelPosition, false);
-}
-
-RAB_Surface RAB_CreateEmptySurfaceAtPosition(float3 worldPos, float3 normal)
-{
-    RAB_Surface s = RAB_EmptySurface();
-    s.worldPos    = worldPos;
-    s.normal      = normal;
-    s.linearDepth = length(worldPos);
-    return s;
-}
-

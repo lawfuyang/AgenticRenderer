@@ -282,6 +282,16 @@ struct LightingComponents
     float3 specular;
 };
 
+// Compute the specular BRDF term: (D * G * F) / (4 * NdotV * NdotL)
+float3 ComputeSpecularBRDF(float3 F, float NdotH, float NdotV, float NdotL, float roughness)
+{
+    float D = DistributionGGX(NdotH, roughness);
+    float G = GeometrySmith(NdotV, NdotL, roughness);
+    float3 numerator = D * G * F;
+    float denominator = 4.0 * NdotV * NdotL + 0.0001;
+    return numerator / denominator;
+}
+
 LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, float shadow)
 {
     LightingComponents components;
@@ -289,12 +299,7 @@ LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, f
     float diffuseTerm = DisneyBurleyDiffuse(inputs.NdotL, inputs.NdotV, inputs.LdotH, inputs.roughness);
     float3 diffuse = diffuseTerm * inputs.kD * inputs.baseColor;
 
-    float NDF = DistributionGGX(inputs.NdotH, inputs.roughness);
-    float G = GeometrySmith(inputs.NdotV, inputs.NdotL, inputs.roughness);
-
-    float3 numerator = NDF * G * inputs.F; 
-    float denominator = 4.0 * inputs.NdotV * inputs.NdotL + 0.0001;
-    float3 spec = numerator / denominator;
+    float3 spec = ComputeSpecularBRDF(inputs.F, inputs.NdotH, inputs.NdotV, inputs.NdotL, inputs.roughness);
 
     components.diffuse = diffuse * inputs.NdotL * radiance * shadow;
     components.specular = spec * inputs.NdotL * radiance * shadow;
