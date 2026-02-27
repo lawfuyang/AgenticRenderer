@@ -125,7 +125,7 @@ RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
         mvPixel = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, pixelPosition, mvPixel);
         
         samplePos = clamp(
-            pixelPosition - int2(mvPixel.xy),
+            pixelPosition + int2(mvPixel.xy),
             int2(0, 0),
             int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
     }
