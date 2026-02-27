@@ -87,16 +87,14 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     }
     else
     {
-        float3 p_atmo = GetAtmospherePos(worldPos);
-
         if (g_Deferred.m_UseReSTIRDI != 0)
         {
-            // ReSTIR DI path: read precomputed direct radiance from the RTXDI shade-samples pass.
-            // We still add ambient and emissive from the normal path.
             color = g_RTXDIDIOutput.Load(uint3(uvInt, 0)).rgb;
         }
         else
         {
+            float3 p_atmo = GetAtmospherePos(worldPos);
+
             if (g_Deferred.m_EnableSky)
             {
                 // Use solar_irradiance * transmittance as the direct sun radiance at surface

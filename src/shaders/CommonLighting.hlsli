@@ -9,6 +9,8 @@
 // RNG for stochastic sampling — only present in path-tracer compute kernels, not rasterized passes
 #include "PathTracerRNG.hlsli"
 
+float Luminance(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
 // Octahedral encoding for normals
 // From: http://jcgt.org/published/0003/02/01/
 float2 octWrap(float2 v)
