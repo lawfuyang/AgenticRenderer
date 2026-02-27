@@ -31,23 +31,6 @@ void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
     radius   = f16tof32(m.m_CenterRadius[1] >> 16);
 }
 
-float2 ComputeMotionVectors(float3 worldPos, float3 prevWorldPos)
-{
-    // FIXME: Switch back to m_MatWorldToClip (jittered) once TAA is implemented
-    float4 clipPos = MatrixMultiply(float4(worldPos, 1.0), g_PerFrame.m_View.m_MatWorldToClipNoOffset);
-    float4 prevClipPos = MatrixMultiply(float4(prevWorldPos, 1.0), g_PerFrame.m_PrevView.m_MatWorldToClipNoOffset);
-
-    clipPos.xyz /= clipPos.w;
-    prevClipPos.xyz /= prevClipPos.w;
-
-    float2 windowPos = clipPos.xy * g_PerFrame.m_View.m_ClipToWindowScale + g_PerFrame.m_View.m_ClipToWindowBias;
-    float2 prevWindowPos = prevClipPos.xy * g_PerFrame.m_PrevView.m_ClipToWindowScale + g_PerFrame.m_PrevView.m_ClipToWindowBias;
-
-    // FIXME: When TAA is implemented, if we use jittered matrices, we need to add back the jitter offset correction:
-    // return prevWindowPos.xy - windowPos.xy + (g_PerFrame.m_View.m_PixelOffset - g_PerFrame.m_PrevView.m_PixelOffset);
-    return prevWindowPos.xy - windowPos.xy;
-}
-
 struct VSOut
 {
     float4 Position : SV_POSITION;
@@ -236,7 +219,7 @@ struct GBufferOut
     float2 Normal        : SV_TARGET1;
     float2 ORM           : SV_TARGET2;
     float4 Emissive      : SV_TARGET3;
-    float2 MotionVectors : SV_TARGET4;
+    float4 MotionVectors : SV_TARGET4;
 };
 
 float3 GetDebugColor(uint debugMode, uint instanceID, uint meshletID, uint lodIndex)
@@ -482,8 +465,6 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
     color += emissive;
 
-    float2 motionVectors = ComputeMotionVectors(input.worldPos, input.prevWorldPos);
-
     // Debug visualizations
     if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)
     {
@@ -513,7 +494,8 @@ GBufferOut GBuffer_PSMain(VSOut input)
     output.ORM = float2(roughness, metallic);
     output.Emissive = float4(emissive, 1.0f);
 
-    output.MotionVectors = ComputeMotionVectors(input.worldPos, input.prevWorldPos);
+    output.MotionVectors.xyz = ComputeMotionVectors(input.worldPos, input.prevWorldPos, g_PerFrame.m_View, g_PerFrame.m_PrevView);
+    output.MotionVectors.w = 0; // Unused
     
     // Debug visualizations
     if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)

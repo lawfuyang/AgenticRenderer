@@ -62,14 +62,12 @@ void CSMain(
     RTXDI_DIReservoir curReservoir = RTXDI_LoadDIReservoir(rbp, pixelPosition,
         g_RTXDIConst.m_TemporalResamplingInputBufferIndex);
 
-    // Motion vector — stored as NDC velocity (dx, dy).  Convert to pixel-space.
-    float2 mv      = g_GBufferMV.Load(int3(iPixel, 0)).xy;
-    float2 vpSizeF = float2(viewportSize);
-    // NDC → pixel offset: multiply by (w/2, -h/2)
-    float2 pixelMotion = mv * vpSizeF * float2(0.5, -0.5);
+    // Motion vector — stored as pixel-space velocity (dx, dy).
+    float3 mv = g_GBufferMV.Load(int3(iPixel, 0)).xyz;
+    float3 pixelMotion = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, iPixel, mv);
 
     RTXDI_DITemporalResamplingParameters tparams;
-    tparams.screenSpaceMotion       = float3(pixelMotion, 0.0);
+    tparams.screenSpaceMotion       = pixelMotion;
     tparams.sourceBufferIndex       = g_RTXDIConst.m_TemporalResamplingInputBufferIndex;
     tparams.maxHistoryLength        = 20u;
     tparams.biasCorrectionMode      = RTXDI_BIAS_CORRECTION_BASIC;

@@ -183,6 +183,36 @@ float3 ComputeCellViewSpacePosition(uint3 GridCoordinate, float3 GridZParams, ui
     return ComputeCellViewSpacePosition(GridCoordinate, GridZParams, ViewGridSize, InvDeviceZToWorldZTransform, ClipToView, ViewSpaceZ);
 }
 
+float3 ComputeMotionVectors(float3 worldPos, float3 prevWorldPos, PlanarViewConstants view, PlanarViewConstants viewPrev)
+{
+    // FIXME: Switch back to m_MatWorldToClip (jittered) once TAA is implemented
+    float4 clipPos = MatrixMultiply(float4(worldPos, 1.0), view.m_MatWorldToClipNoOffset);
+    float4 prevClipPos = MatrixMultiply(float4(prevWorldPos, 1.0), viewPrev.m_MatWorldToClipNoOffset);
+
+    // clipPos.w is the linear view-space depth
+    float currentDepth = clipPos.w;
+    float previousDepth = prevClipPos.w;
+
+    clipPos.xyz /= clipPos.w;
+    prevClipPos.xyz /= prevClipPos.w;
+
+    float2 windowPos = clipPos.xy * view.m_ClipToWindowScale + view.m_ClipToWindowBias;
+    float2 prevWindowPos = prevClipPos.xy * viewPrev.m_ClipToWindowScale + viewPrev.m_ClipToWindowBias;
+
+    // FIXME: When TAA is implemented, if we use jittered matrices, we need to add back the jitter offset correction:
+    // return prevWindowPos.xy - windowPos.xy + (g_PerFrame.m_View.m_PixelOffset - g_PerFrame.m_PrevView.m_PixelOffset);
+    return float3(prevWindowPos.xy - windowPos.xy, previousDepth - currentDepth);
+}
+
+float3 ConvertMotionVectorToPixelSpace(PlanarViewConstants view, PlanarViewConstants viewPrev, int2 pixelPosition, float3 motionVector)
+{
+    float2 currentPixelCenter = float2(pixelPosition.xy) + 0.5;
+    float2 previousPosition = currentPixelCenter + motionVector.xy;
+    previousPosition *= viewPrev.m_ViewportSize * view.m_ViewportSizeInv;
+    motionVector.xy = previousPosition - currentPixelCenter;
+    return motionVector;
+}
+
 struct LightingInputs
 {
     float3 N;

@@ -40,7 +40,7 @@ Texture2D<float>                                g_Depth                     : re
 Texture2D<float2>                               g_GBufferNormals            : register(t2);
 Texture2D<float4>                               g_GBufferAlbedo             : register(t3);
 Texture2D<float2>                               g_GBufferORM                : register(t4);
-Texture2D<float2>                               g_GBufferMV                 : register(t5);
+Texture2D<float3>                               g_GBufferMV                 : register(t5);
 StructuredBuffer<GPULight>                      g_Lights                    : register(t6);
 RaytracingAccelerationStructure                 g_SceneAS                   : register(t7);
 
