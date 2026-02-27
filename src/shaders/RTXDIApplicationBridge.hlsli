@@ -50,6 +50,8 @@ RaytracingAccelerationStructure                 g_SceneASHistory            : re
 
 RWStructuredBuffer<uint2>                       g_RTXDI_RISBuffer           : register(u0);
 RWStructuredBuffer<RTXDI_PackedDIReservoir>     g_RTXDI_LightReservoirBuffer: register(u1);
+
+VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4>                             g_RTXDIDIOutput             : register(u2);
 
 // Hook up the RTXDI SDK macro names to our resources
