@@ -23,7 +23,7 @@ RTXDI_ReservoirBufferParameters GetReservoirBufferParams()
 
 // ============================================================================
 [numthreads(8, 8, 1)]
-void RTXDIShadeSamples_CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
+void CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
 {
     uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
     if (any(GlobalIndex >= viewportSize))

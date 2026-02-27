@@ -582,10 +582,4 @@ struct RTXDIConstants
     // ---- Camera: current & previous frame view matrices for reprojection ----
     PlanarViewConstants m_View;
     PlanarViewConstants m_PrevView;
-
-    // ---- application-level flags ----
-    uint32_t m_EnableTemporal;
-    uint32_t m_EnableSpatial;
-    int32_t  m_NumSpatialSamples;
-    uint32_t m_ConstPad0;
 };

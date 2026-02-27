@@ -252,11 +252,6 @@ public:
         cb.m_View     = renderer->m_Scene.m_View;
         cb.m_PrevView = renderer->m_Scene.m_ViewPrev;
 
-        // App flags
-        cb.m_EnableTemporal    = renderer->m_ReSTIRDI_EnableTemporal ? 1u : 0u;
-        cb.m_EnableSpatial     = renderer->m_ReSTIRDI_EnableSpatial  ? 1u : 0u;
-        cb.m_NumSpatialSamples = renderer->m_ReSTIRDI_SpatialSamples;
-
         // Upload constant buffer (volatile — recreated every frame)
         const nvrhi::BufferHandle rtxdiCB = device->createBuffer(
             nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(RTXDIConstants), "RTXDIConstantsCB", 1));
@@ -270,26 +265,26 @@ public:
         nvrhi::TextureHandle motionTex  = renderGraph.GetTexture(g_RG_GBufferMotionVectors,  RGResourceAccessMode::Read);
         nvrhi::TextureHandle diOutput   = renderGraph.GetTexture(g_RG_RTXDIDIOutput,         RGResourceAccessMode::Write);
 
+        nvrhi::BindingSetDesc bset;
+        bset.bindings = {
+            nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
+            nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
+            nvrhi::BindingSetItem::Texture_SRV(2,  normalsTex),
+            nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
+            nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
+            nvrhi::BindingSetItem::Texture_SRV(5,  motionTex),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
+            nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_NeighborOffsetsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_RISBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
+            nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
+        };
+
         // ------------------------------------------------------------------
         // Pass 1 — Generate Initial Samples
         // ------------------------------------------------------------------
         {
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-                nvrhi::BindingSetItem::Texture_SRV(2,  normalsTex),
-                nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
-                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
-                nvrhi::BindingSetItem::Texture_SRV(5,  motionTex),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
-                nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
-                nvrhi::BindingSetItem::TypedBuffer_SRV(0, m_NeighborOffsetsBuffer),
-                nvrhi::BindingSetItem::TypedBuffer_UAV(0, m_RISBuffer),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
-                nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
-            };
-
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDIGenerateInitialSamples_CSMain",
@@ -308,22 +303,6 @@ public:
         // ------------------------------------------------------------------
         if (renderer->m_ReSTIRDI_EnableTemporal)
         {
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-                nvrhi::BindingSetItem::Texture_SRV(2,  normalsTex),
-                nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
-                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
-                nvrhi::BindingSetItem::Texture_SRV(5,  motionTex),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
-                nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
-                nvrhi::BindingSetItem::TypedBuffer_SRV(0, m_NeighborOffsetsBuffer),
-                nvrhi::BindingSetItem::TypedBuffer_UAV(0, m_RISBuffer),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
-                nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
-            };
-
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDITemporalResampling_CSMain",
@@ -341,22 +320,6 @@ public:
         // Pass 3 — Shade Samples → write to DI output
         // ------------------------------------------------------------------
         {
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-                nvrhi::BindingSetItem::Texture_SRV(2,  normalsTex),
-                nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
-                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
-                nvrhi::BindingSetItem::Texture_SRV(5,  motionTex),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
-                nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
-                nvrhi::BindingSetItem::TypedBuffer_SRV(0, m_NeighborOffsetsBuffer),
-                nvrhi::BindingSetItem::TypedBuffer_UAV(0, m_RISBuffer),
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
-                nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
-            };
-
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDIShadeSamples_CSMain",

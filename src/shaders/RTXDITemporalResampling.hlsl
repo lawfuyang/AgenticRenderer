@@ -39,7 +39,7 @@ RTXDI_ReservoirBufferParameters GetReservoirBufferParams()
 
 // ============================================================================
 [numthreads(8, 8, 1)]
-void RTXDITemporalResampling_CSMain(
+void CSMain(
     uint2 GlobalIndex : SV_DispatchThreadID,
     uint2 LocalIndex  : SV_GroupThreadID)
 {

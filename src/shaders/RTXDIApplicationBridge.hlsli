@@ -4,20 +4,6 @@
  * Full implementation of the RTXDI Application Bridge (RAB) interface.
  * Connects the RTXDI resampling algorithms to the application's G-buffer,
  * material model and analytic light buffer.
- *
- * Resource binding layout used by all three RTXDI compute shaders:
- *   b1  – RTXDIConstants constant buffer
- *   t0  – g_RTXDI_NeighborOffsets  (Buffer<float2>)
- *   t1  – g_Depth            (Texture2D<float>)
- *   t2  – g_GBufferNormals   (Texture2D<float2>)
- *   t3  – g_GBufferAlbedo    (Texture2D<float4>)
- *   t4  – g_GBufferORM       (Texture2D<float2>)
- *   t5  – g_GBufferMV        (Texture2D<float2>)
- *   t6  – g_Lights           (StructuredBuffer<GPULight>)
- *   t7  – g_SceneAS          (RaytracingAccelerationStructure)
- *   u0  – g_RTXDI_RISBuffer              (RWBuffer<uint2>)
- *   u1  – g_RTXDI_LightReservoirBuffer   (RWStructuredBuffer<RTXDI_PackedDIReservoir>)
- *   u2  – g_RTXDIDIOutput               (RWTexture2D<float4>)
  */
 
 #pragma once
