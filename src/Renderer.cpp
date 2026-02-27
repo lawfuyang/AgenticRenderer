@@ -615,6 +615,7 @@ void Renderer::Run()
         extern IRenderer* g_OpaqueRenderer;
         extern IRenderer* g_MaskedPassRenderer;
         extern IRenderer* g_HZBGeneratorPhase2;
+        extern IRenderer* g_RTXDIRenderer;
         extern IRenderer* g_DeferredRenderer;
         extern IRenderer* g_SkyRenderer;
         extern IRenderer* g_TransparentPassRenderer;
@@ -635,6 +636,7 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
             m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+            m_RenderGraph.ScheduleRenderer(g_RTXDIRenderer);
             m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
             m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
