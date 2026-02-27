@@ -49,6 +49,11 @@ public:
     bool m_ORMHistoryIsNew    = false;
 
     // ------------------------------------------------------------------
+    // Persistent ray tracing acceleration structures
+    // ------------------------------------------------------------------
+    nvrhi::rt::AccelStructHandle m_TLASHistory;
+
+    // ------------------------------------------------------------------
     // RTXDI context (owns frame-index tracking and buffer-index bookkeeping)
     // ------------------------------------------------------------------
     std::unique_ptr<rtxdi::ReSTIRDIContext> m_Context;
@@ -139,6 +144,25 @@ public:
             bd.debugName = "RTXDI_LightReservoirBuffer";
             m_LightReservoirBuffer = device->createBuffer(bd);
         }
+    }
+
+    void PostSceneLoad() override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+        nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
+
+        // ---- TLAS History (for temporal effects) -------------------
+        const uint32_t maxInstances = static_cast<uint32_t>(renderer->m_Scene.m_InstanceData.size());
+
+        nvrhi::rt::AccelStructDesc tlasHistoryDesc;
+        tlasHistoryDesc.topLevelMaxInstances = maxInstances;
+        tlasHistoryDesc.debugName = "RTXDI_TLAS_History";
+        tlasHistoryDesc.isTopLevel = true;
+        m_TLASHistory = device->createAccelStruct(tlasHistoryDesc);
+
+        nvrhi::CommandListHandle cl = renderer->AcquireCommandList();
+        ScopedCommandList scopeCl{ cl, "RTXDI::Initialize" };
+        scopeCl->buildTopLevelAccelStructFromBuffer(m_TLASHistory, renderer->m_Scene.m_RTInstanceDescBuffer, 0, (uint32_t)renderer->m_Scene.m_RTInstanceDescs.size());
     }
 
     // ------------------------------------------------------------------
@@ -327,7 +351,7 @@ public:
             nvrhi::BindingSetItem::Texture_SRV(9,  ormHistoryTex),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
             nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
-            nvrhi::BindingSetItem::RayTracingAccelStruct(10, renderer->m_Scene.m_TLAS), // TODO: Enable when previous frame TLAS is available
+            nvrhi::BindingSetItem::RayTracingAccelStruct(10, m_TLASHistory),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_NeighborOffsetsBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_RISBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
@@ -391,6 +415,12 @@ public:
         // ------------------------------------------------------------------
         commandList->copyTexture(albedoHistoryTex, nvrhi::TextureSlice{}, albedoTex, nvrhi::TextureSlice{});
         commandList->copyTexture(ormHistoryTex, nvrhi::TextureSlice{}, ormTex, nvrhi::TextureSlice{});
+
+        // Copy current TLAS to history for next frame
+        if (m_TLASHistory && renderer->m_Scene.m_TLAS)
+        {
+            commandList->copyRaytracingAccelerationStructure(m_TLASHistory, renderer->m_Scene.m_TLAS);
+        }
     }
 
     const char* GetName() const override { return "RTXDIRenderer"; }

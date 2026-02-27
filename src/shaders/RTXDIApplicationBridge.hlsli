@@ -330,7 +330,7 @@ RAB_LightSample RAB_EmptyLightSample()
     return s;
 }
 
-bool  RAB_IsAnalyticLightSample(RAB_LightSample s)   { return true; }
+bool  RAB_IsAnalyticLightSample(RAB_LightSample s) { return true; } // TODO: if we have non-analytic light types (point, spot, or directional), change this
 float RAB_LightSampleSolidAnglePdf(RAB_LightSample s) { return s.solidAnglePdf; }
 
 float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Surface surface)
