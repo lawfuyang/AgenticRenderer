@@ -44,6 +44,27 @@ RTXDI_ReservoirBufferParameters GetReservoirBufferParams()
     return p;
 }
 
+RTXDI_RISBufferSegmentParameters GetLocalLightRISBufferSegmentParams()
+{
+    RTXDI_RISBufferSegmentParameters p;
+    p.bufferOffset = g_RTXDIConst.m_LocalRISBufferOffset;
+    p.tileSize     = g_RTXDIConst.m_LocalRISTileSize;
+    p.tileCount    = g_RTXDIConst.m_LocalRISTileCount;
+    p.pad1         = 0u;
+    return p;
+}
+
+// Environment lights are not presampled — return an empty segment.
+RTXDI_RISBufferSegmentParameters GetEnvLightRISBufferSegmentParams()
+{
+    RTXDI_RISBufferSegmentParameters p;
+    p.bufferOffset = g_RTXDIConst.m_EnvRISBufferOffset;
+    p.tileSize     = g_RTXDIConst.m_EnvRISTileSize;
+    p.tileCount    = g_RTXDIConst.m_EnvRISTileCount;
+    p.pad1         = 0u;
+    return p;
+}
+
 // ============================================================================
 [numthreads(8, 8, 1)]
 void CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
@@ -74,10 +95,20 @@ void CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
         /*numEnvironmentMapSamples=*/ 0u,
         /*numBrdfSamples=*/          0u);
 
+    // Build RIS segment parameters from the constant buffer.
+    RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISBufferSegmentParams();
+    RTXDI_RISBufferSegmentParameters envRISParams   = GetEnvLightRISBufferSegmentParams();
+
     RAB_LightSample selectedSample;
     RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(
         rng, coherentRng, surface, sampleParams, lbp,
-        ReSTIRDI_LocalLightSamplingMode_UNIFORM,
+        #if RTXDI_ENABLE_PRESAMPLING
+            ReSTIRDI_LocalLightSamplingMode_POWER_RIS,
+            localRISParams,
+            envRISParams,
+        #else
+            ReSTIRDI_LocalLightSamplingMode_UNIFORM,
+        #endif
         selectedSample);
 
     RTXDI_StoreDIReservoir(reservoir, rbp, reservoirPosition,

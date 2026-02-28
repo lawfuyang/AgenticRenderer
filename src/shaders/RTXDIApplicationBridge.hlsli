@@ -13,9 +13,9 @@
 // ============================================================================
 #define RTXDI_ENABLE_RESTIR_DI 1
 
-// Disable presampling: we have no pre-tiled RIS for Phase 1 analytic lights.
-// This selects the simpler uniform / infinite light samplers in InitialSampling.hlsli.
-#define RTXDI_ENABLE_PRESAMPLING 0
+// Enable presampling: allows Power-RIS tile-based light selection and compact
+// light info caching in the RIS buffer for improved GPU cache coherence.
+#define RTXDI_ENABLE_PRESAMPLING 1
 
 // ============================================================================
 // Application includes
@@ -47,12 +47,20 @@ RaytracingAccelerationStructure                 g_SceneAS                   : re
 Texture2D<float4>                               g_GBufferAlbedoHistory      : register(t8);
 Texture2D<float2>                               g_GBufferORMHistory         : register(t9);
 RaytracingAccelerationStructure                 g_SceneASHistory            : register(t10);
+// Plain Texture2D (= float4); SDK reads .x component. R32_FLOAT SRV maps .r -> .x.
+Texture2D                                       g_RTXDI_LocalLightPDFTexture: register(t11);
 
 RWStructuredBuffer<uint2>                       g_RTXDI_RISBuffer           : register(u0);
 RWStructuredBuffer<RTXDI_PackedDIReservoir>     g_RTXDI_LightReservoirBuffer: register(u1);
 
 VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4>                             g_RTXDIDIOutput             : register(u2);
+
+// Compact light data buffer: 3 × uint4 per RIS tile entry.
+//   slot 0 (uint4): position.xyz (f32), lightType (uint)
+//   slot 1 (uint4): radiance.xyz (f32), rangeLike (f32)  -- range for point/spot, cosSunAngularRadius for directional
+//   slot 2 (uint4): direction.xyz (f32), packHalf2x16(spotInnerCos, spotOuterCos)
+RWStructuredBuffer<uint4>                       g_RTXDI_RISLightDataBuffer  : register(u3);
 
 // Hook up the RTXDI SDK macro names to our resources
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER   g_RTXDI_NeighborOffsets
@@ -397,28 +405,74 @@ RAB_LightInfo RAB_LoadLightInfo(uint lightIndex, bool previousFrame)
     return li;
 }
 
-RAB_LightInfo RAB_LoadCompactLightInfo(uint linearIndex)
-{
-    return RAB_LoadLightInfo(linearIndex, false);
-}
+// ============================================================================
+// Compact light info pack/unpack
+// Layout: 3 × uint4 per RIS entry, indexed as linearIndex * 3 + {0,1,2}
+//
+//   slot0.xyz = position (f32)          slot0.w = lightType (uint)
+//   slot1.xyz = radiance (f32)          slot1.w = rangeLike (f32)
+//                                         rangeLike = range        for point/spot (type 1/2)
+//                                         rangeLike = cosSunAngRad for directional (type 0)
+//   slot2.xyz = direction (f32)         slot2.w = packHalf2x16(spotInnerCos, spotOuterCos)
+// ============================================================================
 
 bool RAB_StoreCompactLightInfo(uint linearIndex, RAB_LightInfo lightInfo)
 {
-    // Simple implementation: store light info as-is into RIS buffer
-    // Note: This is a simplified placeholder - full implementation would pack
-    // the RAB_LightInfo structure into compact uint format for memory efficiency
-    // For now, we just store to a simple buffer without actual packing
-    
-    // In a full implementation, you would pack:
-    // - position (12 bytes)
-    // - direction (12 bytes) 
-    // - radiance (12 bytes)
-    // - properties (range, spot angles, etc.)
-    // Into a compressed format (typically 2x uint4 = 32 bytes)
-    
-    // For this version, we'll return false to indicate we can't compact this light
-    // which tells RTXDI to use the standard light buffer instead
-    return false;
+    uint base = linearIndex * 3u;
+
+    // Slot 0: position + lightType
+    uint4 slot0;
+    slot0.x = asuint(lightInfo.position.x);
+    slot0.y = asuint(lightInfo.position.y);
+    slot0.z = asuint(lightInfo.position.z);
+    slot0.w = lightInfo.lightType;
+    g_RTXDI_RISLightDataBuffer[base + 0u] = slot0;
+
+    // Slot 1: radiance + rangeLike (type-multiplexed)
+    float rangeLike = (lightInfo.lightType == 0u)
+                    ? lightInfo.cosSunAngularRadius   // directional: store sun disk param
+                    : lightInfo.range;                // point/spot: store range
+    uint4 slot1;
+    slot1.x = asuint(lightInfo.radiance.x);
+    slot1.y = asuint(lightInfo.radiance.y);
+    slot1.z = asuint(lightInfo.radiance.z);
+    slot1.w = asuint(rangeLike);
+    g_RTXDI_RISLightDataBuffer[base + 1u] = slot1;
+
+    // Slot 2: direction + packed spot cone cosines (f16 x2)
+    uint4 slot2;
+    slot2.x = asuint(lightInfo.direction.x);
+    slot2.y = asuint(lightInfo.direction.y);
+    slot2.z = asuint(lightInfo.direction.z);
+    slot2.w = f32tof16(lightInfo.spotInnerCos) | (f32tof16(lightInfo.spotOuterCos) << 16u);
+    g_RTXDI_RISLightDataBuffer[base + 2u] = slot2;
+
+    return true;  // all analytic light types can always be compacted
+}
+
+RAB_LightInfo RAB_LoadCompactLightInfo(uint linearIndex)
+{
+    uint base = linearIndex * 3u;
+
+    uint4 slot0 = g_RTXDI_RISLightDataBuffer[base + 0u];
+    uint4 slot1 = g_RTXDI_RISLightDataBuffer[base + 1u];
+    uint4 slot2 = g_RTXDI_RISLightDataBuffer[base + 2u];
+
+    RAB_LightInfo li;
+    li.position    = float3(asfloat(slot0.x), asfloat(slot0.y), asfloat(slot0.z));
+    li.lightType   = slot0.w;
+    li.radiance    = float3(asfloat(slot1.x), asfloat(slot1.y), asfloat(slot1.z));
+    li.direction   = float3(asfloat(slot2.x), asfloat(slot2.y), asfloat(slot2.z));
+
+    float rangeLike           = asfloat(slot1.w);
+    li.range                  = (li.lightType != 0u) ? rangeLike : 0.0;
+    li.cosSunAngularRadius    = (li.lightType == 0u) ? rangeLike : 1.0;
+
+    float2 spotCosines  = float2(f16tof32(slot2.w & 0xFFFFu), f16tof32(slot2.w >> 16u));
+    li.spotInnerCos     = spotCosines.x;
+    li.spotOuterCos     = spotCosines.y;
+
+    return li;
 }
 
 float RAB_GetLightTargetPdfForVolume(RAB_LightInfo lightInfo, float3 volumeCenter, float volumeRadius)

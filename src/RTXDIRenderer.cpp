@@ -18,6 +18,7 @@
 
 #include <Rtxdi/DI/ReSTIRDI.h>
 #include <Rtxdi/RtxdiUtils.h>
+#include <Rtxdi/LightSampling/RISBufferSegmentParameters.h>
 
 RGTextureHandle g_RG_RTXDIDIOutput;
 extern RGTextureHandle g_RG_DepthTexture;
@@ -28,6 +29,14 @@ extern RGTextureHandle g_RG_GBufferMotionVectors;
 
 // ============================================================================
 
+// ---- Tile parameters for the presampling pass --------------------------------
+// These are fixed at startup. Increasing tileCount improves spatial diversity;
+// increasing tileSize reduces variance within a tile. Values match FullSample defaults.
+static constexpr uint32_t k_RISTileSize  = 1024u;  // samples per tile
+static constexpr uint32_t k_RISTileCount = 128u;   // number of tiles
+// Compact buffer stride: 3 × uint4 per RIS entry (see RTXDIApplicationBridge.hlsli).
+static constexpr uint32_t k_CompactSlotsPerEntry = 3u;
+
 class RTXDIRenderer : public IRenderer
 {
 public:
@@ -37,6 +46,28 @@ public:
     nvrhi::BufferHandle m_NeighborOffsetsBuffer;
     nvrhi::BufferHandle m_RISBuffer;
     nvrhi::BufferHandle m_LightReservoirBuffer;
+
+    // Compact light info buffer written by the presample pass and read by
+    // the initial sampling pass (via RAB_LoadCompactLightInfo).
+    // Layout: k_CompactSlotsPerEntry × uint4 per RIS tile entry.
+    RGBufferHandle m_RG_RISLightDataBuffer;
+
+    // RIS buffer segment parameters for local lights (set once, never changes
+    // because light count is fixed after scene load).
+    RTXDI_RISBufferSegmentParameters m_LocalLightsRISSegmentParams{};
+
+    // Local-light PDF texture for power-importance presampling.
+    // Square, power-of-2, R32_FLOAT with a full mip chain.
+    // Mip 0 has one texel per local light (Z-curve mapped), written every frame
+    // by RTXDIBuildLocalLightPDF; the mip chain is then regenerated.
+    // RTXDI_PresampleLocalLights consumes the full chain for power-weighted
+    // tile filling — this is the actual mechanism behind Power-RIS.
+    RGTextureHandle      m_RG_LocalLightPDFTexture;
+    uint32_t             m_PDFTexSize  = 0; // side length of the square texture
+    uint32_t             m_PDFMipCount = 0; // number of mip levels
+
+    // SPD atomic counter for mip generation
+    RGBufferHandle       m_RG_SPDAtomicCounter;
 
     // ------------------------------------------------------------------
     // Persistent textures (G-buffer history for previous frame)
@@ -114,19 +145,26 @@ public:
             scopeCl->writeBuffer(m_NeighborOffsetsBuffer, offsets.data(), offsets.size());
         }
 
-        // ---- RIS buffer --------------------------------------------
-        // The context doesn't have presampling so size can be minimal.
-        // Minimum of 1 tile × 1024 elements = 1024 uint2 entries.
+        // ---- RIS buffer segment for local lights ----------------------
+        // One segment: offset 0, tileCount tiles of tileSize samples each.
+        m_LocalLightsRISSegmentParams.bufferOffset = 0u;
+        m_LocalLightsRISSegmentParams.tileSize     = k_RISTileSize;
+        m_LocalLightsRISSegmentParams.tileCount    = k_RISTileCount;
+        m_LocalLightsRISSegmentParams.pad1         = 0u;
+
+        const uint32_t totalRISEntries = k_RISTileSize * k_RISTileCount; // 131 072
+
+        // ---- RIS buffer -----------------------------------------------
+        // Sized for all presampled local light tiles.
         {
-            const uint32_t risEntries = 1024u;
             nvrhi::BufferDesc bd;
-            bd.byteSize = static_cast<uint64_t>(risEntries) * sizeof(uint32_t) * 2;
+            bd.byteSize     = static_cast<uint64_t>(totalRISEntries) * sizeof(uint32_t) * 2;
             bd.structStride = sizeof(uint32_t) * 2;
-            bd.format = nvrhi::Format::RG32_UINT;
-            bd.canHaveUAVs = true;
+            bd.format       = nvrhi::Format::RG32_UINT;
+            bd.canHaveUAVs  = true;
             bd.initialState = nvrhi::ResourceStates::UnorderedAccess;
             bd.keepInitialState = true;
-            bd.debugName = "RTXDI_RISBuffer";
+            bd.debugName    = "RTXDI_RISBuffer";
             m_RISBuffer = device->createBuffer(bd);
         }
 
@@ -220,6 +258,60 @@ public:
             m_ORMHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GBufferORMHistory);
         }
 
+        // ---- Compact light data buffer --------------------------------
+        // Stores k_CompactSlotsPerEntry × uint4 per RIS tile entry.
+        // Written by the presample pass, read by the initial sampling pass.
+        // Must be updated every frame because light properties can change.
+        {
+            const uint32_t totalRISEntries = k_RISTileSize * k_RISTileCount; // 131 072
+
+            const uint64_t numUint4s = static_cast<uint64_t>(totalRISEntries) * k_CompactSlotsPerEntry;
+            RGBufferDesc bd;
+            bd.m_NvrhiDesc.byteSize = numUint4s * sizeof(uint32_t) * 4; // each uint4 = 16 bytes
+            bd.m_NvrhiDesc.structStride = sizeof(uint32_t) * 4;             // stride = 1 uint4
+            bd.m_NvrhiDesc.canHaveUAVs = true;
+            bd.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+            bd.m_NvrhiDesc.keepInitialState = true;
+            bd.m_NvrhiDesc.debugName = "RTXDI_RISLightDataBuffer";
+            renderGraph.DeclareBuffer(bd, m_RG_RISLightDataBuffer);
+        }
+
+        // ---- Local-light PDF texture -----------------------------------------------
+        // Sized so the Z-curve can address every local light in the scene.
+        // Light count is fixed post-load, so this is created once.
+        {
+            // Local lights = all lights except index 0 (the sun/directional).
+            const uint32_t localLightCount = (renderer->m_Scene.m_LightCount > 1u)
+                ? renderer->m_Scene.m_LightCount - 1u
+                : 0u;
+
+            // Find smallest power-of-2 S such that S*S >= localLightCount.
+            m_PDFTexSize = 1u;
+            while (m_PDFTexSize* m_PDFTexSize < localLightCount)
+                m_PDFTexSize <<= 1u;
+
+            // Mip count: from full-res down to 1×1.
+            m_PDFMipCount = 1u;
+            for (uint32_t s = m_PDFTexSize; s > 1u; s >>= 1u)
+                ++m_PDFMipCount;
+
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width = m_PDFTexSize;
+            desc.m_NvrhiDesc.height = m_PDFTexSize;
+            desc.m_NvrhiDesc.mipLevels = m_PDFMipCount;
+            desc.m_NvrhiDesc.format = nvrhi::Format::R32_FLOAT;
+            desc.m_NvrhiDesc.isUAV = true;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+            desc.m_NvrhiDesc.debugName = "RTXDI_LocalLightPDFTexture";
+            renderGraph.DeclareTexture(desc, m_RG_LocalLightPDFTexture);
+        }
+
+        // ---- SPD atomic counter for mip generation ------
+        {
+            renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("RTXDI PDF Mip SPD Atomic Counter"), m_RG_SPDAtomicCounter);
+            renderGraph.WriteBuffer(m_RG_SPDAtomicCounter);
+        }
+
         // Register accesses
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);
@@ -306,6 +398,21 @@ public:
         cb.m_ShadingInputBufferIndex             = bix.shadingInputBufferIndex;
         cb.m_EnableSky                           = renderer->m_EnableSky ? 1u : 0u;
 
+        // ---- Local-light PDF texture size ----
+        cb.m_LocalLightPDFTextureSize = { m_PDFTexSize, m_PDFTexSize };
+
+        // ---- RIS buffer segment parameters for presampling ----
+        cb.m_LocalRISBufferOffset = m_LocalLightsRISSegmentParams.bufferOffset;
+        cb.m_LocalRISTileSize     = m_LocalLightsRISSegmentParams.tileSize;
+        cb.m_LocalRISTileCount    = m_LocalLightsRISSegmentParams.tileCount;
+        cb.m_LocalRISPad          = 0u;
+
+        // Environment lights are not presampled — leave these as zeros.
+        cb.m_EnvRISBufferOffset   = 0u;
+        cb.m_EnvRISTileSize       = 0u;
+        cb.m_EnvRISTileCount      = 0u;
+        cb.m_EnvRISPad            = 0u;
+
         // Spatial resampling parameters
         const ReSTIRDI_SpatialResamplingParameters& spatialParams = m_Context->GetSpatialResamplingParameters();
         cb.m_SpatialNumSamples        = spatialParams.numSpatialSamples;
@@ -331,6 +438,8 @@ public:
         nvrhi::TextureHandle diOutput   = renderGraph.GetTexture(g_RG_RTXDIDIOutput,         RGResourceAccessMode::Write);
         nvrhi::TextureHandle albedoHistoryTex = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
         nvrhi::TextureHandle ormHistoryTex    = renderGraph.GetTexture(m_GBufferORMHistory,    RGResourceAccessMode::Write);
+        nvrhi::BufferHandle risLightDataBuffer = renderGraph.GetBuffer(m_RG_RISLightDataBuffer, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle localLightPDFTex  = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
 
         // ------------------------------------------------------------------
         // Initialize history textures on first frame
@@ -361,10 +470,75 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_RISBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_LightReservoirBuffer),
             nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(3, risLightDataBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(11, localLightPDFTex),
         };
 
         // ------------------------------------------------------------------
-        // Pass 1 — Generate Initial Samples
+        // Build Local-Light PDF (mip 0)
+        // Writes luminance(light.radiance) into the PDF texture's mip 0 at
+        // each local light's Z-curve position.  Must run every frame because
+        // light intensities can change between frames.
+        // ------------------------------------------------------------------
+        if (lbp.localLightBufferRegion.numLights > 0)
+        {
+            {
+                nvrhi::BindingSetDesc buildPDFBset;
+                buildPDFBset.bindings = {
+                    nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
+                    // u4: mip-0 UAV — written by the build shader
+                    nvrhi::BindingSetItem::Texture_UAV(4, localLightPDFTex,
+                        nvrhi::Format::UNKNOWN,
+                        nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
+                };
+                Renderer::RenderPassParams params{
+                    .commandList = commandList,
+                    .shaderName = "RTXDIBuildLocalLightPDF_CSMain",
+                    .bindingSetDesc = buildPDFBset,
+                    .dispatchParams = {
+                        .x = DivideAndRoundUp(m_PDFTexSize, 8u),
+                        .y = DivideAndRoundUp(m_PDFTexSize, 8u),
+                        .z = 1u
+                    }
+                };
+                renderer->AddComputePass(params);
+            }
+
+            // ------------------------------------------------------------------
+            // Generate PDF mip chain using SPD
+            // Required so RTXDI_PresampleLocalLights can do hierarchical CDF
+            // traversal across all mip levels.
+            // ------------------------------------------------------------------
+            if (m_PDFMipCount > 1u)
+            {
+                nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
+                renderer->GenerateMipsUsingSPD(localLightPDFTex, spdAtomicCounter, commandList, "Generate Local Light PDF Mips", SPD_REDUCTION_AVERAGE);
+            }
+
+            // ------------------------------------------------------------------
+            // Presample Local Lights (Power-RIS via RTXDI SDK)
+            // Reads the full PDF mip chain via RTXDI_PresampleLocalLights to fill
+            // the RIS tiles with importance-sampled lights, storing compact data.
+            // ------------------------------------------------------------------
+            {
+                const uint32_t presampleGroupsX = DivideAndRoundUp(k_RISTileSize, 256u);
+                Renderer::RenderPassParams params{
+                    .commandList = commandList,
+                    .shaderName = "RTXDIPresampleLights_CSMain",
+                    .bindingSetDesc = bset,
+                    .dispatchParams = {
+                        .x = presampleGroupsX,
+                        .y = k_RISTileCount,
+                        .z = 1u
+                    }
+                };
+                renderer->AddComputePass(params);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Generate Initial Samples
         // ------------------------------------------------------------------
         {
             Renderer::RenderPassParams params{
@@ -381,7 +555,7 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // Pass 2 — Temporal Resampling (conditional)
+        // Temporal Resampling (conditional)
         // ------------------------------------------------------------------
         if (renderer->m_ReSTIRDI_EnableTemporal)
         {
@@ -399,7 +573,7 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // Pass 3 — Spatial Resampling (conditional)
+        // Spatial Resampling (conditional)
         // ------------------------------------------------------------------
         if (renderer->m_ReSTIRDI_EnableSpatial)
         {
@@ -417,7 +591,7 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // Pass 4 — Shade Samples → write to DI output
+        // Shade Samples → write to DI output
         // ------------------------------------------------------------------
         {
             Renderer::RenderPassParams params{

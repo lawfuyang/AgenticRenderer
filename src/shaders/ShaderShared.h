@@ -584,11 +584,24 @@ struct RTXDIConstants
     uint32_t m_BufferIdxPad1;
     uint32_t m_BufferIdxPad2;
     uint32_t pad0;
+    //
+    Vector2U m_LocalLightPDFTextureSize; // (width, height) of mip 0
+    uint32_t m_LocalRISBufferOffset;   // start index in the RIS buffer
+    uint32_t m_LocalRISTileSize;       // number of samples per tile
+    //
+    uint32_t m_LocalRISTileCount;      // number of tiles
+    uint32_t m_LocalRISPad;
+    uint32_t m_EnvRISBufferOffset;
+    uint32_t m_EnvRISTileSize;
+    //
+    uint32_t m_EnvRISTileCount;
+    uint32_t m_EnvRISPad;
+    Vector2 pad1;
 
     // ---- Camera: current & previous frame view matrices for reprojection ----
     PlanarViewConstants m_View;
     PlanarViewConstants m_PrevView;
 
     Vector3 m_SunDirection;
-    uint32_t pad1;
+    uint32_t pad2;
 };
