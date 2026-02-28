@@ -640,9 +640,20 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return int(lightIndex); // Lights are stable permanently
 }
 
-int2 RAB_ClampSamplePositionIntoView(int2 samplePosition, bool previousFrame)
+int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
 {
-    return clamp(samplePosition, int2(0, 0), int2(g_RTXDIConst.m_ViewportSize) - int2(1, 1));
+    int width  = int(g_RTXDIConst.m_ViewportSize.x);
+    int height = int(g_RTXDIConst.m_ViewportSize.y);
+
+    // Reflect across screen edges instead of clamping.
+    // Clamping causes many neighbours to collapse onto the same edge pixel,
+    // producing streaks/blobs near screen borders.
+    if (pixelPosition.x < 0)        pixelPosition.x = -pixelPosition.x;
+    if (pixelPosition.y < 0)        pixelPosition.y = -pixelPosition.y;
+    if (pixelPosition.x >= width)   pixelPosition.x = 2 * width  - pixelPosition.x - 1;
+    if (pixelPosition.y >= height)  pixelPosition.y = 2 * height - pixelPosition.y - 1;
+
+    return pixelPosition;
 }
 
 float RAB_GetBoilingFilterStrength() { return 0.25; }

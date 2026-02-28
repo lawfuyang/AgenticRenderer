@@ -102,7 +102,7 @@ public:
             nvrhi::BufferDesc bd;
             bd.byteSize = offsets.size();
             bd.structStride = sizeof(uint8_t) * 2;
-            bd.format = nvrhi::Format::RG8_UNORM;
+            bd.format = nvrhi::Format::RG8_SNORM;
             bd.initialState = nvrhi::ResourceStates::ShaderResource;
             bd.keepInitialState = true;
             bd.debugName = "RTXDI_NeighborOffsets";
