@@ -124,14 +124,36 @@ set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX12 ON CACHE BOOL "" FORCE)
 
+# ============================================================================
+# MathLib (ML)
+# ============================================================================
+set(ML_VERSION "11")
+set(ML_URL "https://github.com/NVIDIA-RTX/MathLib/archive/refs/tags/v${ML_VERSION}.zip")
+download_library("MathLib" "${ML_VERSION}" "${ML_URL}" "MathLib-*")
+set(ML_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/MathLib")
+set(ML_SUBDIR "MathLib-${ML_VERSION}")
+set(ML_SRC_DIR "${ML_INSTALL_DIR}/${ML_SUBDIR}")
+
 # ----------------------------------------------------------------------------
 # NVIDIA REAL-TIME DENOISERS (NRD)
 # ----------------------------------------------------------------------------
-set(NRD_VERSION "v4.17.1")
-set(NRD_URL "https://github.com/NVIDIA-RTX/NRD/archive/refs/tags/${NRD_VERSION}.zip")
+set(NRD_VERSION "4.17.1")
+set(NRD_URL "https://github.com/NVIDIA-RTX/NRD/archive/refs/tags/v${NRD_VERSION}.zip")
 download_library("NRD" "${NRD_VERSION}" "${NRD_URL}" "NRD-*")
 set(NRD_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/NRD")
+set(NRD_SUBDIR "NRD-${NRD_VERSION}")
+set(NRD_SRC_DIR "${NRD_INSTALL_DIR}/${NRD_SUBDIR}")
+if(WIN32)
+    set(NRD_SHADERSCFG_PATH "${NRD_SRC_DIR}/Shaders/Shaders.cfg")
+    set(NRD_SHADERSCFG_LINK "${CMAKE_SOURCE_DIR}/src/Shaders/NRDShaders.cfg")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E remove -f "${NRD_SHADERSCFG_LINK}")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${NRD_SHADERSCFG_PATH}" "${NRD_SHADERSCFG_LINK}")
+endif()
 
+set(SHADERMAKE_FIND_FXC OFF)
+set(SHADERMAKE_FIND_DXC OFF)
+
+add_subdirectory(external/ShaderMake)
 add_subdirectory(external/nvrhi)
 add_subdirectory(external/meshoptimizer)
 add_subdirectory(external/microprofile)
@@ -190,6 +212,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE SDL3)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE dxgi)
 
+target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/ShaderMake/ShaderMake")
+target_link_libraries(${PROJECT_NAME} PRIVATE ShaderMakeBlob)
+
 # Link NVRHI
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
@@ -224,9 +249,8 @@ set(SHADERMAKE_FIND_COMPILERS ON CACHE BOOL "Enable compiler discovery" FORCE)
 set(SHADERMAKE_FIND_FXC OFF)
 set(SHADERMAKE_FIND_DXC OFF)
 
-add_subdirectory(external/ShaderMake)
-
-set(SHADER_CONFIG       ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
+set(SHADER_CONFIG ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
+set(NRD_SHADER_CONFIG ${NRD_SRC_DIR}/Shaders/shaders.cfg)
 set(SHADER_OUTPUT_DIR_SPIRV ${CMAKE_SOURCE_DIR}/bin/shaders/spirv)
 set(SHADER_OUTPUT_DIR_DXIL  ${CMAKE_SOURCE_DIR}/bin/shaders/dxil)
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR_SPIRV})
@@ -244,10 +268,11 @@ add_custom_target(build_shaders
     # SPIR-V output for Vulkan
     COMMAND ${SHADERMAKE_PATH_GENEX}
             -p SPIRV
-            --binary
+            --binaryBlob
             -D SPIRV
             -c "${SHADER_CONFIG}"
             -o "${SHADER_OUTPUT_DIR_SPIRV}"
+            --embedPDB
             --compiler "${DXC_EXE}"
             --shaderModel 6_8
             --hlsl2021
@@ -260,10 +285,11 @@ add_custom_target(build_shaders
     # DXIL output for D3D12
     COMMAND ${SHADERMAKE_PATH_GENEX}
             -p DXIL
-            --binary
+            --binaryBlob
             -D DXIL
             -c "${SHADER_CONFIG}"
             -o "${SHADER_OUTPUT_DIR_DXIL}"
+            --embedPDB
             --compiler "${DXC_EXE}"
             --shaderModel 6_8
             --hlsl2021
@@ -271,6 +297,42 @@ add_custom_target(build_shaders
             --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
             --relaxedInclude "pch.h"
             --verbose
+
+    # SPIR-V output for Vulkan for NRD
+    COMMAND ${SHADERMAKE_PATH_GENEX}
+            -p SPIRV
+            --binaryBlob
+            -D SPIRV
+            -c "${NRD_SHADER_CONFIG}"
+            -o "${SHADER_OUTPUT_DIR_SPIRV}"
+            --embedPDB
+            --compiler "${DXC_EXE}"
+            --allResourcesBound
+            --shaderModel 6_8
+            --hlsl2021
+            --vulkanVersion 1.3
+            --vulkanMemoryLayout dx
+            --include "${NRD_SRC_DIR}/Shaders"
+            --include "${ML_SRC_DIR}"
+            --binaryBlob
+            -D NRD_INTERNAL
+
+    # DXIL output for D3D12 for NRD
+    COMMAND ${SHADERMAKE_PATH_GENEX}
+            -p DXIL
+            --binaryBlob
+            -D DXIL
+            -c "${NRD_SHADER_CONFIG}"
+            -o "${SHADER_OUTPUT_DIR_DXIL}"
+            --embedPDB
+            --compiler "${DXC_EXE}"
+            --allResourcesBound
+            --shaderModel 6_8
+            --hlsl2021
+            --include "${NRD_SRC_DIR}/Shaders"
+            --include "${ML_SRC_DIR}"
+            -D NRD_INTERNAL
+
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Compiling HLSL shaders to SPIR-V (Vulkan) and DXIL (D3D12) via ShaderMake"
 )

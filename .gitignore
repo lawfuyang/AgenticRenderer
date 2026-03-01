@@ -45,11 +45,6 @@ build/
 out/
 bin/
 lib/
-external/sdl3
-external/cgltf
-external/dxc
-external/agilitysdk
-external/NRD
 Debug/
 Release/
 RelWithDebInfo/
@@ -120,3 +115,14 @@ packages/
 
 # ImGui runtime config (generated)
 imgui.ini
+
+# HobbyRenderer specific
+external/sdl3
+external/cgltf
+external/dxc
+external/agilitysdk
+external/NRD
+external/MathLib
+
+# symlink to NRD shader config (generated)
+src/shaders/NRDShaders.cfg
