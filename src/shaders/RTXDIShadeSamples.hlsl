@@ -59,8 +59,11 @@ void CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
             RAB_LightInfo   lightInfo     = RAB_LoadLightInfo(lightIndex, false);
             RAB_LightSample lightSample   = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
 
-            // Visibility test
-            bool visible = RAB_GetConservativeVisibility(surface, lightSample);
+            // Final-shading visibility: use GetFinalVisibility instead of the conservative
+            // variant. GetFinalVisibility properly commits non-opaque triangle hits that RAB_GetConservativeVisibility deliberately
+            // skips with RAY_FLAG_CULL_NON_OPAQUE. Without this, non-opaque triangles like
+            // are never committed and light leaks straight through them.
+            bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos, lightSample.position);
 
             if (visible)
             {

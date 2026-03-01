@@ -465,6 +465,11 @@ public:
             nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(3, risLightDataBuffer),
             nvrhi::BindingSetItem::Texture_SRV(11, localLightPDFTex),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(12, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(13, renderer->m_Scene.m_MaterialConstantsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_VertexBufferQuantized),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(15, renderer->m_Scene.m_MeshDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(16, renderer->m_Scene.m_IndexBuffer),
         };
 
         // ------------------------------------------------------------------

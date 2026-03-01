@@ -50,6 +50,13 @@ RaytracingAccelerationStructure                 g_SceneASHistory            : re
 // Plain Texture2D (= float4); SDK reads .x component. R32_FLOAT SRV maps .r -> .x.
 Texture2D                                       g_RTXDI_LocalLightPDFTexture: register(t11);
 
+// Scene geometry/material buffers — used by GetFinalVisibility for alpha testing.
+StructuredBuffer<PerInstanceData>               g_RTXDI_Instances           : register(t12);
+StructuredBuffer<MaterialConstants>             g_RTXDI_Materials           : register(t13);
+StructuredBuffer<VertexQuantized>               g_RTXDI_Vertices            : register(t14);
+StructuredBuffer<MeshData>                      g_RTXDI_MeshData            : register(t15);
+StructuredBuffer<uint>                          g_RTXDI_Indices             : register(t16);
+
 RWStructuredBuffer<uint2>                       g_RTXDI_RISBuffer           : register(u0);
 RWStructuredBuffer<RTXDI_PackedDIReservoir>     g_RTXDI_LightReservoirBuffer: register(u1);
 
@@ -618,21 +625,38 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 // ============================================================================
 // Visibility testing
 // ============================================================================
-bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
+
+// Build a shadow ray from surface.worldPos toward samplePosition.
+// Uses only TMin for self-intersection avoidance (no shading-normal offset),
+// matching the reference sample. This avoids bias from shading normals that
+// differ from the geometric normal (e.g. normal-mapped cloth drapes).
+RayDesc SetupShadowRay(float3 originWorldPos, float3 samplePosition, float offset = 0.001)
 {
-    float3 origin    = surface.worldPos + surface.normal * 0.005;
-    float3 direction = lightSample.direction;
-    float  maxDist   = lightSample.distance - 0.01;
+    float3 L    = samplePosition - originWorldPos;
+    float  dist = length(L);
 
     RayDesc ray;
-    ray.Origin    = origin;
-    ray.Direction = direction;
-    ray.TMin      = 0.001;
-    ray.TMax      = max(maxDist, 0.01);
+    ray.Origin    = originWorldPos;
+    ray.Direction = L / max(dist, 1e-6);
+    ray.TMin      = offset;
+    ray.TMax      = max(dist - offset, offset);
+    return ray;
+}
 
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
-             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES |
-             RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> q;
+// Conservative visibility — used by the RTXDI SDK during resampling passes
+// (initial sampling, temporal, spatial resampling).
+// RAY_FLAG_CULL_NON_OPAQUE intentionally skips alpha-tested / non-opaque
+// geometry to avoid noisy contributions from surfaces
+// that may or may not occlude depending on the alpha channel.
+// This matches the reference sample design: conservative means "assume visible
+// if unsure", so resampling keeps potentially good samples alive.
+bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
+{
+    RayDesc ray = SetupShadowRay(surface.worldPos, lightSample.position);
+
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
     q.Proceed();
 
@@ -641,30 +665,69 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
 {
-    float3 toSample = samplePosition - surface.worldPos;
-    float  dist     = length(toSample);
-    RAB_LightSample ls = RAB_EmptyLightSample();
-    ls.direction = toSample / max(dist, 1e-5);
-    ls.distance  = dist;
-    return RAB_GetConservativeVisibility(surface, ls);
+    RayDesc ray = SetupShadowRay(surface.worldPos, samplePosition);
+
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+    q.TraceRayInline(g_SceneAS, RAY_FLAG_NONE, 0xFF, ray);
+    q.Proceed();
+
+    return q.CommittedStatus() == COMMITTED_NOTHING;
 }
 
-// Helper function to test visibility against the previous frame's acceleration structure
+// Final-shading visibility — used in the shading pass only.
+// Unlike conservative visibility, properly handles ALPHA_MODE_MASK geometry by evaluating the albedo alpha channel
+// with ray-space UV gradients, matching CalculateRTShadow / AlphaTestGrad.
+bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 originWorldPos, float3 samplePosition)
+{
+    RayDesc ray = SetupShadowRay(originWorldPos, samplePosition, 0.001);
+
+    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    q.TraceRayInline(accelStruct, RAY_FLAG_NONE, 0xFF, ray);
+
+    while (q.Proceed())
+    {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            uint instanceIndex  = q.CandidateInstanceIndex();
+            uint primitiveIndex = q.CandidatePrimitiveIndex();
+            float2 bary         = q.CandidateTriangleBarycentrics();
+
+            PerInstanceData   inst = g_RTXDI_Instances[instanceIndex];
+            MeshData          mesh = g_RTXDI_MeshData[inst.m_MeshDataIndex];
+            MaterialConstants mat  = g_RTXDI_Materials[inst.m_MaterialIndex];
+
+            if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+            {
+                TriangleVertices tv   = GetTriangleVertices(primitiveIndex, mesh, g_RTXDI_Indices, g_RTXDI_Vertices);
+                RayGradients     grad = GetShadowRayGradients(tv, bary, ray.Origin, inst.m_World);
+
+                if (AlphaTestGrad(grad.uv, grad.ddx, grad.ddy, mat))
+                    q.CommitNonOpaqueTriangleHit(); // opaque: blocks light
+                // else: transparent texel — do not commit, continue traversal
+            }
+            else
+            {
+                // ALPHA_MODE_OPAQUE non-opaque BLAS entry (shouldn't normally
+                // happen) or ALPHA_MODE_BLEND: treat as a full occluder for
+                // shadow purposes (blend surfaces are rare in shadow paths).
+                q.CommitNonOpaqueTriangleHit();
+            }
+        }
+    }
+
+    return q.CommittedStatus() == COMMITTED_NOTHING;
+}
+
+// Previous-frame helpers (temporal resampling)
 bool RAB_GetConservativeVisibilityPrevious(RAB_Surface surface, RAB_LightSample lightSample)
 {
-    float3 origin    = surface.worldPos + surface.normal * 0.005;
-    float3 direction = lightSample.direction;
-    float  maxDist   = lightSample.distance - 0.01;
+    RayDesc ray = SetupShadowRay(surface.worldPos, lightSample.position);
 
-    RayDesc ray;
-    ray.Origin    = origin;
-    ray.Direction = direction;
-    ray.TMin      = 0.001;
-    ray.TMax      = max(maxDist, 0.01);
-
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
-             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES |
-             RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> q;
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     q.TraceRayInline(g_SceneASHistory, RAY_FLAG_NONE, 0xFF, ray);
     q.Proceed();
 
@@ -678,15 +741,15 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
 {
-    // Trace visibility ray using previous frame acceleration structure and previous surface position
-    float3 toSample = samplePosition - previousSurface.worldPos;
-    float  dist     = length(toSample);
-    RAB_LightSample ls = RAB_EmptyLightSample();
-    ls.direction = toSample / max(dist, 1e-5);
-    ls.distance  = dist;
-    
-    // Use the previous acceleration structure for ray tracing
-    return RAB_GetConservativeVisibilityPrevious(previousSurface, ls);
+    RayDesc ray = SetupShadowRay(previousSurface.worldPos, samplePosition);
+
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+             RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+    q.TraceRayInline(g_SceneASHistory, RAY_FLAG_NONE, 0xFF, ray);
+    q.Proceed();
+
+    return q.CommittedStatus() == COMMITTED_NOTHING;
 }
 
 int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
