@@ -1,6 +1,6 @@
 #include "ShaderShared.h"
 
-RWStructuredBuffer<float> Exposure : register(u0);
+RWBuffer<float> Exposure : register(u0);
 StructuredBuffer<uint> HistogramInput : register(t0);
 
 PUSH_CONSTANT ConstantBuffer<AdaptationConstants> AdaptationCB : register(b0);

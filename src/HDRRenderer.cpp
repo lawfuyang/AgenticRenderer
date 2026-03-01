@@ -34,8 +34,9 @@ public:
         // Exposure Buffer
         {
             RGBufferDesc desc;
-            desc.m_NvrhiDesc.structStride = sizeof(float);
             desc.m_NvrhiDesc.byteSize = sizeof(float);
+            desc.m_NvrhiDesc.format = nvrhi::Format::R32_FLOAT;
+            desc.m_NvrhiDesc.canHaveTypedViews = true;
             desc.m_NvrhiDesc.debugName = "ExposureBuffer_RG";
             desc.m_NvrhiDesc.canHaveUAVs = true;
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
@@ -123,7 +124,7 @@ public:
                 nvrhi::BindingSetDesc bset;
                 bset.bindings = {
                     nvrhi::BindingSetItem::PushConstants(0, sizeof(AdaptationConstants)),
-                    nvrhi::BindingSetItem::StructuredBuffer_UAV(0, exposureBuffer),
+                    nvrhi::BindingSetItem::TypedBuffer_UAV(0, exposureBuffer),
                     nvrhi::BindingSetItem::StructuredBuffer_SRV(0, luminanceHistogram ? luminanceHistogram : CommonResources::GetInstance().DummyUAVBuffer)
                 };
 
@@ -160,7 +161,7 @@ public:
             bset.bindings = {
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(TonemapConstants)),
                 nvrhi::BindingSetItem::Texture_SRV(0, hdrColor),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, exposureBuffer),
+                nvrhi::BindingSetItem::TypedBuffer_SRV(1, exposureBuffer),
                 nvrhi::BindingSetItem::Texture_SRV(2, bloomUpPyramid ? bloomUpPyramid : CommonResources::GetInstance().DefaultTextureBlack)
             };
 

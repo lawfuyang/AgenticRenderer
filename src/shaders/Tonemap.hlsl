@@ -3,7 +3,7 @@
 PUSH_CONSTANT TonemapConstants TonemapCB;
 
 Texture2D<float3> HDRColorInput : register(t0);
-StructuredBuffer<float> ExposureInput : register(t1);
+Buffer<float> ExposureInput : register(t1);
 Texture2D<float3> BloomInput : register(t2);
 
 // Input color is non-negative and resides in the Linear Rec. 709 color space.
