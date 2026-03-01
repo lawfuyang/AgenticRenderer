@@ -1,1 +1,0 @@
-../ToyRenderer/source/ShadowMaskRenderer.cpp
