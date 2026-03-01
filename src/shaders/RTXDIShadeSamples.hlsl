@@ -63,7 +63,9 @@ void CSMain(uint2 GlobalIndex : SV_DispatchThreadID)
             // variant. GetFinalVisibility properly commits non-opaque triangle hits that RAB_GetConservativeVisibility deliberately
             // skips with RAY_FLAG_CULL_NON_OPAQUE. Without this, non-opaque triangles like
             // are never committed and light leaks straight through them.
-            bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos, lightSample.position);
+            // Pass surface.normal so GetFinalVisibility can apply the same normal-bias
+            // self-intersection avoidance used in CalculateRTShadow (deferred path).
+            bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos, RAB_GetSurfaceNormal(surface), lightSample.position);
 
             if (visible)
             {

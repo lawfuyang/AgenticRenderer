@@ -337,9 +337,19 @@ float RAB_LightSampleSolidAnglePdf(RAB_LightSample s) { return s.solidAnglePdf; 
 
 float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Surface surface)
 {
+    // Guard: zero solidAnglePdf means an invalid/degenerate sample — reject it.
+    if (lightSample.solidAnglePdf <= 0.0)
+        return 0.0;
+
+    // Target pdf = reflected luminance / solidAnglePdf.
+    // Dividing by solidAnglePdf is required so that the resampling weights
+    // correctly cancel the sampling PDF, matching the reference implementation.
+    // Omitting this division biases the reservoir toward lights with small
+    // solid angles (e.g. a tiny distant point light) over physically brighter
+    // but wider area lights.
     float NdotL = max(0.0, dot(surface.normal, lightSample.direction));
     float lum   = Luminance(lightSample.radiance);
-    return lum * NdotL;
+    return (lum * NdotL) / lightSample.solidAnglePdf;
 }
 
 void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
@@ -389,7 +399,19 @@ RAB_LightInfo RAB_LoadLightInfo(uint lightIndex, bool previousFrame)
     GPULight gl = g_Lights[lightIndex];
     RAB_LightInfo li;
     li.position             = gl.m_Position;
-    li.direction            = lightIndex == 0 ? g_RTXDIConst.m_SunDirection : normalize(gl.m_Direction);
+
+    // Direction convention note:
+    // gl.m_Direction is derived from QuaternionToDirection(-Z), i.e. the emission
+    // direction pointing FROM the light INTO the scene.
+    // g_RTXDIConst.m_SunDirection is derived from Scene::Update() which transforms
+    // the +Z axis — giving the TOWARD-SUN direction (same as inputs.sunDirection in
+    // the deferred path). For light index 0 (the directional sun light) we use
+    // m_SunDirection so the direction convention matches the deferred path.
+    // For other directional lights gl.m_Direction points away from the sun,
+    // which is the physically correct emission direction for RAB_SamplePolymorphicLight.
+    li.direction            = (lightIndex == 0 && gl.m_Type == 0u)
+                            ? g_RTXDIConst.m_SunDirection
+                            : normalize(gl.m_Direction);
     li.range                = gl.m_Range;
     li.spotInnerCos         = cos(gl.m_SpotInnerConeAngle);
     li.spotOuterCos         = cos(gl.m_SpotOuterConeAngle);
@@ -630,20 +652,27 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 // Visibility testing
 // ============================================================================
 
-// Build a shadow ray from surface.worldPos toward samplePosition.
-// Uses only TMin for self-intersection avoidance (no shading-normal offset),
-// matching the reference sample. This avoids bias from shading normals that
-// differ from the geometric normal (e.g. normal-mapped cloth drapes).
-RayDesc SetupShadowRay(float3 originWorldPos, float3 samplePosition, float offset = 0.001)
+// Build a shadow ray from originWorldPos toward samplePosition.
+// Applies the same normal-bias self-intersection strategy as CalculateRTShadow
+// in CommonLighting.hlsli: origin = worldPos + N * 0.1, TMin = 0.1.
+// Without this, RTXDI shadow rays start at the raw G-buffer world position and
+// differ from the deferred reference — visually the sun appears a couple of
+// degrees off for directional lights, and local light positions look slightly
+// shifted in enclosed spaces.
+RayDesc SetupShadowRay(float3 originWorldPos, float3 surfaceNormal, float3 samplePosition, float offset = 0.001)
 {
-    float3 L    = samplePosition - originWorldPos;
+    // Match CalculateRTShadow: offset origin along shading normal to avoid
+    // self-intersection at grazing angles.
+    float3 biasedOrigin = originWorldPos + surfaceNormal * 0.1f;
+
+    float3 L    = samplePosition - biasedOrigin;
     float  dist = length(L);
 
     RayDesc ray;
-    ray.Origin    = originWorldPos;
+    ray.Origin    = biasedOrigin;
     ray.Direction = L / max(dist, 1e-6);
-    ray.TMin      = offset;
-    ray.TMax      = max(dist - offset, offset);
+    ray.TMin      = 0.1f;                     // matches CalculateRTShadow TMin
+    ray.TMax      = max(dist - 0.1f, 0.1f);   // don't overshoot into the light
     return ray;
 }
 
@@ -656,7 +685,7 @@ RayDesc SetupShadowRay(float3 originWorldPos, float3 samplePosition, float offse
 // if unsure", so resampling keeps potentially good samples alive.
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
 {
-    RayDesc ray = SetupShadowRay(surface.worldPos, lightSample.position);
+    RayDesc ray = SetupShadowRay(surface.worldPos, surface.normal, lightSample.position);
 
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
              RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
@@ -669,7 +698,7 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
 {
-    RayDesc ray = SetupShadowRay(surface.worldPos, samplePosition);
+    RayDesc ray = SetupShadowRay(surface.worldPos, surface.normal, samplePosition);
 
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
              RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
@@ -683,9 +712,11 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
 // Final-shading visibility — used in the shading pass only.
 // Unlike conservative visibility, properly handles ALPHA_MODE_MASK geometry by evaluating the albedo alpha channel
 // with ray-space UV gradients, matching CalculateRTShadow / AlphaTestGrad.
-bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 originWorldPos, float3 samplePosition)
+// surfaceNormal is required to apply the same normal-bias self-intersection
+// avoidance used in SetupShadowRay / CalculateRTShadow.
+bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 originWorldPos, float3 surfaceNormal, float3 samplePosition)
 {
-    RayDesc ray = SetupShadowRay(originWorldPos, samplePosition, 0.001);
+    RayDesc ray = SetupShadowRay(originWorldPos, surfaceNormal, samplePosition, 0.001);
 
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
     q.TraceRayInline(accelStruct, RAY_FLAG_NONE, 0xFF, ray);
@@ -727,7 +758,7 @@ bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 orig
 // Previous-frame helpers (temporal resampling)
 bool RAB_GetConservativeVisibilityPrevious(RAB_Surface surface, RAB_LightSample lightSample)
 {
-    RayDesc ray = SetupShadowRay(surface.worldPos, lightSample.position);
+    RayDesc ray = SetupShadowRay(surface.worldPos, surface.normal, lightSample.position);
 
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
              RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
@@ -745,7 +776,7 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
 {
-    RayDesc ray = SetupShadowRay(previousSurface.worldPos, samplePosition);
+    RayDesc ray = SetupShadowRay(previousSurface.worldPos, previousSurface.normal, samplePosition);
 
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE |
              RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
