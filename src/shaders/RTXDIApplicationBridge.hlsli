@@ -36,7 +36,7 @@ cbuffer RTXDICBuf : register(b1)
     RTXDIConstants g_RTXDIConst;
 };
 
-StructuredBuffer<float2>                        g_RTXDI_NeighborOffsets     : register(t0);
+Buffer<float2>                                  g_RTXDI_NeighborOffsets     : register(t0);
 Texture2D<float>                                g_Depth                     : register(t1);
 Texture2D<float2>                               g_GBufferNormals            : register(t2);
 Texture2D<float4>                               g_GBufferAlbedo             : register(t3);
@@ -47,8 +47,9 @@ RaytracingAccelerationStructure                 g_SceneAS                   : re
 Texture2D<float4>                               g_GBufferAlbedoHistory      : register(t8);
 Texture2D<float2>                               g_GBufferORMHistory         : register(t9);
 RaytracingAccelerationStructure                 g_SceneASHistory            : register(t10);
-// Plain Texture2D (= float4); SDK reads .x component. R32_FLOAT SRV maps .r -> .x.
 Texture2D                                       g_RTXDI_LocalLightPDFTexture: register(t11);
+Texture2D<float>                                g_DepthHistory              : register(t17);
+Texture2D<float2>                               g_GBufferNormalsHistory     : register(t18);
 
 // Scene geometry/material buffers — used by GetFinalVisibility for alpha testing.
 StructuredBuffer<PerInstanceData>               g_RTXDI_Instances           : register(t12);
@@ -250,23 +251,40 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
 
     int2 samplePos = pixelPosition;
 
-    float depth = g_Depth.Load(int3(samplePos, 0));
+    // Load depth from the correct frame's depth buffer.
+    // For previousFrame=true, use the history depth so world-position reconstruction
+    // uses last frame's view matrix with last frame's depth — not the current frame's depth.
+    float depth = previousFrame
+        ? g_DepthHistory.Load(int3(samplePos, 0))
+        : g_Depth.Load(int3(samplePos, 0));
 
-    // Sky / background pixel — no surface
+    // Sky / background pixel — no surface (reverse-Z: 0.0 = far plane)
     if (depth == 0.0)
         return RAB_EmptySurface();
 
     RAB_Surface s;
     s.worldPos    = ReconstructWorldPos(uint2(samplePos), depth, view);
-    s.normal      = DecodeNormal(g_GBufferNormals.Load(int3(samplePos, 0)));
+    // Load normals from the correct frame's buffer.
+    s.normal      = previousFrame
+        ? DecodeNormal(g_GBufferNormalsHistory.Load(int3(samplePos, 0)))
+        : DecodeNormal(g_GBufferNormals.Load(int3(samplePos, 0)));
 
-    // Camera world position: last column of ViewToWorld matrix
+    // Camera world position: 4th row of ViewToWorld matrix (row-vector convention).
     float3 camPos = float3(
         view.m_MatViewToWorld._41,
         view.m_MatViewToWorld._42,
         view.m_MatViewToWorld._43);
 
-    s.linearDepth = length(s.worldPos - camPos);
+    // Camera forward direction: 3rd row of ViewToWorld (points into the scene for LH DirectX).
+    float3 camForward = float3(
+        view.m_MatViewToWorld._31,
+        view.m_MatViewToWorld._32,
+        view.m_MatViewToWorld._33);
+
+    // Use view-space depth (projection of worldPos onto camera forward) so that
+    // linearDepth is consistent with screenSpaceMotion.z (which is prevClipW - curClipW,
+    // i.e., the change in view-space Z).
+    s.linearDepth = dot(s.worldPos - camPos, camForward);
     s.viewDir     = normalize(camPos - s.worldPos);
 
     float4 albedoSample;

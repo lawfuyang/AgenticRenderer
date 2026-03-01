@@ -71,12 +71,16 @@ public:
     // ------------------------------------------------------------------
     // Persistent textures (G-buffer history for previous frame)
     // ------------------------------------------------------------------
+    RGTextureHandle m_DepthHistory;
     RGTextureHandle m_GBufferAlbedoHistory;
+    RGTextureHandle m_GbufferNormalsHistory;
     RGTextureHandle m_GBufferORMHistory;
 
-    // Tracks if history textures are newly created in current frame
+    // Track if history textures are newly created in current frame
     bool m_AlbedoHistoryIsNew = false;
     bool m_ORMHistoryIsNew    = false;
+    bool m_DepthHistoryIsNew  = false;
+    bool m_NormalsHistoryIsNew = false;
 
     // ------------------------------------------------------------------
     // Persistent ray tracing acceleration structures
@@ -192,7 +196,7 @@ public:
 
         {
             RGTextureDesc desc;
-            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.width  = width;
             desc.m_NvrhiDesc.height = height;
             desc.m_NvrhiDesc.format = Renderer::GBUFFER_ORM_FORMAT;
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
@@ -200,15 +204,39 @@ public:
             m_ORMHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GBufferORMHistory);
         }
 
-        // ---- Neighbor offsets buffer (persistent) ----
-        // Filled once per allocation. Track if newly created.
+        // Previous-frame depth history (copy of depth buffer: same format, D24S8).
+        // isRenderTarget=true so NVRHI creates it with ALLOW_DEPTH_STENCIL, which is
+        // required to copy from the main depth buffer (also ALLOW_DEPTH_STENCIL) and
+        // to create a proper depth-component SRV.
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width        = width;
+            desc.m_NvrhiDesc.height       = height;
+            desc.m_NvrhiDesc.format       = Renderer::DEPTH_FORMAT;
+            desc.m_NvrhiDesc.isRenderTarget = true; // needed for ALLOW_DEPTH_STENCIL flag
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.debugName    = "DepthHistory";
+            m_DepthHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_DepthHistory);
+        }
+
+        // Previous-frame G-buffer normals history.
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width       = width;
+            desc.m_NvrhiDesc.height      = height;
+            desc.m_NvrhiDesc.format      = Renderer::GBUFFER_NORMALS_FORMAT;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.debugName   = "GBufferNormalsHistory";
+            m_NormalsHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GbufferNormalsHistory);
+        }
+
         {
             RGBufferDesc bd;
-            bd.m_NvrhiDesc.byteSize = m_Context->GetStaticParameters().NeighborOffsetCount * 2; // two int8/uint8 per entry
-            bd.m_NvrhiDesc.structStride = sizeof(uint8_t) * 2;
-            bd.m_NvrhiDesc.format = nvrhi::Format::RG8_SNORM;
+            bd.m_NvrhiDesc.byteSize = m_Context->GetStaticParameters().NeighborOffsetCount * 2;
+            bd.m_NvrhiDesc.format   = nvrhi::Format::RG8_SNORM; // 2 × int8 normalized [-1,1] per entry
+            bd.m_NvrhiDesc.canHaveTypedViews = true;
             bd.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
-            bd.m_NvrhiDesc.debugName = "RTXDI_NeighborOffsets";
+            bd.m_NvrhiDesc.debugName    = "RTXDI_NeighborOffsets";
             m_NeighborOffsetsBufferIsNew = renderGraph.DeclarePersistentBuffer(bd, m_RG_NeighborOffsetsBuffer);
         }
 
@@ -415,8 +443,10 @@ public:
         nvrhi::TextureHandle ormTex     = renderGraph.GetTexture(g_RG_GBufferORM,            RGResourceAccessMode::Read);
         nvrhi::TextureHandle motionTex  = renderGraph.GetTexture(g_RG_GBufferMotionVectors,  RGResourceAccessMode::Read);
         nvrhi::TextureHandle diOutput   = renderGraph.GetTexture(g_RG_RTXDIDIOutput,         RGResourceAccessMode::Write);
-        nvrhi::TextureHandle albedoHistoryTex = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle ormHistoryTex    = renderGraph.GetTexture(m_GBufferORMHistory,    RGResourceAccessMode::Write);
+        nvrhi::TextureHandle albedoHistoryTex  = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle ormHistoryTex     = renderGraph.GetTexture(m_GBufferORMHistory,    RGResourceAccessMode::Write);
+        nvrhi::TextureHandle depthHistoryTex   = renderGraph.GetTexture(m_DepthHistory,         RGResourceAccessMode::Write);
+        nvrhi::TextureHandle normalsHistoryTex = renderGraph.GetTexture(m_GbufferNormalsHistory, RGResourceAccessMode::Write);
         nvrhi::BufferHandle neighborOffsetsBuffer = renderGraph.GetBuffer(m_RG_NeighborOffsetsBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle risBuffer = renderGraph.GetBuffer(m_RG_RISBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle lightReservoirBuffer = renderGraph.GetBuffer(m_RG_LightReservoirBuffer, RGResourceAccessMode::Read);
@@ -433,6 +463,14 @@ public:
         if (m_ORMHistoryIsNew)
         {
             commandList->copyTexture(ormHistoryTex, nvrhi::TextureSlice{}, ormTex, nvrhi::TextureSlice{});
+        }
+        if (m_DepthHistoryIsNew)
+        {
+            commandList->copyTexture(depthHistoryTex, nvrhi::TextureSlice{}, depthTex, nvrhi::TextureSlice{});
+        }
+        if (m_NormalsHistoryIsNew)
+        {
+            commandList->copyTexture(normalsHistoryTex, nvrhi::TextureSlice{}, normalsTex, nvrhi::TextureSlice{});
         }
 
         // ------------------------------------------------------------------
@@ -459,7 +497,7 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(6, renderer->m_Scene.m_LightBuffer),
             nvrhi::BindingSetItem::RayTracingAccelStruct(7, renderer->m_Scene.m_TLAS),
             nvrhi::BindingSetItem::RayTracingAccelStruct(10, m_TLASHistory),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, neighborOffsetsBuffer),
+            nvrhi::BindingSetItem::TypedBuffer_SRV(0, neighborOffsetsBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, risBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(1, lightReservoirBuffer),
             nvrhi::BindingSetItem::Texture_UAV(2, diOutput),
@@ -470,6 +508,8 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_VertexBufferQuantized),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(15, renderer->m_Scene.m_MeshDataBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(16, renderer->m_Scene.m_IndexBuffer),
+            nvrhi::BindingSetItem::Texture_SRV(17, depthHistoryTex),   // previous-frame depth
+            nvrhi::BindingSetItem::Texture_SRV(18, normalsHistoryTex), // previous-frame normals
         };
 
         // ------------------------------------------------------------------
@@ -608,8 +648,10 @@ public:
         // ------------------------------------------------------------------
         // Copy current G-buffer to history textures for next frame
         // ------------------------------------------------------------------
-        commandList->copyTexture(albedoHistoryTex, nvrhi::TextureSlice{}, albedoTex, nvrhi::TextureSlice{});
-        commandList->copyTexture(ormHistoryTex, nvrhi::TextureSlice{}, ormTex, nvrhi::TextureSlice{});
+        commandList->copyTexture(albedoHistoryTex,  nvrhi::TextureSlice{}, albedoTex,   nvrhi::TextureSlice{});
+        commandList->copyTexture(ormHistoryTex,     nvrhi::TextureSlice{}, ormTex,      nvrhi::TextureSlice{});
+        commandList->copyTexture(depthHistoryTex,   nvrhi::TextureSlice{}, depthTex,    nvrhi::TextureSlice{});
+        commandList->copyTexture(normalsHistoryTex, nvrhi::TextureSlice{}, normalsTex,  nvrhi::TextureSlice{});
 
         // Copy current TLAS to history for next frame
         if (m_TLASHistory && renderer->m_Scene.m_TLAS)

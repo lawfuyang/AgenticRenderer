@@ -222,7 +222,7 @@ struct Renderer
     // ReSTIR DI settings
     bool m_EnableReSTIRDI = false;
     bool m_ReSTIRDI_EnableTemporal = true;
-    bool m_ReSTIRDI_EnableSpatial = false;
+    bool m_ReSTIRDI_EnableSpatial = true;
     int  m_ReSTIRDI_SpatialSamples = 1;
     float m_BloomKnee = 0.1f;
     float m_UpsampleRadius = 0.85f;
