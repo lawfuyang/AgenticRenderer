@@ -106,15 +106,8 @@ void ImGuiLayer::UpdateFrame()
             ImGui::Checkbox("ReSTIR DI", &renderer->m_EnableReSTIRDI);
             if (renderer->m_EnableReSTIRDI)
             {
-                ImGui::Indent();
-                ImGui::Checkbox("Temporal Resampling", &renderer->m_ReSTIRDI_EnableTemporal);
-                ImGui::Checkbox("Spatial Resampling", &renderer->m_ReSTIRDI_EnableSpatial);
-                if (renderer->m_ReSTIRDI_EnableSpatial)
-                {
-                    ImGui::SliderInt("Spatial Samples", &renderer->m_ReSTIRDI_SpatialSamples, 1, 8);
-                }
-                ImGui::Checkbox("Checkerboard Sampling", &renderer->m_ReSTIRDI_EnableCheckerboard);
-                ImGui::Unindent();
+                extern void RTXDIIMGUISettings();
+                RTXDIIMGUISettings();
             }
 
             ImGui::Checkbox("Enable Animations", &renderer->m_EnableAnimations);

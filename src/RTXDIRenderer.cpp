@@ -20,6 +20,8 @@
 #include <Rtxdi/RtxdiUtils.h>
 #include <Rtxdi/LightSampling/RISBufferSegmentParameters.h>
 
+#include <imgui.h>
+
 RGTextureHandle g_RG_RTXDIDIOutput;
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
@@ -36,6 +38,349 @@ static constexpr uint32_t k_RISTileSize  = 1024u;  // samples per tile
 static constexpr uint32_t k_RISTileCount = 128u;   // number of tiles
 // Compact buffer stride: 3 × uint4 per RIS entry (see RTXDIApplicationBridge.hlsli).
 static constexpr uint32_t k_CompactSlotsPerEntry = 3u;
+
+enum class ReSTIRDIQualityPreset : uint32_t
+{
+    Custom = 0,
+    Fast = 1,
+    Medium = 2,
+    Unbiased = 3,
+    Ultra = 4,
+    Reference = 5
+};
+
+bool g_ReSTIRDI_EnableCheckerboard   = false;
+bool g_ReSTIRDI_ShowAdvancedSettings = false;
+rtxdi::ReSTIRDI_ResamplingMode          g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+ReSTIRDI_InitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams{};
+ReSTIRDI_TemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams{};
+ReSTIRDI_SpatialResamplingParameters    g_ReSTIRDI_SpatialResamplingParams{};
+ReSTIRDI_ShadingParameters              g_ReSTIRDI_ShadingParams{};
+uint32_t g_ReSTIRDI_NumLocalLightUniformSamples = 8;
+uint32_t g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
+uint32_t g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
+ReSTIRDIQualityPreset g_ReSTIRDI_CurrentPreset = ReSTIRDIQualityPreset::Custom;
+
+void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
+{
+    g_ReSTIRDI_CurrentPreset = preset;
+
+    switch (preset)
+    {
+    case ReSTIRDIQualityPreset::Fast:
+        g_ReSTIRDI_EnableCheckerboard = true;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 4;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 4;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 4;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 4;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 0;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 1;
+        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Off;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Off;
+        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 2;
+        g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
+        break;
+
+    case ReSTIRDIQualityPreset::Medium:
+        g_ReSTIRDI_EnableCheckerboard = false;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 8;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
+        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
+        g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
+        break;
+
+    case ReSTIRDIQualityPreset::Unbiased:
+        g_ReSTIRDI_EnableCheckerboard = false;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Uniform;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 8;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 0u;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
+        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
+        g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 0u;
+        break;
+
+    case ReSTIRDIQualityPreset::Ultra:
+        g_ReSTIRDI_EnableCheckerboard = false;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 16;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 16;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 16;
+        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 0u;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
+        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 4;
+        g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 16;
+        g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 0u;
+        break;
+
+    case ReSTIRDIQualityPreset::Reference:
+        g_ReSTIRDI_EnableCheckerboard = false;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::None;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Uniform;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 16;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 16;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 0;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 16;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
+        break;
+
+        // my own settings
+    case ReSTIRDIQualityPreset::Custom:
+        g_ReSTIRDI_EnableCheckerboard = true;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;
+        g_ReSTIRDI_NumLocalLightUniformSamples = 8;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
+        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
+        g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
+    default:
+        break;
+    }
+}
+
+void RTXDIIMGUISettings()
+{
+    Renderer* renderer = Renderer::GetInstance();
+
+    ImGui::Indent();
+
+    // ---- Preset Selection -----------------------------------------------
+    ImGui::PushItemWidth(200.f);
+    if (ImGui::Combo("Preset", (int*)&g_ReSTIRDI_CurrentPreset,
+        "(Custom)\0Fast\0Medium\0Unbiased\0Ultra\0Reference\0"))
+    {
+        ApplyReSTIRDIPreset(g_ReSTIRDI_CurrentPreset);
+    }
+    ImGui::PopItemWidth();
+
+    // ---- Static context settings (checkerboard changes buffer layout) -------
+    if (ImGui::TreeNode("Static Context Settings"))
+    {
+        ImGui::Checkbox("Checkerboard Rendering", &g_ReSTIRDI_EnableCheckerboard);
+        ImGui::TreePop();
+    }
+
+    // ---- Resampling mode -------------------------------------------------------
+    ImGui::PushItemWidth(200.f);
+    ImGui::Combo("Resampling Mode", (int*)&g_ReSTIRDI_ResamplingMode,
+        "None\0"
+        "Temporal\0"
+        "Spatial\0"
+        "Temporal + Spatial\0"
+        "Fused Spatiotemporal\0");
+    ImGui::PopItemWidth();
+
+    ImGui::Checkbox("Show Advanced Settings", &g_ReSTIRDI_ShowAdvancedSettings);
+    ImGui::Separator();
+
+    // ---- Initial Sampling -----------------------------------------------------
+    if (ImGui::TreeNode("Initial Sampling"))
+    {
+        if (ImGui::TreeNode("Local Light Sampling"))
+        {
+            int* localLightMode = (int*)&g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode;
+
+            ImGui::RadioButton("Uniform Sampling##llMode", localLightMode, (int)ReSTIRDI_LocalLightSamplingMode::Uniform);
+            ImGui::SliderInt("Uniform Samples", (int*)&g_ReSTIRDI_NumLocalLightUniformSamples, 0, 32);
+
+            ImGui::RadioButton("Power RIS##llMode", localLightMode, (int)ReSTIRDI_LocalLightSamplingMode::Power_RIS);
+            ImGui::SliderInt("Power RIS Samples", (int*)&g_ReSTIRDI_NumLocalLightPowerRISSamples, 0, 32);
+
+            ImGui::RadioButton("ReGIR RIS##llMode", localLightMode, (int)ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS);
+            ImGui::SliderInt("ReGIR RIS Samples", (int*)&g_ReSTIRDI_NumLocalLightReGIRRISSamples, 0, 32);
+
+            // Keep numPrimaryLocalLightSamples in sync with the active mode
+            switch (g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode)
+            {
+            case ReSTIRDI_LocalLightSamplingMode::Uniform:
+                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightUniformSamples;
+                break;
+            case ReSTIRDI_LocalLightSamplingMode::Power_RIS:
+                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightPowerRISSamples;
+                break;
+            case ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS:
+                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightReGIRRISSamples;
+                break;
+            default: break;
+            }
+
+            ImGui::TreePop();
+        }
+
+        ImGui::SliderInt("Initial BRDF Samples",
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples, 0, 8);
+        ImGui::SliderInt("Initial Infinite Light Samples",
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples, 0, 32);
+        ImGui::SliderInt("Initial Environment Samples",
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryEnvironmentSamples, 0, 32);
+
+        bool enableInitVis = g_ReSTIRDI_InitialSamplingParams.enableInitialVisibility != 0;
+        if (ImGui::Checkbox("Enable Initial Visibility", &enableInitVis))
+            g_ReSTIRDI_InitialSamplingParams.enableInitialVisibility = enableInitVis ? 1u : 0u;
+
+        ImGui::SliderFloat("BRDF Sample Cutoff",
+            &g_ReSTIRDI_InitialSamplingParams.brdfCutoff, 0.0f, 0.1f);
+
+        ImGui::TreePop();
+    }
+
+    // ---- Temporal Resampling --------------------------------------------------
+    const bool hasTemporalMode =
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::Temporal ||
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal;
+    if (hasTemporalMode && ImGui::TreeNode("Temporal Resampling"))
+    {
+        bool enablePermutation = g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling != 0;
+        if (ImGui::Checkbox("Enable Permutation Sampling", &enablePermutation))
+            g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = enablePermutation ? 1u : 0u;
+
+        ImGui::Combo("Temporal Bias Correction",
+            (int*)&g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection,
+            "Off\0Basic\0Pairwise\0Ray Traced\0");
+
+        if (g_ReSTIRDI_ShowAdvancedSettings)
+        {
+            ImGui::SliderFloat("Temporal Depth Threshold",
+                &g_ReSTIRDI_TemporalResamplingParams.temporalDepthThreshold, 0.0f, 1.0f);
+            ImGui::SliderFloat("Temporal Normal Threshold",
+                &g_ReSTIRDI_TemporalResamplingParams.temporalNormalThreshold, 0.0f, 1.0f);
+            ImGui::SliderFloat("Permutation Sampling Threshold",
+                &g_ReSTIRDI_TemporalResamplingParams.permutationSamplingThreshold, 0.8f, 1.0f);
+        }
+
+        ImGui::SliderInt("Max History Length",
+            (int*)&g_ReSTIRDI_TemporalResamplingParams.maxHistoryLength, 1, 100);
+
+        bool boilingEnabled = g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter != 0;
+        if (ImGui::Checkbox("##enableBoilingFilter", &boilingEnabled))
+            g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = boilingEnabled ? 1u : 0u;
+        ImGui::SameLine();
+        ImGui::PushItemWidth(90.f);
+        ImGui::SliderFloat("Boiling Filter",
+            &g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength, 0.0f, 1.0f);
+        ImGui::PopItemWidth();
+
+        ImGui::TreePop();
+    }
+
+    // ---- Spatial Resampling ---------------------------------------------------
+    const bool hasSpatialMode =
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::Spatial ||
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
+        g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal;
+    if (hasSpatialMode && ImGui::TreeNode("Spatial Resampling"))
+    {
+        if (g_ReSTIRDI_ResamplingMode != rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
+        {
+            ImGui::Combo("Spatial Bias Correction",
+                (int*)&g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection,
+                "Off\0Basic\0Pairwise\0Ray Traced\0");
+        }
+
+        ImGui::SliderInt("Spatial Samples",
+            (int*)&g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples, 1, 32);
+
+        if (g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
+            g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
+        {
+            ImGui::SliderInt("Disocclusion Boost Samples",
+                (int*)&g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples, 1, 32);
+        }
+
+        ImGui::SliderFloat("Spatial Sampling Radius",
+            &g_ReSTIRDI_SpatialResamplingParams.spatialSamplingRadius, 1.0f, 32.0f);
+
+        if (g_ReSTIRDI_ShowAdvancedSettings &&
+            g_ReSTIRDI_ResamplingMode != rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
+        {
+            ImGui::SliderFloat("Spatial Depth Threshold",
+                &g_ReSTIRDI_SpatialResamplingParams.spatialDepthThreshold, 0.0f, 1.0f);
+            ImGui::SliderFloat("Spatial Normal Threshold",
+                &g_ReSTIRDI_SpatialResamplingParams.spatialNormalThreshold, 0.0f, 1.0f);
+            bool discountNaive = g_ReSTIRDI_SpatialResamplingParams.discountNaiveSamples != 0;
+            if (ImGui::Checkbox("Discount Naive Samples", &discountNaive))
+                g_ReSTIRDI_SpatialResamplingParams.discountNaiveSamples = discountNaive ? 1u : 0u;
+        }
+
+        ImGui::TreePop();
+    }
+
+    // ---- Final Shading --------------------------------------------------------
+    if (ImGui::TreeNode("Final Shading"))
+    {
+        bool enableFinalVis = g_ReSTIRDI_ShadingParams.enableFinalVisibility != 0;
+        if (ImGui::Checkbox("Enable Final Visibility", &enableFinalVis))
+            g_ReSTIRDI_ShadingParams.enableFinalVisibility = enableFinalVis ? 1u : 0u;
+
+        bool discardInvisible = g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples != 0;
+        if (ImGui::Checkbox("Discard Invisible Samples", &discardInvisible))
+            g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = discardInvisible ? 1u : 0u;
+
+        bool reuseFinalVis = g_ReSTIRDI_ShadingParams.reuseFinalVisibility != 0;
+        if (ImGui::Checkbox("Reuse Final Visibility", &reuseFinalVis))
+            g_ReSTIRDI_ShadingParams.reuseFinalVisibility = reuseFinalVis ? 1u : 0u;
+
+        if (reuseFinalVis && g_ReSTIRDI_ShowAdvancedSettings)
+        {
+            ImGui::SliderFloat("Final Visibility Max Distance",
+                &g_ReSTIRDI_ShadingParams.finalVisibilityMaxDistance, 0.0f, 32.0f);
+            ImGui::SliderInt("Final Visibility Max Age",
+                (int*)&g_ReSTIRDI_ShadingParams.finalVisibilityMaxAge, 0, 16);
+        }
+
+        ImGui::TreePop();
+    }
+
+    ImGui::Unindent();
+}
 
 class RTXDIRenderer : public IRenderer
 {
@@ -100,7 +445,7 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        m_CheckerboardEnabled = renderer->m_ReSTIRDI_EnableCheckerboard;
+        m_CheckerboardEnabled = g_ReSTIRDI_EnableCheckerboard;
         const rtxdi::CheckerboardMode newMode = m_CheckerboardEnabled
             ? rtxdi::CheckerboardMode::Black
             : rtxdi::CheckerboardMode::Off;
@@ -118,6 +463,19 @@ public:
 
     void Initialize() override
     {
+        // Initialize ReSTIR DI parameter structs to library defaults
+        g_ReSTIRDI_InitialSamplingParams = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
+        g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
+        g_ReSTIRDI_SpatialResamplingParams = rtxdi::GetDefaultReSTIRDISpatialResamplingParams();
+        g_ReSTIRDI_ShadingParams = rtxdi::GetDefaultReSTIRDIShadingParams();
+
+        // Sync per-mode sample counts with initial sampling params default
+        g_ReSTIRDI_NumLocalLightUniformSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
+
+        ApplyReSTIRDIPreset(g_ReSTIRDI_CurrentPreset);
+
         CreateRTXDIContext();
     }
 
@@ -162,7 +520,7 @@ public:
         // CheckerboardSamplingMode is a static parameter that changes reservoir
         // buffer layout.  (The reservoir buffer is transient and will be
         // automatically resized in the same Setup() call.)
-        if (renderer->m_ReSTIRDI_EnableCheckerboard != m_CheckerboardEnabled)
+        if (g_ReSTIRDI_EnableCheckerboard != m_CheckerboardEnabled)
         {
             CreateRTXDIContext();
         }
@@ -341,26 +699,12 @@ public:
         // Advance the frame index so the context produces fresh buffer indices
         m_Context->SetFrameIndex(renderer->m_FrameNumber);
 
-        // Apply app-level spatial sample count
-        {
-            ReSTIRDI_SpatialResamplingParameters spatial = m_Context->GetSpatialResamplingParameters();
-            spatial.numSpatialSamples = static_cast<uint32_t>(renderer->m_ReSTIRDI_SpatialSamples);
-            m_Context->SetSpatialResamplingParameters(spatial);
-        }
-
-        // Choose resampling mode
-        {
-            rtxdi::ReSTIRDI_ResamplingMode mode = rtxdi::ReSTIRDI_ResamplingMode::None;
-            const bool wantTemporal = renderer->m_ReSTIRDI_EnableTemporal;
-            const bool wantSpatial  = renderer->m_ReSTIRDI_EnableSpatial;
-            if (wantTemporal && wantSpatial)
-                mode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
-            else if (wantTemporal)
-                mode = rtxdi::ReSTIRDI_ResamplingMode::Temporal;
-            else if (wantSpatial)
-                mode = rtxdi::ReSTIRDI_ResamplingMode::Spatial;
-            m_Context->SetResamplingMode(mode);
-        }
+        // Apply all ReSTIR DI parameters from renderer settings to the context
+        m_Context->SetResamplingMode(g_ReSTIRDI_ResamplingMode);
+        m_Context->SetInitialSamplingParameters(g_ReSTIRDI_InitialSamplingParams);
+        m_Context->SetTemporalResamplingParameters(g_ReSTIRDI_TemporalResamplingParams);
+        m_Context->SetSpatialResamplingParameters(g_ReSTIRDI_SpatialResamplingParams);
+        m_Context->SetShadingParameters(g_ReSTIRDI_ShadingParams);
 
         // ------------------------------------------------------------------
         // Build RTXDIConstants from context accessors
@@ -602,7 +946,10 @@ public:
         // ------------------------------------------------------------------
         // Temporal Resampling (conditional)
         // ------------------------------------------------------------------
-        if (renderer->m_ReSTIRDI_EnableTemporal)
+        const bool doTemporal = (g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::Temporal ||
+                                  g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
+                                  g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal);
+        if (doTemporal)
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
@@ -620,7 +967,10 @@ public:
         // ------------------------------------------------------------------
         // Spatial Resampling (conditional)
         // ------------------------------------------------------------------
-        if (renderer->m_ReSTIRDI_EnableSpatial)
+        const bool doSpatial = (g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::Spatial ||
+                                 g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
+                                 g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal);
+        if (doSpatial)
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
