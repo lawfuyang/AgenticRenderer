@@ -49,6 +49,7 @@ external/sdl3
 external/cgltf
 external/dxc
 external/agilitysdk
+external/NRD
 Debug/
 Release/
 RelWithDebInfo/

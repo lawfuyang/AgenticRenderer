@@ -124,6 +124,14 @@ set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX12 ON CACHE BOOL "" FORCE)
 
+# ----------------------------------------------------------------------------
+# NVIDIA REAL-TIME DENOISERS (NRD)
+# ----------------------------------------------------------------------------
+set(NRD_VERSION "v4.17.1")
+set(NRD_URL "https://github.com/NVIDIA-RTX/NRD/archive/refs/tags/${NRD_VERSION}.zip")
+download_library("NRD" "${NRD_VERSION}" "${NRD_URL}" "NRD-*")
+set(NRD_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/NRD")
+
 add_subdirectory(external/nvrhi)
 add_subdirectory(external/meshoptimizer)
 add_subdirectory(external/microprofile)
