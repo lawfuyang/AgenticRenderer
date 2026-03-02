@@ -441,8 +441,9 @@ GBufferOut GBuffer_PSMain(VSOut input)
         float4 refractClipPos = MatrixMultiply(float4(refractedRayExit, 1.0), g_PerFrame.m_View.m_MatWorldToClipNoOffset);
         float2 refractUV = (refractClipPos.xy / refractClipPos.w) * float2(0.5, -0.5) + 0.5;
 
-        // Sample background with roughness-based LOD
-        float lod = log2(g_PerFrame.m_OpaqueColorDimensions.x) * roughness * clamp(mat.m_IOR * 2.0 - 2.0, 0.0, 1.0);
+        // Sample background with fake roughness-based LOD
+        const float kFixedTranslucentRoughness = 0.1f;
+        float lod = log2(g_PerFrame.m_OpaqueColorDimensions.x) * kFixedTranslucentRoughness * clamp(mat.m_IOR * 2.0 - 2.0, 0.0, 1.0);
         SamplerState clampSam = SamplerDescriptorHeap[NonUniformResourceIndex(SAMPLER_ANISOTROPIC_CLAMP_INDEX)];
         float3 refractedColor = g_OpaqueColor.SampleLevel(clampSam, refractUV, lod).rgb;
 
