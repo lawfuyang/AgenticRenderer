@@ -315,8 +315,6 @@ add_custom_target(build_shaders
             --include "${ML_SRC_DIR}"
             --binaryBlob
             -D NRD_INTERNAL
-            -D NRD_NORMAL_ENCODING=2
-            -D NRD_ROUGHNESS_ENCODING=1
 
     # DXIL output for D3D12 for NRD
     COMMAND ${SHADERMAKE_PATH_GENEX}
@@ -333,8 +331,6 @@ add_custom_target(build_shaders
             --include "${NRD_SRC_DIR}/Shaders"
             --include "${ML_SRC_DIR}"
             -D NRD_INTERNAL
-            -D NRD_NORMAL_ENCODING=2
-            -D NRD_ROUGHNESS_ENCODING=1
 
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Compiling HLSL shaders to SPIR-V (Vulkan) and DXIL (D3D12) via ShaderMake"
