@@ -484,7 +484,7 @@ public:
 
         CreateRTXDIContext();
 
-        m_DenoiserHelper = std::make_unique<DenoiserHelper>(nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR);
+        m_DenoiserHelper = std::make_unique<DenoiserHelper>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR);
         m_DenoiserHelper->Initialize();
 
         // default settings: follow RTXDI sample
