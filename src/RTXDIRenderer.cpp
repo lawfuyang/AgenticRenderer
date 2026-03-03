@@ -24,8 +24,8 @@
 #include <imgui.h>
 
 RGTextureHandle g_RG_RTXDIDIOutput;
-RGTextureHandle g_RG_RTXDIDiffuseOutput;  // RELAX: packed denoised diffuse (IN/OUT_DIFF_RADIANCE_HITDIST)
-RGTextureHandle g_RG_RTXDISpecularOutput; // RELAX: packed denoised specular (IN/OUT_SPEC_RADIANCE_HITDIST)
+RGTextureHandle g_RG_RTXDIDiffuseOutput;  // RELAX: denoised diffuse output (OUT_DIFF_RADIANCE_HITDIST)
+RGTextureHandle g_RG_RTXDISpecularOutput; // RELAX: denoised specular output (OUT_SPEC_RADIANCE_HITDIST)
 RGTextureHandle g_RG_RTXDILinearDepth;    // RELAX: linear view-space depth (IN_VIEWZ)
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
@@ -167,8 +167,8 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
 
         // my own settings
     case ReSTIRDIQualityPreset::Custom:
-        g_ReSTIRDI_EnableCheckerboard = true;
-        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
+        g_ReSTIRDI_EnableCheckerboard = false;
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::None;
         g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
@@ -180,7 +180,7 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
         g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
         g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
+        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
         g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
@@ -432,6 +432,9 @@ public:
     RGTextureHandle m_GbufferNormalsHistory;
     RGTextureHandle m_GBufferORMHistory;
 
+    RGTextureHandle m_RG_RTXDIRawDiffuseOutput;  // IN_DIFF_RADIANCE_HITDIST
+    RGTextureHandle m_RG_RTXDIRawSpecularOutput; // IN_SPEC_RADIANCE_HITDIST
+
     // Track if history textures are newly created in current frame
     bool m_AlbedoHistoryIsNew = false;
     bool m_ORMHistoryIsNew    = false;
@@ -560,6 +563,29 @@ public:
         // ------------------------------------------------------------------
         if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
+            // Raw RELAX inputs from RTXDI front-end packing.
+            {
+                RGTextureDesc desc;
+                desc.m_NvrhiDesc.width  = width;
+                desc.m_NvrhiDesc.height = height;
+                desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
+                desc.m_NvrhiDesc.isUAV  = true;
+                desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+                desc.m_NvrhiDesc.debugName    = "RTXDIRawDiffuseOutput";
+                renderGraph.DeclareTexture(desc, m_RG_RTXDIRawDiffuseOutput);
+            }
+            {
+                RGTextureDesc desc;
+                desc.m_NvrhiDesc.width  = width;
+                desc.m_NvrhiDesc.height = height;
+                desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
+                desc.m_NvrhiDesc.isUAV  = true;
+                desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+                desc.m_NvrhiDesc.debugName    = "RTXDIRawSpecularOutput";
+                renderGraph.DeclareTexture(desc, m_RG_RTXDIRawSpecularOutput);
+            }
+
+            // Denoised RELAX outputs consumed by DeferredRenderer.
             {
                 RGTextureDesc desc;
                 desc.m_NvrhiDesc.width  = width;
@@ -1059,14 +1085,16 @@ public:
         if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
             // ---- Denoising path: split BRDF, pack diffuse/specular, then RELAX ----
-            nvrhi::TextureHandle diffuseOutputTex  = renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Write);
-            nvrhi::TextureHandle specularOutputTex = renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle rawDiffuseOutputTex  = renderGraph.GetTexture(m_RG_RTXDIRawDiffuseOutput,  RGResourceAccessMode::Write);
+            nvrhi::TextureHandle rawSpecularOutputTex = renderGraph.GetTexture(m_RG_RTXDIRawSpecularOutput, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle denoisedDiffuseOutputTex  = renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Write);
+            nvrhi::TextureHandle denoisedSpecularOutputTex = renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Write);
             nvrhi::TextureHandle linearDepthTex    = renderGraph.GetTexture(g_RG_RTXDILinearDepth,    RGResourceAccessMode::Write);
 
             // Extend the common binding set with the denoising UAVs (u5, u6, u7).
             nvrhi::BindingSetDesc denoiseBset = bset;
-            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(5, diffuseOutputTex));
-            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(6, specularOutputTex));
+            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(5, rawDiffuseOutputTex));
+            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(6, rawSpecularOutputTex));
             denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(7, linearDepthTex));
 
             // ShadeSamples (denoising permutation): writes packed diffuse/specular to u5/u6.
@@ -1100,7 +1128,8 @@ public:
             }
 
             // Execute RELAX denoiser.
-            // IN/OUT textures are the same (in-place denoising): RELAX overwrites with denoised result.
+            // Use separate textures for IN_* and OUT_* to avoid SRV+UAV aliasing
+            // of the same subresource in a single dispatch chain.
             {
                 DenoisePassDesc denoiseDesc;
                 const uint32_t  kDiff = static_cast<uint32_t>(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST);
@@ -1110,12 +1139,12 @@ public:
                 const uint32_t  kOutDiff = static_cast<uint32_t>(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST);
                 const uint32_t  kOutSpec = static_cast<uint32_t>(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST);
 
-                denoiseDesc.resources[kDiff]    = diffuseOutputTex;
-                denoiseDesc.resources[kSpec]    = specularOutputTex;
+                denoiseDesc.resources[kDiff]    = rawDiffuseOutputTex;
+                denoiseDesc.resources[kSpec]    = rawSpecularOutputTex;
                 denoiseDesc.resources[kViewZ]   = linearDepthTex;
                 denoiseDesc.resources[kMV]      = motionTex;
-                denoiseDesc.resources[kOutDiff] = diffuseOutputTex;
-                denoiseDesc.resources[kOutSpec] = specularOutputTex;
+                denoiseDesc.resources[kOutDiff] = denoisedDiffuseOutputTex;
+                denoiseDesc.resources[kOutSpec] = denoisedSpecularOutputTex;
 
                 FillNRDCommonSettingsHelper(denoiseDesc.commonSettings);
 
