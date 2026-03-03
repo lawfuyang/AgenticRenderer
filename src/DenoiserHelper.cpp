@@ -559,6 +559,76 @@ nvrhi::TextureHandle DenoiserHelper::ResolveResource(nrd::ResourceType type,
 void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
 {
     Renderer* renderer = Renderer::GetInstance();
-    const PlanarViewConstants& view = renderer->m_Scene.m_View;
+    const PlanarViewConstants& view     = renderer->m_Scene.m_View;
     const PlanarViewConstants& prevView = renderer->m_Scene.m_ViewPrev;
+
+    const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
+    const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+
+    // -------------------------------------------------------------------------
+    // Matrices
+    // -------------------------------------------------------------------------
+    // NRD expects column-major matrices with column vectors (v_out = M * v_in).
+    // Our matrices are row-major with row vectors (v_out = v_in * M_DX).
+    // Copying row-major bytes into NRD's column-major slot is equivalent to
+    // passing M_DX^T, which is exactly what NRD needs to reproduce the same
+    // transformation — the row/column duality cancels out.
+    //
+    // Use non-jittered variants (_NoOffset) as required by NRD.
+    static_assert(sizeof(settings.viewToClipMatrix) == sizeof(view.m_MatViewToClipNoOffset), "Matrix size mismatch");
+    memcpy(settings.viewToClipMatrix,     &view.m_MatViewToClipNoOffset,     sizeof(settings.viewToClipMatrix));
+    memcpy(settings.viewToClipMatrixPrev, &prevView.m_MatViewToClipNoOffset, sizeof(settings.viewToClipMatrixPrev));
+    memcpy(settings.worldToViewMatrix,    &view.m_MatWorldToView,            sizeof(settings.worldToViewMatrix));
+    memcpy(settings.worldToViewMatrixPrev,&prevView.m_MatWorldToView,        sizeof(settings.worldToViewMatrixPrev));
+
+    // -------------------------------------------------------------------------
+    // Viewport / resource size
+    // -------------------------------------------------------------------------
+    settings.resourceSize[0]     = static_cast<uint16_t>(width);
+    settings.resourceSize[1]     = static_cast<uint16_t>(height);
+    settings.resourceSizePrev[0] = static_cast<uint16_t>(width);
+    settings.resourceSizePrev[1] = static_cast<uint16_t>(height);
+    settings.rectSize[0]         = static_cast<uint16_t>(width);
+    settings.rectSize[1]         = static_cast<uint16_t>(height);
+    settings.rectSizePrev[0]     = static_cast<uint16_t>(width);
+    settings.rectSizePrev[1]     = static_cast<uint16_t>(height);
+
+    // -------------------------------------------------------------------------
+    // Motion vector scale
+    // -------------------------------------------------------------------------
+    // Our GBuffer motion vectors are in pixel space (Δx, Δy).
+    // NRD expects: pixelUvPrev = pixelUv + mv.xy, so scale pixels → UV.
+    settings.motionVectorScale[0] = 1.0f / static_cast<float>(width);
+    settings.motionVectorScale[1] = 1.0f / static_cast<float>(height);
+    settings.motionVectorScale[2] = 0.0f; // Z component not used in screen-space mode
+
+    settings.isMotionVectorInWorldSpace = false;
+
+    // -------------------------------------------------------------------------
+    // Camera jitter (TAA sub-pixel offset in [-0.5, 0.5] range)
+    // -------------------------------------------------------------------------
+    // m_PixelOffset is the sub-pixel jitter in pixel units; convert to UV space.
+    settings.cameraJitter[0]     = view.m_PixelOffset.x / static_cast<float>(width);
+    settings.cameraJitter[1]     = view.m_PixelOffset.y / static_cast<float>(height);
+    settings.cameraJitterPrev[0] = prevView.m_PixelOffset.x / static_cast<float>(width);
+    settings.cameraJitterPrev[1] = prevView.m_PixelOffset.y / static_cast<float>(height);
+
+    // -------------------------------------------------------------------------
+    // Frame index and accumulation mode
+    // -------------------------------------------------------------------------
+    settings.frameIndex      = renderer->m_FrameNumber;
+    settings.accumulationMode = nrd::AccumulationMode::CONTINUE;
+
+    // -------------------------------------------------------------------------
+    // Optional inputs — disabled for now
+    // -------------------------------------------------------------------------
+    settings.isHistoryConfidenceAvailable        = false;
+    settings.isDisocclusionThresholdMixAvailable = false;
+    settings.isBaseColorMetalnessAvailable       = false;
+
+    // -------------------------------------------------------------------------
+    // Denoising range — keep NRD's generous default but honour our sentinel value.
+    // Sky pixels are written as 1e6 in GenerateViewZ so they fall outside this range.
+    // -------------------------------------------------------------------------
+    settings.denoisingRange = 500000.0f;
 }

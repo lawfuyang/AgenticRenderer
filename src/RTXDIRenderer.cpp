@@ -24,6 +24,9 @@
 #include <imgui.h>
 
 RGTextureHandle g_RG_RTXDIDIOutput;
+RGTextureHandle g_RG_RTXDIDiffuseOutput;  // RELAX: packed denoised diffuse (IN/OUT_DIFF_RADIANCE_HITDIST)
+RGTextureHandle g_RG_RTXDISpecularOutput; // RELAX: packed denoised specular (IN/OUT_SPEC_RADIANCE_HITDIST)
+RGTextureHandle g_RG_RTXDILinearDepth;    // RELAX: linear view-space depth (IN_VIEWZ)
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
 extern RGTextureHandle g_RG_GBufferNormals;
@@ -217,6 +220,13 @@ void RTXDIIMGUISettings()
         "Temporal + Spatial\0"
         "Fused Spatiotemporal\0");
     ImGui::PopItemWidth();
+
+    // ---- RELAX Denoising toggle -------------------------------------------
+    ImGui::Separator();
+    ImGui::Checkbox("Enable RELAX Denoising (NRD)", &renderer->m_EnableReSTIRDIRelaxDenoising);
+    if (renderer->m_EnableReSTIRDIRelaxDenoising)
+        ImGui::TextDisabled("  Diffuse + specular denoised separately via RELAX D+S.");
+    ImGui::Separator();
 
     ImGui::Checkbox("Show Advanced Settings", &g_ReSTIRDI_ShowAdvancedSettings);
     ImGui::Separator();
@@ -546,9 +556,46 @@ public:
         const uint32_t totalRISEntries = k_RISTileSize * k_RISTileCount; // 131 072
 
         // ------------------------------------------------------------------
-        // Declare / retrieve the DI output texture (persistent across frames)
+        // RELAX denoising output textures (only when denoising is enabled)
         // ------------------------------------------------------------------
+        if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
+            {
+                RGTextureDesc desc;
+                desc.m_NvrhiDesc.width  = width;
+                desc.m_NvrhiDesc.height = height;
+                desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
+                desc.m_NvrhiDesc.isUAV  = true;
+                desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+                desc.m_NvrhiDesc.debugName    = "RTXDIDiffuseOutput";
+                renderGraph.DeclareTexture(desc, g_RG_RTXDIDiffuseOutput);
+            }
+            {
+                RGTextureDesc desc;
+                desc.m_NvrhiDesc.width  = width;
+                desc.m_NvrhiDesc.height = height;
+                desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
+                desc.m_NvrhiDesc.isUAV  = true;
+                desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+                desc.m_NvrhiDesc.debugName    = "RTXDISpecularOutput";
+                renderGraph.DeclareTexture(desc, g_RG_RTXDISpecularOutput);
+            }
+            {
+                RGTextureDesc desc;
+                desc.m_NvrhiDesc.width  = width;
+                desc.m_NvrhiDesc.height = height;
+                desc.m_NvrhiDesc.format = nvrhi::Format::R32_FLOAT;
+                desc.m_NvrhiDesc.isUAV  = true;
+                desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+                desc.m_NvrhiDesc.debugName    = "RTXDILinearDepth";
+                renderGraph.DeclareTexture(desc, g_RG_RTXDILinearDepth);
+            }
+        }
+        else
+        {
+            // ------------------------------------------------------------------
+            // Declare / retrieve the DI output texture
+            // ------------------------------------------------------------------
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width = width;
             desc.m_NvrhiDesc.height = height;
@@ -809,21 +856,21 @@ public:
         commandList->writeBuffer(rtxdiCB, &cb, sizeof(cb));
 
         // Retrieve render graph resources
-        nvrhi::TextureHandle depthTex   = renderGraph.GetTexture(g_RG_DepthTexture,          RGResourceAccessMode::Read);
-        nvrhi::TextureHandle albedoTex  = renderGraph.GetTexture(g_RG_GBufferAlbedo,         RGResourceAccessMode::Read);
-        nvrhi::TextureHandle normalsTex = renderGraph.GetTexture(g_RG_GBufferNormals,        RGResourceAccessMode::Read);
-        nvrhi::TextureHandle ormTex     = renderGraph.GetTexture(g_RG_GBufferORM,            RGResourceAccessMode::Read);
-        nvrhi::TextureHandle motionTex  = renderGraph.GetTexture(g_RG_GBufferMotionVectors,  RGResourceAccessMode::Read);
-        nvrhi::TextureHandle diOutput   = renderGraph.GetTexture(g_RG_RTXDIDIOutput,         RGResourceAccessMode::Write);
-        nvrhi::TextureHandle albedoHistoryTex  = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle ormHistoryTex     = renderGraph.GetTexture(m_GBufferORMHistory,    RGResourceAccessMode::Write);
-        nvrhi::TextureHandle depthHistoryTex   = renderGraph.GetTexture(m_DepthHistory,         RGResourceAccessMode::Write);
+        nvrhi::TextureHandle depthTex = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle albedoTex = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle normalsTex = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle ormTex = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle motionTex = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle diOutput = !renderer->m_EnableReSTIRDIRelaxDenoising ? renderGraph.GetTexture(g_RG_RTXDIDIOutput, RGResourceAccessMode::Write) : CommonResources::GetInstance().DummyUAVTexture;
+        nvrhi::TextureHandle albedoHistoryTex = renderGraph.GetTexture(m_GBufferAlbedoHistory, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle ormHistoryTex = renderGraph.GetTexture(m_GBufferORMHistory, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle depthHistoryTex = renderGraph.GetTexture(m_DepthHistory, RGResourceAccessMode::Write);
         nvrhi::TextureHandle normalsHistoryTex = renderGraph.GetTexture(m_GbufferNormalsHistory, RGResourceAccessMode::Write);
         nvrhi::BufferHandle neighborOffsetsBuffer = renderGraph.GetBuffer(m_RG_NeighborOffsetsBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle risBuffer = renderGraph.GetBuffer(m_RG_RISBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle lightReservoirBuffer = renderGraph.GetBuffer(m_RG_LightReservoirBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle risLightDataBuffer = renderGraph.GetBuffer(m_RG_RISLightDataBuffer, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle localLightPDFTex  = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle localLightPDFTex = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
 
         // ------------------------------------------------------------------
         // Initialize history textures on first frame
@@ -1009,7 +1056,76 @@ public:
         // ------------------------------------------------------------------
         // Shade Samples → write to DI output
         // ------------------------------------------------------------------
+        if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
+            // ---- Denoising path: split BRDF, pack diffuse/specular, then RELAX ----
+            nvrhi::TextureHandle diffuseOutputTex  = renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Write);
+            nvrhi::TextureHandle specularOutputTex = renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle linearDepthTex    = renderGraph.GetTexture(g_RG_RTXDILinearDepth,    RGResourceAccessMode::Write);
+
+            // Extend the common binding set with the denoising UAVs (u5, u6, u7).
+            nvrhi::BindingSetDesc denoiseBset = bset;
+            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(5, diffuseOutputTex));
+            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(6, specularOutputTex));
+            denoiseBset.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(7, linearDepthTex));
+
+            // ShadeSamples (denoising permutation): writes packed diffuse/specular to u5/u6.
+            {
+                Renderer::RenderPassParams params{
+                    .commandList  = commandList,
+                    .shaderName   = "RTXDI_Master_RTXDI_ShadeSamples_Main_RELAX_DENOISING",
+                    .bindingSetDesc = denoiseBset,
+                    .dispatchParams = {
+                        .x = DivideAndRoundUp(dispatchWidth, 8u),
+                        .y = DivideAndRoundUp(height,        8u),
+                        .z = 1u
+                    }
+                };
+                renderer->AddComputePass(params);
+            }
+
+            // GenerateViewZ: full-screen pass that writes linear view-space depth to u7.
+            {
+                Renderer::RenderPassParams params{
+                    .commandList  = commandList,
+                    .shaderName   = "RTXDI_Master_RTXDI_GenerateViewZ_Main_RELAX_DENOISING",
+                    .bindingSetDesc = denoiseBset,
+                    .dispatchParams = {
+                        .x = DivideAndRoundUp(width,  8u),
+                        .y = DivideAndRoundUp(height, 8u),
+                        .z = 1u
+                    }
+                };
+                renderer->AddComputePass(params);
+            }
+
+            // Execute RELAX denoiser.
+            // IN/OUT textures are the same (in-place denoising): RELAX overwrites with denoised result.
+            {
+                DenoisePassDesc denoiseDesc;
+                const uint32_t  kDiff = static_cast<uint32_t>(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST);
+                const uint32_t  kSpec = static_cast<uint32_t>(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST);
+                const uint32_t  kViewZ = static_cast<uint32_t>(nrd::ResourceType::IN_VIEWZ);
+                const uint32_t  kMV   = static_cast<uint32_t>(nrd::ResourceType::IN_MV);
+                const uint32_t  kOutDiff = static_cast<uint32_t>(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST);
+                const uint32_t  kOutSpec = static_cast<uint32_t>(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST);
+
+                denoiseDesc.resources[kDiff]    = diffuseOutputTex;
+                denoiseDesc.resources[kSpec]    = specularOutputTex;
+                denoiseDesc.resources[kViewZ]   = renderGraph.GetTexture(g_RG_RTXDILinearDepth,       RGResourceAccessMode::Read);
+                denoiseDesc.resources[kMV]      = renderGraph.GetTexture(g_RG_GBufferMotionVectors,   RGResourceAccessMode::Read);
+                denoiseDesc.resources[kOutDiff] = diffuseOutputTex;
+                denoiseDesc.resources[kOutSpec] = specularOutputTex;
+
+                FillNRDCommonSettingsHelper(denoiseDesc.commonSettings);
+                denoiseDesc.denoiserSettings = &m_NRDRelaxSettings;
+
+                m_DenoiserHelper->Execute(commandList, renderGraph, denoiseDesc);
+            }
+        }
+        else
+        {
+            // ---- Non-denoising path: combined radiance to g_RTXDIDIOutput ----
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDI_Master_RTXDI_ShadeSamples_Main",

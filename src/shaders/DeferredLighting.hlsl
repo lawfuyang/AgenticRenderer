@@ -24,6 +24,8 @@ StructuredBuffer<uint> g_Indices : register(t14);
 StructuredBuffer<GPULight> g_Lights : register(t6);
 Texture3D g_SkyVisibility : register(t15);
 Texture2D<float4> g_RTXDIDIOutput : register(t8); // ReSTIR DI radiance output (black when disabled)
+                                                  // In denoised mode: packed denoised diffuse (RELAX output)
+Texture2D<float4> g_RTXDISpecularOutput : register(t9); // In denoised mode: packed denoised specular (RELAX output)
 
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
@@ -89,7 +91,19 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     {
         if (g_Deferred.m_UseReSTIRDI != 0)
         {
-            color = g_RTXDIDIOutput.Load(uint3(uvInt, 0)).rgb;
+            if (g_Deferred.m_UseReSTIRDIDenoised != 0)
+            {
+                // Denoised path: t8 = RELAX-denoised diffuse, t9 = RELAX-denoised specular.
+                // RELAX_BackEnd_UnpackRadiance is a no-op (returns color as-is), so just take .rgb.
+                float3 denoisedDiffuse  = g_RTXDIDIOutput.Load(uint3(uvInt, 0)).rgb;
+                float3 denoisedSpecular = g_RTXDISpecularOutput.Load(uint3(uvInt, 0)).rgb;
+                color = denoisedDiffuse + denoisedSpecular;
+            }
+            else
+            {
+                // Non-denoised path: t8 = combined ReSTIR DI radiance.
+                color = g_RTXDIDIOutput.Load(uint3(uvInt, 0)).rgb;
+            }
         }
         else
         {

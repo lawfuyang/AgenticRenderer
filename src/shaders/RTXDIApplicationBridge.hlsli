@@ -70,6 +70,16 @@ RWTexture2D<float4>                             g_RTXDIDIOutput             : re
 //   slot 2 (uint4): direction.xyz (f32), packHalf2x16(spotInnerCos, spotOuterCos)
 RWStructuredBuffer<uint4>                       g_RTXDI_RISLightDataBuffer  : register(u3);
 
+// ---- RELAX denoising outputs (u5/u6/u7 — bound only when RTXDI_ENABLE_RELAX_DENOISING=1) ---------
+// u4 is reserved for g_PDFMip0 (BuildLocalLightPDF pass) so we start at u5.
+#if RTXDI_ENABLE_RELAX_DENOISING
+VK_IMAGE_FORMAT_UNKNOWN
+RWTexture2D<float4> g_RTXDIDiffuseOutput  : register(u5); // RELAX IN/OUT_DIFF_RADIANCE_HITDIST
+VK_IMAGE_FORMAT_UNKNOWN
+RWTexture2D<float4> g_RTXDISpecularOutput : register(u6); // RELAX IN/OUT_SPEC_RADIANCE_HITDIST
+RWTexture2D<float>  g_RTXDILinearDepth    : register(u7); // RELAX IN_VIEWZ (written by GenerateViewZ pass)
+#endif
+
 // Hook up the RTXDI SDK macro names to our resources
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER   g_RTXDI_NeighborOffsets
 #define RTXDI_RIS_BUFFER                g_RTXDI_RISBuffer
@@ -664,6 +674,31 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
     float3 diffuse  = kD * surface.material.diffuseAlbedo / PI;
 
     return (diffuse + specular) * NdotL;
+}
+
+// ---- Separated BRDF components for NRD denoising -----------------------------------------------
+// These mirror RAB_EvaluateBrdf but return only the diffuse or specular lobe, respectively.
+// Both include the NdotL cosine factor (matching RAB_EvaluateBrdf convention).
+
+float3 RAB_EvaluateBrdfDiffuseOnly(RAB_Surface surface, float3 L)
+{
+    float NdotL = max(0.0, dot(surface.normal, L));
+    float3 F0  = surface.material.specularF0;
+    float  kD  = 1.0 - Luminance(F0); // simplified metallic proxy (matches RAB_EvaluateBrdf)
+    return kD * surface.material.diffuseAlbedo / PI * NdotL;
+}
+
+float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
+{
+    float3 N  = surface.normal;
+    float3 H  = normalize(V + L);
+    float NdotL = max(0.0, dot(N, L));
+    float NdotV = max(0.0, dot(N, V));
+    float NdotH = max(0.0, dot(N, H));
+    float VdotH = max(0.0, dot(V, H));
+    float3 F0 = surface.material.specularF0;
+    float3 F  = F_Schlick(F0, VdotH);
+    return ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
 }
 
 // ============================================================================

@@ -26,6 +26,14 @@ RWTexture2D<float> g_PDFMip0 : register(u4);   // mip 0 of the PDF texture
 #include "Rtxdi/LightSampling/PresamplingFunctions.hlsli"
 
 // ============================================================================
+// SECTION 2C: NRD includes for RELAX denoising (only when permutation active)
+// ============================================================================
+#if RTXDI_ENABLE_RELAX_DENOISING
+#include "NRDConfig.hlsli"
+#include "NRD.hlsli"
+#endif
+
+// ============================================================================
 // SECTION 3: Helper functions shared across multiple passes
 // ============================================================================
 
@@ -366,6 +374,11 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         g_RTXDIConst.m_ShadingInputBufferIndex);
 
     float3 radiance = float3(0.0, 0.0, 0.0);
+#if RTXDI_ENABLE_RELAX_DENOISING
+    float3 diffuseRadiance  = float3(0.0, 0.0, 0.0);
+    float3 specularRadiance = float3(0.0, 0.0, 0.0);
+    float  hitDistance      = 1e6f;
+#endif
 
     if (RTXDI_IsValidDIReservoir(reservoir))
     {
@@ -395,21 +408,25 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
                 float3 V = RAB_GetSurfaceViewDirection(surface);
                 float3 L = lightSample.direction;
 
-                float3 brdf    = RAB_EvaluateBrdf(surface, L, V);
                 float  NdotL   = max(0.0, dot(RAB_GetSurfaceNormal(surface), L));
+                float  weight  = RTXDI_GetDIReservoirInvPdf(reservoir);
 
-                // BRDF already contains the NdotL factor; avoid double-counting
-                // as RAB_EvaluateBrdf returns brdf * NdotL.
-                // Reservoir weight (1/p_hat * W) accounts for the resampling.
-                float weight = RTXDI_GetDIReservoirInvPdf(reservoir);
-
-                // Guard against zero / degenerate pdf
                 if (weight > 0.0 && NdotL > 0.0)
                 {
-                    // The reservoir weight already encodes the target pdf normalisation.
-                    // radiance = Le * brdf_without_NdotL * NdotL * weight
-                    // RAB_EvaluateBrdf returns (diffuse + specular) * NdotL already, so:
-                    radiance = lightSample.radiance * brdf * weight;
+#if RTXDI_ENABLE_RELAX_DENOISING
+                    // Split BRDF into diffuse and specular so each can be denoised separately.
+                    float3 diffBrdf  = RAB_EvaluateBrdfDiffuseOnly(surface, L);
+                    float3 specBrdf  = RAB_EvaluateBrdfSpecularOnly(surface, L, V);
+                    diffuseRadiance  = lightSample.radiance * diffBrdf  * weight;
+                    specularRadiance = lightSample.radiance * specBrdf  * weight;
+                    // Finite hit distance for point/spot lights; large sentinel for directional.
+                    hitDistance      = (lightSample.distance < 1e9f) ? lightSample.distance : 1e6f;
+                    radiance         = diffuseRadiance + specularRadiance;
+#else
+                    // Combined BRDF — RAB_EvaluateBrdf already includes NdotL.
+                    float3 brdf = RAB_EvaluateBrdf(surface, L, V);
+                    radiance    = lightSample.radiance * brdf * weight;
+#endif
                 }
             }
         }
@@ -418,5 +435,56 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     // Clamp to prevent fireflies (very large single-sample contributions)
     radiance = min(radiance, float3(100.0, 100.0, 100.0));
 
+#if RTXDI_ENABLE_RELAX_DENOISING
+    diffuseRadiance  = min(diffuseRadiance,  float3(100.0, 100.0, 100.0));
+    specularRadiance = min(specularRadiance, float3(100.0, 100.0, 100.0));
+
+    // Pack for RELAX front-end.  hitDistance is in world units.
+    g_RTXDIDiffuseOutput[pixelPosition]  = RELAX_FrontEnd_PackRadianceAndHitDist(diffuseRadiance,  hitDistance, true);
+    g_RTXDISpecularOutput[pixelPosition] = RELAX_FrontEnd_PackRadianceAndHitDist(specularRadiance, hitDistance, true);
+#else
     g_RTXDIDIOutput[pixelPosition] = float4(radiance, 1.0);
+#endif
 }
+
+// ============================================================================
+// SECTION 10: RTXDIGenerateViewZ
+// Linear view-space depth (IN_VIEWZ) required by the NRD RELAX denoiser.
+// Runs full-screen — sky pixels get a large sentinel so NRD skips them.
+// Only compiled when RTXDI_ENABLE_RELAX_DENOISING=1.
+// ============================================================================
+#if RTXDI_ENABLE_RELAX_DENOISING
+[numthreads(8, 8, 1)]
+void RTXDI_GenerateViewZ_Main(uint2 GlobalIndex : SV_DispatchThreadID)
+{
+    uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(GlobalIndex >= viewportSize))
+        return;
+
+    float depth = g_Depth.Load(int3(GlobalIndex, 0));
+
+    float linearDepth;
+    if (depth == 0.0) // Reverse-Z: 0 == far plane (sky / background)
+    {
+        linearDepth = g_RTXDIConst.m_View.m_MatViewToClip._43; // large positive value from projection
+        // Fall back to a large sentinel the denoiser can safely ignore.
+        linearDepth = 1e6f;
+    }
+    else
+    {
+        float3 worldPos  = ReconstructWorldPos(GlobalIndex, depth, g_RTXDIConst.m_View);
+        float3 camPos    = float3(
+            g_RTXDIConst.m_View.m_MatViewToWorld._41,
+            g_RTXDIConst.m_View.m_MatViewToWorld._42,
+            g_RTXDIConst.m_View.m_MatViewToWorld._43);
+        float3 camForward = float3(
+            g_RTXDIConst.m_View.m_MatViewToWorld._31,
+            g_RTXDIConst.m_View.m_MatViewToWorld._32,
+            g_RTXDIConst.m_View.m_MatViewToWorld._33);
+        // Signed linear view-space Z (positive = in front of camera for LH).
+        linearDepth = dot(worldPos - camPos, camForward);
+    }
+
+    g_RTXDILinearDepth[GlobalIndex] = linearDepth;
+}
+#endif

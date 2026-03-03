@@ -334,8 +334,9 @@ struct DeferredLightingConstants
   uint32_t m_RenderingMode;
   //
   uint32_t m_RadianceMipCount;
-  uint32_t m_UseReSTIRDI;    // 1 = read g_RTXDIDIOutput instead of computing direct lighting
-  Vector2 pad0;
+  uint32_t m_UseReSTIRDI;         // 1 = read g_RTXDIDIOutput instead of computing direct lighting
+  uint32_t m_UseReSTIRDIDenoised; // 1 = t8=denoised diffuse (RELAX), t9=denoised specular; combine at back-end
+  uint32_t pad0;
 };
 
 struct PathTracerConstants
