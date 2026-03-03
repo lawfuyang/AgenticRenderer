@@ -613,6 +613,12 @@ void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
     settings.cameraJitterPrev[0] = prevView.m_PixelOffset.x / static_cast<float>(width);
     settings.cameraJitterPrev[1] = prevView.m_PixelOffset.y / static_cast<float>(height);
 
+    // TODO: remove this when we have TAA
+    settings.cameraJitter[0]     = 0.0f;
+    settings.cameraJitter[1]     = 0.0f;
+    settings.cameraJitterPrev[0] = 0.0f;
+    settings.cameraJitterPrev[1] = 0.0f;
+
     // -------------------------------------------------------------------------
     // Frame index and accumulation mode
     // -------------------------------------------------------------------------
@@ -622,7 +628,7 @@ void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
     // -------------------------------------------------------------------------
     // Optional inputs — disabled for now
     // -------------------------------------------------------------------------
-    settings.isHistoryConfidenceAvailable        = false;
+    settings.isHistoryConfidenceAvailable        = false; // TODO: add confidence input and enable
     settings.isDisocclusionThresholdMixAvailable = false;
     settings.isBaseColorMetalnessAvailable       = false;
 
