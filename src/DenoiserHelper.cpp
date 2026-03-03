@@ -587,18 +587,35 @@ void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
     // NRD expects: pixelUvPrev = pixelUv + mv.xy, so scale pixels → UV.
     settings.motionVectorScale[0] = 1.0f / static_cast<float>(width);
     settings.motionVectorScale[1] = 1.0f / static_cast<float>(height);
-    settings.motionVectorScale[2] = 0.0f; // Z component not used in screen-space mode
+    // Our motionVector.z stores (prevViewZ - curViewZ) in view-space units,
+    // so pass it through unscaled.
+    settings.motionVectorScale[2] = 1.0f;
 
     settings.isMotionVectorInWorldSpace = false;
 
     // -------------------------------------------------------------------------
     // Camera jitter (TAA sub-pixel offset in [-0.5, 0.5] range)
     // -------------------------------------------------------------------------
-    // m_PixelOffset is the sub-pixel jitter in pixel units; convert to UV space.
-    settings.cameraJitter[0]     = view.m_PixelOffset.x / static_cast<float>(width);
-    settings.cameraJitter[1]     = view.m_PixelOffset.y / static_cast<float>(height);
-    settings.cameraJitterPrev[0] = prevView.m_PixelOffset.x / static_cast<float>(width);
-    settings.cameraJitterPrev[1] = prevView.m_PixelOffset.y / static_cast<float>(height);
+    // If no TAA jitter is in use (all zeros), keep jitter inputs at zero.
+    const bool bHasJitter =
+        fabsf(view.m_PixelOffset.x) > 1e-6f || fabsf(view.m_PixelOffset.y) > 1e-6f ||
+        fabsf(prevView.m_PixelOffset.x) > 1e-6f || fabsf(prevView.m_PixelOffset.y) > 1e-6f;
+
+    if (bHasJitter)
+    {
+        // m_PixelOffset is sub-pixel jitter in pixel units; convert to UV.
+        settings.cameraJitter[0]     = view.m_PixelOffset.x / static_cast<float>(width);
+        settings.cameraJitter[1]     = view.m_PixelOffset.y / static_cast<float>(height);
+        settings.cameraJitterPrev[0] = prevView.m_PixelOffset.x / static_cast<float>(width);
+        settings.cameraJitterPrev[1] = prevView.m_PixelOffset.y / static_cast<float>(height);
+    }
+    else
+    {
+        settings.cameraJitter[0] = 0.0f;
+        settings.cameraJitter[1] = 0.0f;
+        settings.cameraJitterPrev[0] = 0.0f;
+        settings.cameraJitterPrev[1] = 0.0f;
+    }
     
     // -------------------------------------------------------------------------
     // Frame index and accumulation mode
