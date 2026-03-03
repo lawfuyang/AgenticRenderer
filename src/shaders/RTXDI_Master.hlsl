@@ -1,0 +1,422 @@
+// ============================================================================
+// SECTION 1: Boiling filter defines (for RTXDITemporalResampling)
+// ============================================================================
+#define RTXDI_ENABLE_BOILING_FILTER    1
+#define RTXDI_BOILING_FILTER_GROUP_SIZE 8
+
+// ============================================================================
+// SECTION 2: Common includes
+// ============================================================================
+#include "RTXDIApplicationBridge.hlsli"
+#include "ShaderShared.h"
+#include "CommonLighting.hlsli"
+
+// ============================================================================
+// SECTION 2B: Additional resources for RTXDIBuildLocalLightPDF_Main
+// ============================================================================
+RWTexture2D<float> g_PDFMip0 : register(u4);   // mip 0 of the PDF texture
+
+#include "Rtxdi/Utils/Checkerboard.hlsli"
+#include "Rtxdi/Utils/Math.hlsli"
+#include "Rtxdi/DI/Reservoir.hlsli"
+#include "Rtxdi/DI/InitialSampling.hlsli"
+#include "Rtxdi/DI/TemporalResampling.hlsli"
+#include "Rtxdi/DI/BoilingFilter.hlsli"
+#include "Rtxdi/DI/SpatialResampling.hlsli"
+#include "Rtxdi/LightSampling/PresamplingFunctions.hlsli"
+
+// ============================================================================
+// SECTION 3: Helper functions shared across multiple passes
+// ============================================================================
+
+RTXDI_LightBufferParameters GetLightBufferParams()
+{
+    RTXDI_LightBufferParameters p;
+    p.localLightBufferRegion.firstLightIndex    = g_RTXDIConst.m_LocalLightFirstIndex;
+    p.localLightBufferRegion.numLights          = g_RTXDIConst.m_LocalLightCount;
+    p.infiniteLightBufferRegion.firstLightIndex = g_RTXDIConst.m_InfiniteLightFirstIndex;
+    p.infiniteLightBufferRegion.numLights       = g_RTXDIConst.m_InfiniteLightCount;
+    p.environmentLightParams.lightPresent       = g_RTXDIConst.m_EnvLightPresent;
+    p.environmentLightParams.lightIndex         = g_RTXDIConst.m_EnvLightIndex;
+    return p;
+}
+
+RTXDI_RuntimeParameters GetRuntimeParams()
+{
+    RTXDI_RuntimeParameters p;
+    p.neighborOffsetMask      = g_RTXDIConst.m_NeighborOffsetMask;
+    p.activeCheckerboardField = g_RTXDIConst.m_ActiveCheckerboardField;
+    return p;
+}
+
+RTXDI_ReservoirBufferParameters GetReservoirBufferParams()
+{
+    RTXDI_ReservoirBufferParameters p;
+    p.reservoirBlockRowPitch = g_RTXDIConst.m_ReservoirBlockRowPitch;
+    p.reservoirArrayPitch    = g_RTXDIConst.m_ReservoirArrayPitch;
+    return p;
+}
+
+RTXDI_LightBufferRegion GetLocalLightBufferRegion()
+{
+    RTXDI_LightBufferRegion r;
+    r.firstLightIndex = g_RTXDIConst.m_LocalLightFirstIndex;
+    r.numLights       = g_RTXDIConst.m_LocalLightCount;
+    r.pad1 = r.pad2   = 0u;
+    return r;
+}
+
+RTXDI_RISBufferSegmentParameters GetLocalLightRISSegmentParams()
+{
+    RTXDI_RISBufferSegmentParameters p;
+    p.bufferOffset = g_RTXDIConst.m_LocalRISBufferOffset;
+    p.tileSize     = g_RTXDIConst.m_LocalRISTileSize;
+    p.tileCount    = g_RTXDIConst.m_LocalRISTileCount;
+    p.pad1         = 0u;
+    return p;
+}
+
+RTXDI_RISBufferSegmentParameters GetLocalLightRISBufferSegmentParams()
+{
+    RTXDI_RISBufferSegmentParameters p;
+    p.bufferOffset = g_RTXDIConst.m_LocalRISBufferOffset;
+    p.tileSize     = g_RTXDIConst.m_LocalRISTileSize;
+    p.tileCount    = g_RTXDIConst.m_LocalRISTileCount;
+    p.pad1         = 0u;
+    return p;
+}
+
+RTXDI_RISBufferSegmentParameters GetEnvLightRISBufferSegmentParams()
+{
+    RTXDI_RISBufferSegmentParameters p;
+    p.bufferOffset = g_RTXDIConst.m_EnvRISBufferOffset;
+    p.tileSize     = g_RTXDIConst.m_EnvRISTileSize;
+    p.tileCount    = g_RTXDIConst.m_EnvRISTileCount;
+    p.pad1         = 0u;
+    return p;
+}
+
+// ============================================================================
+// SECTION 4: RTXDIBuildLocalLightPDF
+// ============================================================================
+
+[numthreads(8, 8, 1)]
+void RTXDI_BuildLocalLightPDF_Main(uint2 gid : SV_DispatchThreadID)
+{
+    // Bounds check against mip-0 dimensions.
+    if (any(gid >= g_RTXDIConst.m_LocalLightPDFTextureSize))
+        return;
+
+    // Map texel position → local-light index via Z-curve.
+    const uint lightIndex = RTXDI_ZCurveToLinearIndex(gid);
+
+    float weight = 0.0f;
+    if (lightIndex < g_RTXDIConst.m_LocalLightCount)
+    {
+        const uint  globalIndex = lightIndex + g_RTXDIConst.m_LocalLightFirstIndex;
+        const GPULight gl       = g_Lights[globalIndex];
+
+        // Pre-computed radiance depends on light type (same logic as RAB_LoadLightInfo).
+        // For the PDF we only need relative luminance, so we use color * intensity.
+        // Sky-adjusted sun radiance is expensive to compute here; the sun is an
+        // infinite light anyway and is handled by a separate path (not presampled).
+        const float3 radiance = gl.m_Color * gl.m_Intensity;
+        weight = max(Luminance(radiance), 1e-8f); // small epsilon: never fully zero
+    }
+
+    g_PDFMip0[gid] = weight;
+}
+
+// ============================================================================
+// SECTION 5: RTXDIGenerateInitialSamples
+// ============================================================================
+
+[numthreads(8, 8, 1)]
+void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
+{
+    RTXDI_RuntimeParameters rtParams = GetRuntimeParams();
+    RTXDI_ReservoirBufferParameters rbp = GetReservoirBufferParams();
+
+    uint2 reservoirPosition = GlobalIndex;
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(reservoirPosition, rtParams.activeCheckerboardField);
+    uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(pixelPosition >= viewportSize))
+        return;
+
+    int2  iPixel = int2(pixelPosition);
+
+    // Initialise RNG
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1u);
+    RAB_RandomSamplerState coherentRng = RAB_InitRandomSampler(pixelPosition / 16u, 1u);
+
+    // Fetch G-buffer surface for this pixel
+    RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
+
+    RTXDI_LightBufferParameters lbp = GetLightBufferParams();
+
+    RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
+        /*numLocalLightSamples=*/  max(1u, lbp.localLightBufferRegion.numLights > 0 ? 1u : 0u),
+        /*numInfiniteLightSamples=*/ (lbp.infiniteLightBufferRegion.numLights > 0 ? 1u : 0u),
+        /*numEnvironmentMapSamples=*/ 0u,
+        /*numBrdfSamples=*/          0u);
+
+    // Build RIS segment parameters from the constant buffer.
+    RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISBufferSegmentParams();
+    RTXDI_RISBufferSegmentParameters envRISParams   = GetEnvLightRISBufferSegmentParams();
+
+    RAB_LightSample selectedSample;
+    RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(
+        rng, coherentRng, surface, sampleParams, lbp,
+        #if RTXDI_ENABLE_PRESAMPLING
+            ReSTIRDI_LocalLightSamplingMode_POWER_RIS,
+            localRISParams,
+            envRISParams,
+        #else
+            ReSTIRDI_LocalLightSamplingMode_UNIFORM,
+        #endif
+        selectedSample);
+
+    RTXDI_StoreDIReservoir(reservoir, rbp, reservoirPosition,
+        g_RTXDIConst.m_InitialSamplingOutputBufferIndex);
+}
+
+// ============================================================================
+// SECTION 6: RTXDIPresampleLights
+// ============================================================================
+
+#define RTXDI_PRESAMPLING_GROUP_SIZE 256
+
+[numthreads(RTXDI_PRESAMPLING_GROUP_SIZE, 1, 1)]
+void RTXDI_PresampleLights_Main(uint2 GlobalIndex : SV_DispatchThreadID)
+{
+    const uint sampleInTile = GlobalIndex.x;
+    const uint tileIndex    = GlobalIndex.y;
+
+    if (sampleInTile >= g_RTXDIConst.m_LocalRISTileSize ||
+        tileIndex    >= g_RTXDIConst.m_LocalRISTileCount)
+        return;
+
+    if (g_RTXDIConst.m_LocalLightCount == 0u)
+    {
+        const uint risBufferPtr = g_RTXDIConst.m_LocalRISBufferOffset
+                                + tileIndex * g_RTXDIConst.m_LocalRISTileSize
+                                + sampleInTile;
+        g_RTXDI_RISBuffer[risBufferPtr] = uint2(RTXDI_INVALID_LIGHT_INDEX, 0u);
+        return;
+    }
+
+    // Per-entry RNG.  Using a 2D seed so (tile, sample) pairs don't collide.
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(
+        uint2(sampleInTile + tileIndex * g_RTXDIConst.m_LocalRISTileSize,
+              g_RTXDIConst.m_FrameIndex), 0u);
+
+    // Delegate entirely to the RTXDI SDK function.  It will:
+    //   - descend the PDF mip chain to pick a light proportional to its weight
+    //   - call RAB_StoreCompactLightInfo to cache the light data
+    //   - write the (index, invPdf) pair to RTXDI_RIS_BUFFER
+    RTXDI_PresampleLocalLights(
+        rng,
+        g_RTXDI_LocalLightPDFTexture,               // Texture2D<float> with full mip chain
+        g_RTXDIConst.m_LocalLightPDFTextureSize,    // mip-0 dimensions
+        tileIndex,
+        sampleInTile,
+        GetLocalLightBufferRegion(),
+        GetLocalLightRISSegmentParams());
+}
+
+// ============================================================================
+// SECTION 7: RTXDITemporalResampling
+// ============================================================================
+
+[numthreads(8, 8, 1)]
+void RTXDI_TemporalResampling_Main(
+    uint2 GlobalIndex : SV_DispatchThreadID,
+    uint2 LocalIndex  : SV_GroupThreadID)
+{
+    RTXDI_RuntimeParameters        rtParams = GetRuntimeParams();
+    RTXDI_ReservoirBufferParameters rbp      = GetReservoirBufferParams();
+
+    uint2 reservoirPosition = GlobalIndex;
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(reservoirPosition, rtParams.activeCheckerboardField);
+    uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(pixelPosition >= viewportSize))
+        return;
+
+    int2  iPixel        = int2(pixelPosition);
+
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2u);
+
+    // Load current surface
+    RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
+
+    RTXDI_DIReservoir outReservoir = RTXDI_EmptyDIReservoir();
+    if (RAB_IsSurfaceValid(surface))
+    {
+        // Load the reservoir produced by the initial sampling pass (current frame's new candidates)
+        RTXDI_DIReservoir curReservoir = RTXDI_LoadDIReservoir(rbp, reservoirPosition,
+            g_RTXDIConst.m_InitialSamplingOutputBufferIndex);
+
+        // Motion vector — stored as pixel-space velocity (dx, dy).
+        float3 mv = g_GBufferMV.Load(int3(iPixel, 0)).xyz;
+        float3 pixelMotion = ConvertMotionVectorToPixelSpace(g_RTXDIConst.m_View, g_RTXDIConst.m_PrevView, iPixel, mv);
+
+        RTXDI_DITemporalResamplingParameters tparams;
+        tparams.screenSpaceMotion        = pixelMotion;
+        tparams.sourceBufferIndex        = g_RTXDIConst.m_TemporalResamplingInputBufferIndex;
+        tparams.maxHistoryLength         = 20u;
+        tparams.biasCorrectionMode       = RTXDI_BIAS_CORRECTION_BASIC;
+        tparams.depthThreshold           = 0.1;
+        tparams.normalThreshold          = 0.5;
+        tparams.enableVisibilityShortcut = false;
+        tparams.enablePermutationSampling = true;
+        tparams.uniformRandomNumber      = RTXDI_JenkinsHash(g_RTXDIConst.m_FrameIndex);
+
+        RAB_LightSample selectedSample = RAB_EmptyLightSample();
+        int2 temporalPixelPos;
+
+        outReservoir = RTXDI_DITemporalResampling(
+            pixelPosition, surface, curReservoir, rng,
+            rtParams, rbp, tparams,
+            temporalPixelPos, selectedSample);
+    }
+
+    // Boiling filter (operates within the 8×8 group)
+    RTXDI_BoilingFilter(LocalIndex, RAB_GetBoilingFilterStrength(), outReservoir);
+
+    RTXDI_StoreDIReservoir(outReservoir, rbp, reservoirPosition,
+        g_RTXDIConst.m_TemporalResamplingOutputBufferIndex);
+}
+
+// ============================================================================
+// SECTION 8: RTXDISpatialResampling
+// ============================================================================
+
+[numthreads(8, 8, 1)]
+void RTXDI_SpatialResampling_Main(uint2 GlobalIndex : SV_DispatchThreadID)
+{
+    RTXDI_RuntimeParameters         rtParams = GetRuntimeParams();
+    RTXDI_ReservoirBufferParameters rbp      = GetReservoirBufferParams();
+
+    uint2 reservoirPosition = GlobalIndex;
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(reservoirPosition, rtParams.activeCheckerboardField);
+    uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(pixelPosition >= viewportSize))
+        return;
+
+    int2  iPixel        = int2(pixelPosition);
+
+    // Use pass index 3 (distinct from initial=1, temporal=2) for decorrelated RNG
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 3u);
+
+    RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
+
+    // Default to an empty reservoir in case the pixel is invalid
+    RTXDI_DIReservoir outReservoir = RTXDI_EmptyDIReservoir();
+
+    if (RAB_IsSurfaceValid(surface))
+    {
+        // Load the centre pixel's reservoir (temporal output, or initial output if temporal is off)
+        RTXDI_DIReservoir centerReservoir = RTXDI_LoadDIReservoir(rbp, reservoirPosition,
+            g_RTXDIConst.m_SpatialResamplingInputBufferIndex);
+
+        RTXDI_DISpatialResamplingParameters sparams;
+        sparams.sourceBufferIndex             = g_RTXDIConst.m_SpatialResamplingInputBufferIndex;
+        sparams.numSamples                    = g_RTXDIConst.m_SpatialNumSamples;
+        sparams.numDisocclusionBoostSamples   = 0;
+        sparams.targetHistoryLength           = 20u;   // match temporal maxHistoryLength
+        sparams.biasCorrectionMode            = RTXDI_BIAS_CORRECTION_BASIC;
+        sparams.samplingRadius                = g_RTXDIConst.m_SpatialSamplingRadius;
+        sparams.depthThreshold                = 0.1f;
+        sparams.normalThreshold               = 0.5f;
+        sparams.enableMaterialSimilarityTest  = true;
+        sparams.discountNaiveSamples          = false;
+
+        RAB_LightSample selectedSample = RAB_EmptyLightSample();
+        outReservoir = RTXDI_DISpatialResampling(
+            pixelPosition, surface, centerReservoir,
+            rng, rtParams, rbp, sparams, selectedSample);
+    }
+
+    RTXDI_StoreDIReservoir(outReservoir, rbp, reservoirPosition,
+        g_RTXDIConst.m_SpatialResamplingOutputBufferIndex);
+}
+
+// ============================================================================
+// SECTION 9: RTXDIShadeSamples
+// ============================================================================
+
+[numthreads(8, 8, 1)]
+void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
+{
+    RTXDI_ReservoirBufferParameters rbp = GetReservoirBufferParams();
+    RTXDI_RuntimeParameters rtParams;
+    rtParams.neighborOffsetMask      = g_RTXDIConst.m_NeighborOffsetMask;
+    rtParams.activeCheckerboardField = g_RTXDIConst.m_ActiveCheckerboardField;
+
+    uint2 reservoirPosition = GlobalIndex;
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(reservoirPosition, rtParams.activeCheckerboardField);
+    uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(pixelPosition >= viewportSize))
+        return;
+
+    int2  iPixel        = int2(pixelPosition);
+
+    // Load the final shading reservoir (temporal or initial output, depending on which passes ran)
+    RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(rbp, reservoirPosition,
+        g_RTXDIConst.m_ShadingInputBufferIndex);
+
+    float3 radiance = float3(0.0, 0.0, 0.0);
+
+    if (RTXDI_IsValidDIReservoir(reservoir))
+    {
+        // Fetch G-buffer surface
+        RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
+
+        if (RAB_IsSurfaceValid(surface))
+        {
+            // Reconstruct the selected light sample from the reservoir
+            uint lightIndex = RTXDI_GetDIReservoirLightIndex(reservoir);
+            float2 randXY   = RTXDI_GetDIReservoirSampleUV(reservoir);
+
+            RAB_LightInfo   lightInfo     = RAB_LoadLightInfo(lightIndex, false);
+            RAB_LightSample lightSample   = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
+
+            // Final-shading visibility: use GetFinalVisibility instead of the conservative
+            // variant. GetFinalVisibility properly commits non-opaque triangle hits that RAB_GetConservativeVisibility deliberately
+            // skips with RAY_FLAG_CULL_NON_OPAQUE. Without this, non-opaque triangles like
+            // are never committed and light leaks straight through them.
+            // Pass surface.normal so GetFinalVisibility can apply the same normal-bias
+            // self-intersection avoidance used in CalculateRTShadow (deferred path).
+            bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos, RAB_GetSurfaceNormal(surface), lightSample.position);
+
+            if (visible)
+            {
+                // Evaluate BRDF at the selected light direction
+                float3 V = RAB_GetSurfaceViewDirection(surface);
+                float3 L = lightSample.direction;
+
+                float3 brdf    = RAB_EvaluateBrdf(surface, L, V);
+                float  NdotL   = max(0.0, dot(RAB_GetSurfaceNormal(surface), L));
+
+                // BRDF already contains the NdotL factor; avoid double-counting
+                // as RAB_EvaluateBrdf returns brdf * NdotL.
+                // Reservoir weight (1/p_hat * W) accounts for the resampling.
+                float weight = RTXDI_GetDIReservoirInvPdf(reservoir);
+
+                // Guard against zero / degenerate pdf
+                if (weight > 0.0 && NdotL > 0.0)
+                {
+                    // The reservoir weight already encodes the target pdf normalisation.
+                    // radiance = Le * brdf_without_NdotL * NdotL * weight
+                    // RAB_EvaluateBrdf returns (diffuse + specular) * NdotL already, so:
+                    radiance = lightSample.radiance * brdf * weight;
+                }
+            }
+        }
+    }
+
+    // Clamp to prevent fireflies (very large single-sample contributions)
+    radiance = min(radiance, float3(100.0, 100.0, 100.0));
+
+    g_RTXDIDIOutput[pixelPosition] = float4(radiance, 1.0);
+}

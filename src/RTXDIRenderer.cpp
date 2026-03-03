@@ -904,7 +904,7 @@ public:
                 };
                 Renderer::RenderPassParams params{
                     .commandList = commandList,
-                    .shaderName = "RTXDIBuildLocalLightPDF_CSMain",
+                    .shaderName = "RTXDI_Master_RTXDI_BuildLocalLightPDF_Main",
                     .bindingSetDesc = buildPDFBset,
                     .dispatchParams = {
                         .x = DivideAndRoundUp(m_PDFTexSize, 8u),
@@ -935,7 +935,7 @@ public:
                 const uint32_t presampleGroupsX = DivideAndRoundUp(k_RISTileSize, 256u);
                 Renderer::RenderPassParams params{
                     .commandList = commandList,
-                    .shaderName = "RTXDIPresampleLights_CSMain",
+                    .shaderName = "RTXDI_Master_RTXDI_PresampleLights_Main",
                     .bindingSetDesc = bset,
                     .dispatchParams = {
                         .x = presampleGroupsX,
@@ -953,7 +953,7 @@ public:
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
-                .shaderName   = "RTXDIGenerateInitialSamples_CSMain",
+                .shaderName   = "RTXDI_Master_RTXDI_GenerateInitialSamples_Main",
                 .bindingSetDesc = bset,
                 .dispatchParams = {
                     .x = DivideAndRoundUp(dispatchWidth, 8u),
@@ -974,7 +974,7 @@ public:
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
-                .shaderName   = "RTXDITemporalResampling_CSMain",
+                .shaderName   = "RTXDI_Master_RTXDI_TemporalResampling_Main",
                 .bindingSetDesc = bset,
                 .dispatchParams = {
                     .x = DivideAndRoundUp(dispatchWidth, 8u),
@@ -995,7 +995,7 @@ public:
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
-                .shaderName   = "RTXDISpatialResampling_CSMain",
+                .shaderName   = "RTXDI_Master_RTXDI_SpatialResampling_Main",
                 .bindingSetDesc = bset,
                 .dispatchParams = {
                     .x = DivideAndRoundUp(dispatchWidth, 8u),
@@ -1012,7 +1012,7 @@ public:
         {
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
-                .shaderName   = "RTXDIShadeSamples_CSMain",
+                .shaderName   = "RTXDI_Master_RTXDI_ShadeSamples_Main",
                 .bindingSetDesc = bset,
                 .dispatchParams = {
                     .x = DivideAndRoundUp(dispatchWidth, 8u),
