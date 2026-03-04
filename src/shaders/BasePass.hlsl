@@ -411,15 +411,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
         PrepareLightingByproducts(lightingInputs);
 
-        float3 ambient = float3(0,0,0);
-
-        // TODO: get rid of this when we have restir GI
-        if (g_PerFrame.m_EnableSky)
-        {
-            ambient = GetAtmosphereSkyIrradiance(p_atmo, N, g_PerFrame.m_SunDirection, g_Lights[0].m_Intensity) * (baseColor / PI);
-        }
-
-        color = directDiffuse + directSpecular + ambient;
+        color = directDiffuse + directSpecular;
     }
 
     // Refraction logic
