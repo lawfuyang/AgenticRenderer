@@ -413,14 +413,15 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     float NdotH = max(0.0, dot(N, H));
     float NdotV = max(0.0, dot(N, V));
     float VdotH = max(0.0, dot(V, H));
-
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
-    float  kD = 1.0 - Luminance(F0);
+    float  kD = 1.0 - Luminance(F0); // simplified metallic proxy
 
-    float3 diffuse  = kD * surface.material.diffuseAlbedo * (NdotL / PI);
-    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness);
-
+    // Use DisneyBurleyDiffuse to match the actual BRDF used in shading.
+    // DisneyBurleyDiffuse already includes NdotL / PI.
+    float  burley   = DisneyBurleyDiffuse(NdotL, NdotV, dot(L, H), surface.roughness);
+    float3 diffuse  = kD * surface.material.diffuseAlbedo * burley;
+    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
     float3 reflectedRadiance = lightSample.radiance * (diffuse + specular);
     return Luminance(reflectedRadiance) / lightSample.solidAnglePdf;
 }
@@ -552,9 +553,21 @@ RAB_LightInfo RAB_LoadLightInfo(uint lightIndex, bool previousFrame)
     // Compute radiance upfront
     if (lightIndex == 0 && li.lightType == 0 && g_RTXDIConst.m_EnableSky != 0)
     {
-        // Directional light with sky enabled: use atmosphere-aware radiance
-        float3 p_atmo = GetAtmospherePos(float3(0.0, 0.0, 0.0));  // Observer at origin
-        li.radiance = GetAtmosphereSunRadiance(p_atmo, li.direction, gl.m_Intensity);
+        // GetAtmosphereSunRadiance returns solar IRRADIANCE (W/m²):
+        //   solar_irradiance * transmittance * intensity
+        // RTXDI's shading formula is:
+        //   finalRadiance = lightSample.radiance * invPdf / solidAnglePdf
+        // where solidAnglePdf = 1 / solidAngle_sun.
+        // So finalRadiance = lightSample.radiance * solidAngle_sun.
+        // For the result to equal the correct irradiance contribution (solar_irradiance * transmittance),
+        // we need lightSample.radiance = irradiance / solidAngle_sun  (i.e., per-steradian radiance).
+        // This matches the FullSample's DirectionalLight which stores radiance = flux / solidAngle.
+        float3 p_atmo = GetAtmospherePos(float3(0.0, 0.0, 0.0));
+        float3 solarIrradiance = GetAtmosphereSunRadiance(p_atmo, li.direction, gl.m_Intensity);
+        // Sun solid angle = 2π(1 - cos(halfAngle))
+        float solidAngle = 2.0 * PI * (1.0 - li.cosSunAngularRadius);
+        // Guard against degenerate (point-like) sun with zero solid angle
+        li.radiance = (solidAngle > 1e-10) ? (solarIrradiance / solidAngle) : solarIrradiance;
     }
     else
     {
@@ -712,8 +725,13 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
         float cosElevation;
         float3 dir = equirectUVToDirection(directionUV, cosElevation);
 
-        // Radiance matching our building weighting: GetAtmosphereSkyRadiance
-        float3 sampleRadiance = GetAtmosphereSkyRadiance(float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, true);
+        // Radiance WITHOUT the sun disk — the sun is already handled as a separate
+        // infinite light (index 0). Including the sun disk here would:
+        //   1. Double-count the sun contribution.
+        //   2. Cause extreme firefly spikes: sun disk radiance ~22,000 W/m²/sr vs
+        //      sky dome ~1-10 W/m²/sr, so any RIS sample landing on the disk
+        //      produces a reservoir weight thousands of times too large.
+        float3 sampleRadiance = GetAtmosphereSkyRadiance(float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, false);
 
         // Solid-angle PDF: inverse of the solid angle of one texel in the equirectangular map.
         // This matches FullSample's EnvironmentLight::calcSample (importanceSampled branch):
@@ -803,9 +821,10 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 
     float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness);
     float  kD       = 1.0 - Luminance(F0); // simplified metallic proxy
-    float3 diffuse  = kD * surface.material.diffuseAlbedo / PI;
+    float  burley   = DisneyBurleyDiffuse(NdotL, NdotV, VdotH, surface.roughness); // VdotH == LdotH when H = normalize(V+L)
+    float3 diffuse  = kD * surface.material.diffuseAlbedo * burley;
 
-    return (diffuse + specular) * NdotL;
+    return (diffuse + specular * NdotL);
 }
 
 // ---- Separated BRDF components for NRD denoising -----------------------------------------------
@@ -814,14 +833,24 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 
 float3 RAB_EvaluateBrdfDiffuseOnly(RAB_Surface surface, float3 L)
 {
-    float NdotL = max(0.0, dot(surface.normal, L));
-    float3 F0  = surface.material.specularF0;
-    float  kD  = 1.0 - Luminance(F0); // simplified metallic proxy (matches RAB_EvaluateBrdf)
-    return kD * surface.material.diffuseAlbedo / PI * NdotL;
+    // Demodulated diffuse for NRD RELAX: Disney Burley term only, no albedo or kD.
+    // Matches the DisneyBurleyDiffuse used in the non-RTXDI deferred lighting path.
+    // The compositing pass re-modulates by multiplying with diffuseAlbedo.
+    float3 N    = surface.normal;
+    float3 V    = surface.viewDir;
+    float3 H    = normalize(V + L);
+    float NdotL = max(0.0, dot(N, L));
+    float NdotV = max(0.0, dot(N, V));
+    float LdotH = max(0.0, dot(L, H));
+    float burley = DisneyBurleyDiffuse(NdotL, NdotV, LdotH, surface.roughness);
+    return float3(burley, burley, burley);
 }
 
 float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
 {
+    // Demodulated specular for NRD RELAX: divide out specularF0 so the denoiser
+    // sees a signal normalised to [0,1] range. The compositing pass re-modulates
+    // by multiplying with specularF0.
     float3 N  = surface.normal;
     float3 H  = normalize(V + L);
     float NdotL = max(0.0, dot(N, L));
@@ -830,7 +859,9 @@ float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
     float VdotH = max(0.0, dot(V, H));
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
-    return ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
+    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
+    // Demodulate: divide by max(F0, 0.01) per-channel to avoid division by zero on black metals.
+    return specular / max(F0, float3(0.01, 0.01, 0.01));
 }
 
 // ============================================================================
@@ -838,26 +869,25 @@ float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
 // ============================================================================
 
 // Build a shadow ray from originWorldPos toward samplePosition.
-// Applies the same normal-bias self-intersection strategy as CalculateRTShadow
-// in CommonLighting.hlsli: origin = worldPos + N * 0.1, TMin = 0.1.
-// Without this, RTXDI shadow rays start at the raw G-buffer world position and
-// differ from the deferred reference — visually the sun appears a couple of
-// degrees off for directional lights, and local light positions look slightly
-// shifted in enclosed spaces.
+// Matches FullSample's setupVisibilityRay: NO normal bias, just a small TMin
+// to avoid self-intersection. Using a large normal bias (e.g. N*0.1) causes:
+//   - Decals (coplanar geometry) to appear overly bright: the bias pushes the
+//     origin past the background surface, which then falls within TMin and is
+//     skipped, so the decal always sees the sun unobstructed.
+//   - Shadows to disappear for geometry closer than the bias distance.
+// The 'offset' parameter is the TMin (and half the TMax shrink):
+//   - Conservative visibility: 0.001 (default)
+//   - Final shading visibility: 0.01
 RayDesc SetupShadowRay(float3 originWorldPos, float3 surfaceNormal, float3 samplePosition, float offset = 0.001)
 {
-    // Match CalculateRTShadow: offset origin along shading normal to avoid
-    // self-intersection at grazing angles.
-    float3 biasedOrigin = originWorldPos + surfaceNormal * 0.1f;
-
-    float3 L    = samplePosition - biasedOrigin;
+    float3 L    = samplePosition - originWorldPos;
     float  dist = length(L);
 
     RayDesc ray;
-    ray.Origin    = biasedOrigin;
+    ray.Origin    = originWorldPos;
     ray.Direction = L / max(dist, 1e-6);
-    ray.TMin      = 0.1f;                     // matches CalculateRTShadow TMin
-    ray.TMax      = max(dist - 0.1f, 0.1f);   // don't overshoot into the light
+    ray.TMin      = offset;
+    ray.TMax      = max(offset, dist - offset * 2.0f);
     return ray;
 }
 
@@ -897,11 +927,11 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
 // Final-shading visibility — used in the shading pass only.
 // Unlike conservative visibility, properly handles ALPHA_MODE_MASK geometry by evaluating the albedo alpha channel
 // with ray-space UV gradients, matching CalculateRTShadow / AlphaTestGrad.
-// surfaceNormal is required to apply the same normal-bias self-intersection
-// avoidance used in SetupShadowRay / CalculateRTShadow.
+// Uses offset=0.01 (matching FullSample's GetFinalVisibility) — larger than the conservative
+// 0.001 to reduce self-intersection noise at the cost of slightly softer contact shadows.
 bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 originWorldPos, float3 surfaceNormal, float3 samplePosition)
 {
-    RayDesc ray = SetupShadowRay(originWorldPos, surfaceNormal, samplePosition, 0.001);
+    RayDesc ray = SetupShadowRay(originWorldPos, surfaceNormal, samplePosition, 0.01);
 
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
     q.TraceRayInline(accelStruct, RAY_FLAG_NONE, 0xFF, ray);

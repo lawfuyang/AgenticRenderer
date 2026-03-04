@@ -94,10 +94,18 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             if (g_Deferred.m_UseReSTIRDIDenoised != 0)
             {
                 // Denoised path: t8 = RELAX-denoised diffuse, t9 = RELAX-denoised specular.
-                // RELAX_BackEnd_UnpackRadiance is a no-op (returns color as-is), so just take .rgb.
+                // The RTXDI shading pass outputs DEMODULATED signals:
+                //   diffuse  = NdotL / PI                    (no albedo, no kD)
+                //   specular = GGX * NdotL / specularF0      (divided out F0)
+                // Re-modulate here to recover the final lit colour:
+                //   finalDiffuse  = denoisedDiffuse  * diffuseAlbedo * (1 - metallic)
+                //   finalSpecular = denoisedSpecular * specularF0
+                float3 F0        = ComputeF0(baseColor, metallic, 1.5f);
+                float3 diffAlbedo = baseColor * (1.0f - metallic);
+
                 float3 denoisedDiffuse  = g_RTXDIDIOutput.Load(uint3(uvInt, 0)).rgb;
                 float3 denoisedSpecular = g_RTXDISpecularOutput.Load(uint3(uvInt, 0)).rgb;
-                color = denoisedDiffuse + denoisedSpecular;
+                color = denoisedDiffuse * diffAlbedo + denoisedSpecular * F0;
             }
             else
             {

@@ -61,10 +61,10 @@ enum class ReSTIRDIQualityPreset : uint32_t
 bool g_ReSTIRDI_EnableCheckerboard   = false;
 bool g_ReSTIRDI_ShowAdvancedSettings = false;
 rtxdi::ReSTIRDI_ResamplingMode          g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
-ReSTIRDI_InitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams{};
-ReSTIRDI_TemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams{};
-ReSTIRDI_SpatialResamplingParameters    g_ReSTIRDI_SpatialResamplingParams{};
-ReSTIRDI_ShadingParameters              g_ReSTIRDI_ShadingParams{};
+ReSTIRDI_InitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams  = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
+ReSTIRDI_TemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
+ReSTIRDI_SpatialResamplingParameters    g_ReSTIRDI_SpatialResamplingParams  = rtxdi::GetDefaultReSTIRDISpatialResamplingParams();
+ReSTIRDI_ShadingParameters              g_ReSTIRDI_ShadingParams            = rtxdi::GetDefaultReSTIRDIShadingParams();
 uint32_t g_ReSTIRDI_NumLocalLightUniformSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
@@ -909,6 +909,9 @@ public:
         cb.m_EnvPDFTextureSize = { k_EnvPDFTexSize, k_EnvPDFTexSize };
         cb.m_EnvSamplingMode   = renderer->m_EnableSky ? 1u : 0u;
         cb.m_NumEnvSamples     = renderer->m_EnableSky ? std::max(1u, g_ReSTIRDI_InitialSamplingParams.numPrimaryEnvironmentSamples) : 0u;
+        cb.m_NumLocalLightSamples    = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
+        cb.m_NumInfiniteLightSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples;
+        cb.m_NumBrdfSamples          = g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples;
 
         if (renderer->m_EnableSky)
         {

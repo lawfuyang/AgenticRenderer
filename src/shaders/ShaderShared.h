@@ -609,4 +609,7 @@ struct RTXDIConstants
     Vector3 m_SunDirection;
     float m_SunIntensity;
     uint32_t m_NumEnvSamples;            // numEnvironmentMapSamples drawn per pixel
+    uint32_t m_NumLocalLightSamples;     // numPrimaryLocalLightSamples
+    uint32_t m_NumInfiniteLightSamples;  // numPrimaryInfiniteLightSamples
+    uint32_t m_NumBrdfSamples;           // numPrimaryBrdfSamples
 };

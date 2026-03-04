@@ -164,8 +164,11 @@ void RTXDI_BuildEnvLightPDF_Main(uint2 gid : SV_DispatchThreadID)
 
     // Full luminance * relative solid-angle importance sampling.
     // FullSample's getPixelWeight uses: luma * cos(elevation)
+    // Exclude the sun disk (bAddSunDisk=false): the sun is a separate infinite light.
+    // Including the sun disk would make the PDF texture spike at the sun direction,
+    // causing the RIS sampler to over-select that texel and produce fireflies.
     float3 radiance = GetAtmosphereSkyRadiance(
-        float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, true);
+        float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, false);
     float weight = max(Luminance(radiance) * cosElevation, 1e-8);
 
     g_EnvPDFMip0[gid] = weight;
@@ -229,12 +232,28 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     RTXDI_LightBufferParameters lbp = GetLightBufferParams();
 
+    // Use sample counts from the constant buffer — these are set by RTXDIRenderer.cpp
+    // from the UI-controlled g_ReSTIRDI_InitialSamplingParams, matching FullSample's
+    // RTXDI_InitSampleParameters(numPrimaryLocalLightSamples, numPrimaryInfiniteLightSamples,
+    //                             numPrimaryEnvironmentSamples, numPrimaryBrdfSamples, ...)
+    uint numLocalSamples = (lbp.localLightBufferRegion.numLights > 0u)
+        ? g_RTXDIConst.m_NumLocalLightSamples : 0u;
+    // Always sample at least 1 infinite light (sun) when the region is non-empty.
+    // m_NumInfiniteLightSamples defaults to 0 if the CPU-side params were zero-initialized
+    // before a preset was applied — guard against that here so the sun is never silently dropped.
+    uint numInfiniteSamples = (lbp.infiniteLightBufferRegion.numLights > 0u)
+        ? max(1u, g_RTXDIConst.m_NumInfiniteLightSamples) : 0u;
+    uint numEnvSamples = (g_RTXDIConst.m_EnvSamplingMode >= 1u && g_RTXDIConst.m_EnvLightPresent != 0u)
+        ? g_RTXDIConst.m_NumEnvSamples : 0u;
+    uint numBrdfSamples = g_RTXDIConst.m_NumBrdfSamples;
+
     RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-        /*numLocalLightSamples=*/  max(1u, lbp.localLightBufferRegion.numLights > 0 ? 1u : 0u),
-        /*numInfiniteLightSamples=*/ (lbp.infiniteLightBufferRegion.numLights > 0 ? 1u : 0u),
-        /*numEnvironmentMapSamples=*/ (g_RTXDIConst.m_EnvSamplingMode >= 1u && g_RTXDIConst.m_EnvLightPresent != 0u)
-                                       ? g_RTXDIConst.m_NumEnvSamples : 0u,
-        /*numBrdfSamples=*/          0u);
+        numLocalSamples,
+        numInfiniteSamples,
+        numEnvSamples,
+        numBrdfSamples,
+        /*brdfCutoff=*/   0.001f,
+        /*randomThreshold=*/ 0.001f);
 
     // Build RIS segment parameters from the constant buffer.
     RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISBufferSegmentParams();
