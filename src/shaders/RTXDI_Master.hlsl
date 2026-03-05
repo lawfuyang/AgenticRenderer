@@ -88,16 +88,6 @@ RTXDI_RISBufferSegmentParameters GetLocalLightRISSegmentParams()
     return p;
 }
 
-RTXDI_RISBufferSegmentParameters GetLocalLightRISBufferSegmentParams()
-{
-    RTXDI_RISBufferSegmentParameters p;
-    p.bufferOffset = g_RTXDIConst.m_LocalRISBufferOffset;
-    p.tileSize     = g_RTXDIConst.m_LocalRISTileSize;
-    p.tileCount    = g_RTXDIConst.m_LocalRISTileCount;
-    p.pad1         = 0u;
-    return p;
-}
-
 RTXDI_RISBufferSegmentParameters GetEnvLightRISBufferSegmentParams()
 {
     RTXDI_RISBufferSegmentParameters p;
@@ -202,10 +192,9 @@ void RTXDI_PresampleEnvironmentMap_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         tileIndex    >= g_RTXDIConst.m_EnvRISTileCount)
         return;
 
-    // Per-entry RNG: mix (tileIndex, sample) with frame index for temporal decorrelation.
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(
-        uint2(sampleInTile + tileIndex * g_RTXDIConst.m_EnvRISTileSize,
-              g_RTXDIConst.m_FrameIndex), 0u);
+    // Match FullSample: use (sampleInTile, tileIndex) directly as the 2-D seed.
+    // RAB_InitRandomSampler already mixes in the frame index internally.
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(sampleInTile, tileIndex), 0u);
 
     RTXDI_PresampleEnvironmentMap(
         rng,
@@ -267,7 +256,7 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         /*randomThreshold=*/ 0.001f);
 
     // Build RIS segment parameters from the constant buffer.
-    RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISBufferSegmentParams();
+    RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISSegmentParams();
     RTXDI_RISBufferSegmentParameters envRISParams   = GetEnvLightRISBufferSegmentParams();
 
     RAB_LightSample selectedSample;
@@ -300,19 +289,10 @@ void RTXDI_PresampleLights_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         tileIndex    >= g_RTXDIConst.m_LocalRISTileCount)
         return;
 
-    if (g_RTXDIConst.m_LocalLightCount == 0u)
-    {
-        const uint risBufferPtr = g_RTXDIConst.m_LocalRISBufferOffset
-                                + tileIndex * g_RTXDIConst.m_LocalRISTileSize
-                                + sampleInTile;
-        g_RTXDI_RISBuffer[risBufferPtr] = uint2(RTXDI_INVALID_LIGHT_INDEX, 0u);
-        return;
-    }
-
-    // Per-entry RNG.  Using a 2D seed so (tile, sample) pairs don't collide.
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(
-        uint2(sampleInTile + tileIndex * g_RTXDIConst.m_LocalRISTileSize,
-              g_RTXDIConst.m_FrameIndex), 0u);
+    // Match FullSample: use (sampleInTile, tileIndex) directly as the 2-D seed.
+    // RAB_InitRandomSampler already mixes in the frame index internally, so no
+    // need to pass it as a coordinate (doing so would double-count it).
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(sampleInTile, tileIndex), 0u);
 
     // Delegate entirely to the RTXDI SDK function.  It will:
     //   - descend the PDF mip chain to pick a light proportional to its weight
