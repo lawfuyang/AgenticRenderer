@@ -620,8 +620,12 @@ void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
     // -------------------------------------------------------------------------
     // Frame index and accumulation mode
     // -------------------------------------------------------------------------
-    settings.frameIndex      = renderer->m_FrameNumber;
-    settings.accumulationMode = nrd::AccumulationMode::CONTINUE;
+    settings.frameIndex = renderer->m_FrameNumber;
+    // On the very first frame NRD's permanent pool textures are uninitialized.
+    // Send CLEAR_AND_RESTART once so RELAX flushes stale history, then CONTINUE.
+    settings.accumulationMode = (renderer->m_FrameNumber == 0)
+        ? nrd::AccumulationMode::CLEAR_AND_RESTART
+        : nrd::AccumulationMode::CONTINUE;
 
     // -------------------------------------------------------------------------
     // Optional inputs — disabled for now
@@ -631,8 +635,10 @@ void FillNRDCommonSettingsHelper(nrd::CommonSettings& settings)
     settings.isBaseColorMetalnessAvailable       = false;
 
     // -------------------------------------------------------------------------
-    // Denoising range — keep NRD's generous default but honour our sentinel value.
+    // Denoising range — match FullSample default (1000 m).
     // Sky pixels are written as 1e6 in GenerateViewZ so they fall outside this range.
+    // Using too large a value (e.g. 500000) causes NRD to attempt depth tracking at
+    // extreme distances where precision is insufficient, contributing to ghosting.
     // -------------------------------------------------------------------------
-    settings.denoisingRange = 500000.0f;
+    settings.denoisingRange = 1000.0f;
 }

@@ -95,7 +95,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             {
                 // Denoised path: t8 = RELAX-denoised diffuse, t9 = RELAX-denoised specular.
                 // The RTXDI shading pass outputs DEMODULATED signals:
-                //   diffuse  = NdotL / PI                    (no albedo, no kD)
+                //   diffuse  = Fd * NdotL / PI  (Disney Burley, no albedo, no kD)
                 //   specular = GGX * NdotL / specularF0      (divided out F0)
                 // Re-modulate here to recover the final lit colour:
                 //   finalDiffuse  = denoisedDiffuse  * diffuseAlbedo * (1 - metallic)

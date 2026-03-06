@@ -230,8 +230,8 @@ struct Renderer
     float m_BloomIntensity = 0.01f;
 
     // ReSTIR DI settings
-    bool m_EnableReSTIRDI = false;
-    bool m_EnableReSTIRDIRelaxDenoising = false;
+    bool m_EnableReSTIRDI = true;
+    bool m_EnableReSTIRDIRelaxDenoising = true;
 
     // bloom
     float m_BloomKnee = 0.1f;

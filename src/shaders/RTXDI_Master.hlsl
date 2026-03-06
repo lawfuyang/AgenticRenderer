@@ -558,23 +558,12 @@ void RTXDI_GenerateViewZ_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     float linearDepth;
     if (depth == 0.0) // Reverse-Z: 0 == far plane (sky / background)
     {
-        linearDepth = g_RTXDIConst.m_View.m_MatViewToClip._43; // large positive value from projection
-        // Fall back to a large sentinel the denoiser can safely ignore.
+        // Write a large sentinel so NRD skips sky pixels.
         linearDepth = 1e6f;
     }
     else
     {
-        float3 worldPos  = ReconstructWorldPos(GlobalIndex, depth, g_RTXDIConst.m_View);
-        float3 camPos    = float3(
-            g_RTXDIConst.m_View.m_MatViewToWorld._41,
-            g_RTXDIConst.m_View.m_MatViewToWorld._42,
-            g_RTXDIConst.m_View.m_MatViewToWorld._43);
-        float3 camForward = float3(
-            g_RTXDIConst.m_View.m_MatViewToWorld._31,
-            g_RTXDIConst.m_View.m_MatViewToWorld._32,
-            g_RTXDIConst.m_View.m_MatViewToWorld._33);
-        // Signed linear view-space Z (positive = in front of camera for LH).
-        linearDepth = dot(worldPos - camPos, camForward);
+        linearDepth = ConvertToLinearDepth(depth, g_RTXDIConst.m_View.m_MatViewToClip);
     }
 
     g_RTXDILinearDepth[GlobalIndex] = linearDepth;

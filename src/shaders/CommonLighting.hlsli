@@ -152,6 +152,15 @@ float3 SampleHemisphereUniform(float2 u, float3 normal)
     return tangent * localDir.x + normal * localDir.y + bitangent * localDir.z;
 }
 
+float ConvertToLinearDepth(float depth, float4x4 matViewToClip)
+{
+    // Linearize using projection matrix constants — no world-pos reconstruction needed.
+    // projA = M._33, projB = M._43 (row-major, view * proj convention).
+    float projA = matViewToClip._33;
+    float projB = matViewToClip._43;
+    return projB / (depth - projA);
+}
+
 float ConvertToClipZ(float SceneDepth, float2 InvDeviceZToWorldZTransform)
 {
     return (1.0f / SceneDepth + InvDeviceZToWorldZTransform[1]) / InvDeviceZToWorldZTransform[0];
