@@ -641,4 +641,15 @@ struct RTXDIConstants
     uint32_t m_SpatialPad0;
     uint32_t m_SpatialPad1;
     uint32_t m_SpatialPad2;
+
+    // ---- Shading parameters (from ReSTIRDI_ShadingParameters) ----
+    uint32_t m_EnableInitialVisibility;    // enableInitialVisibility: trace shadow ray after initial sampling
+    uint32_t m_EnableFinalVisibility;      // enableFinalVisibility: trace shadow ray at final shading
+    uint32_t m_ReuseFinalVisibility;       // reuseFinalVisibility: cache & reuse the final visibility result
+    uint32_t m_DiscardInvisibleSamples;    // discardInvisibleSamples (mirrors temporal param)
+    //
+    uint32_t m_FinalVisibilityMaxAge;      // finalVisibilityMaxAge: max reservoir age for reuse
+    float    m_FinalVisibilityMaxDistance; // finalVisibilityMaxDistance: max world-space distance for reuse
+    uint32_t m_ShadingPad0;
+    uint32_t m_ShadingPad1;
 };

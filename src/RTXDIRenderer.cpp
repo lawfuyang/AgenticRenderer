@@ -973,6 +973,15 @@ public:
         cb.m_SpatialNormalThreshold             = spatialParams.spatialNormalThreshold;
         cb.m_SpatialDiscountNaiveSamples        = spatialParams.discountNaiveSamples;
 
+        // Shading parameters — forwarded from the ReSTIRDI context
+        const ReSTIRDI_ShadingParameters shadingParams = m_Context->GetShadingParameters();
+        cb.m_EnableInitialVisibility    = g_ReSTIRDI_InitialSamplingParams.enableInitialVisibility;
+        cb.m_EnableFinalVisibility      = shadingParams.enableFinalVisibility;
+        cb.m_ReuseFinalVisibility       = shadingParams.reuseFinalVisibility;
+        cb.m_DiscardInvisibleSamples    = temporalParams.discardInvisibleSamples;
+        cb.m_FinalVisibilityMaxAge      = shadingParams.finalVisibilityMaxAge;
+        cb.m_FinalVisibilityMaxDistance = shadingParams.finalVisibilityMaxDistance;
+
         // View matrices
         cb.m_View     = renderer->m_Scene.m_View;
         cb.m_PrevView = renderer->m_Scene.m_ViewPrev;

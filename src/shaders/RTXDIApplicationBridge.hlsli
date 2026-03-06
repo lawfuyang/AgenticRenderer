@@ -248,21 +248,25 @@ struct RAB_Surface
 {
     float3       worldPos;
     float3       normal;
+    float3       geoNormal;       // geometric (unperturbed) normal — used for shadow ray offset
     float        linearDepth;
     RAB_Material material;
     float3       viewDir;
     float        roughness;
+    float        diffuseProbability; // probability of sampling diffuse lobe (vs specular)
 };
 
 RAB_Surface RAB_EmptySurface()
 {
     RAB_Surface s;
-    s.worldPos    = float3(0.0, 0.0, 0.0);
-    s.normal      = float3(0.0, 1.0, 0.0);
-    s.linearDepth = 1e10;
-    s.material    = RAB_EmptyMaterial();
-    s.viewDir     = float3(0.0, 0.0, 1.0);
-    s.roughness   = 0.5;
+    s.worldPos          = float3(0.0, 0.0, 0.0);
+    s.normal            = float3(0.0, 1.0, 0.0);
+    s.geoNormal         = float3(0.0, 1.0, 0.0);
+    s.linearDepth       = 1e10;
+    s.material          = RAB_EmptyMaterial();
+    s.viewDir           = float3(0.0, 0.0, 1.0);
+    s.roughness         = 0.5;
+    s.diffuseProbability = 1.0;
     return s;
 }
 
@@ -356,22 +360,124 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
     s.material.specularF0    = F0;
     s.material.roughness     = roughness;
     s.roughness              = roughness;
+    // geoNormal: use the shading normal as a proxy (we don't store a separate geometric normal
+    // in the G-buffer). This is used for back-face rejection in RAB_GetLightSampleTargetPdfForSurface
+    // and SetupShadowRay. Using (0,1,0) (the EmptySurface default) would cause incorrect
+    // rejection for any surface that isn't perfectly horizontal.
+    s.geoNormal = s.normal;
+
+    // Compute diffuse vs specular sampling probability (matches FullSample's getSurfaceDiffuseProbability)
+    {
+        float diffuseWeight  = Luminance(s.material.diffuseAlbedo);
+        float3 schlickF      = F_Schlick(s.material.specularF0, max(0.0, dot(s.viewDir, s.normal)));
+        float specularWeight = Luminance(schlickF);
+        float sumWeights     = diffuseWeight + specularWeight;
+        s.diffuseProbability = (sumWeights < 1e-7) ? 1.0 : (diffuseWeight / sumWeights);
+    }
 
     return s;
 }
 
+// Tangent-space helpers for VNDF GGX importance sampling
+float3 WorldToTangent(RAB_Surface surface, float3 w)
+{
+    float3 tangent, bitangent;
+    float3 up = abs(surface.normal.z) < 0.999 ? float3(0,0,1) : float3(1,0,0);
+    tangent   = normalize(cross(up, surface.normal));
+    bitangent = cross(surface.normal, tangent);
+    return float3(dot(bitangent, w), dot(tangent, w), dot(surface.normal, w));
+}
+
+float3 TangentToWorld(RAB_Surface surface, float3 h)
+{
+    float3 tangent, bitangent;
+    float3 up = abs(surface.normal.z) < 0.999 ? float3(0,0,1) : float3(1,0,0);
+    tangent   = normalize(cross(up, surface.normal));
+    bitangent = cross(surface.normal, tangent);
+    return bitangent * h.x + tangent * h.y + surface.normal * h.z;
+}
+
+// VNDF GGX importance sampling — matches FullSample's ImportanceSampleGGX_VNDF
+// Returns a half-vector in tangent space.
+float3 ImportanceSampleGGX_VNDF(float2 u, float roughness, float3 Ve, float anisotropy)
+{
+    float alpha = roughness * roughness;
+    // Stretch view
+    float3 Vh = normalize(float3(alpha * Ve.x, alpha * Ve.y, Ve.z));
+    // Orthonormal basis
+    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = lensq > 0 ? float3(-Vh.y, Vh.x, 0) / sqrt(lensq) : float3(1,0,0);
+    float3 T2 = cross(Vh, T1);
+    // Sample point with polar coordinates
+    float r   = sqrt(u.x);
+    float phi = 2.0 * PI * u.y;
+    float t1  = r * cos(phi);
+    float t2  = r * sin(phi);
+    float s   = 0.5 * (1.0 + Vh.z);
+    t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
+    // Compute normal
+    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1*t1 - t2*t2)) * Vh;
+    // Unstretch
+    float3 Ne = normalize(float3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
+    return Ne;
+}
+
+// PDF of VNDF GGX sampling for a given direction
+float ImportanceSampleGGX_VNDF_PDF(float roughness, float3 N, float3 V, float3 L)
+{
+    float3 H = normalize(V + L);
+    float NdotH = saturate(dot(N, H));
+    float NdotV = saturate(dot(N, V));
+    float VdotH = saturate(dot(V, H));
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);
+    float D = alpha2 / (PI * denom * denom);
+    // VNDF PDF = D * G1(V) * VdotH / NdotV
+    float G1 = 2.0 * NdotV / (NdotV + sqrt(alpha2 + (1.0 - alpha2) * NdotV * NdotV));
+    return D * G1 * VdotH / max(NdotV, 1e-5);
+}
+
 bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 direction)
 {
+    float r0 = RAB_GetNextRandom(rng);
     float r1 = RAB_GetNextRandom(rng);
     float r2 = RAB_GetNextRandom(rng);
-    direction = SampleHemisphereCosine(float2(r1, r2), surface.normal);
-    return true;
+
+    static const float kMinRoughness = 0.05;
+
+    if (r0 < surface.diffuseProbability)
+    {
+        // Cosine-weighted hemisphere sampling for diffuse
+        float phi      = 2.0 * PI * r1;
+        float cosTheta = sqrt(r2);
+        float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+        float3 h = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
+        direction = TangentToWorld(surface, h);
+    }
+    else
+    {
+        // VNDF GGX importance sampling for specular
+        float3 Ve = normalize(WorldToTangent(surface, surface.viewDir));
+        float3 h  = ImportanceSampleGGX_VNDF(float2(r1, r2), max(surface.material.roughness, kMinRoughness), Ve, 1.0);
+        h         = normalize(h);
+        direction = reflect(-surface.viewDir, TangentToWorld(surface, h));
+    }
+
+    return dot(surface.normal, direction) > 0.0;
 }
 
 float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 direction)
 {
-    float NdotL = max(0.0, dot(surface.normal, direction));
-    return NdotL / PI;
+    static const float kMinRoughness = 0.05;
+    float cosTheta   = saturate(dot(surface.normal, direction));
+    float diffusePdf = (cosTheta > 0.0) ? (cosTheta / PI) : 0.0;
+    float specularPdf = ImportanceSampleGGX_VNDF_PDF(
+        max(surface.material.roughness, kMinRoughness),
+        surface.normal, surface.viewDir, direction);
+    return (cosTheta > 0.0)
+        ? lerp(specularPdf, diffusePdf, surface.diffuseProbability)
+        : 0.0;
 }
 
 // ============================================================================
@@ -407,31 +513,40 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
         return 0.0;
 
     // Target pdf = reflected luminance / solidAnglePdf.
-    // This matches the FullSample: RAB_GetReflectedLuminanceForSurface / lightSample.solidAnglePdf.
-    // The solidAnglePdf (sr^-1) normalises the importance weight so that all light types
-    // (local, directional, environment) are on the same scale in the reservoir.
+    // Matches FullSample's RAB_GetReflectedLuminanceForSurface:
+    //   d = Lambert(N, -L)  = max(0, NdotL)
+    //   s = GGX_times_NdotL(V, L, N, roughness, F0)
+    //   reflectedRadiance = radiance * (d * diffuseAlbedo + s)
+    // Using simple Lambert + GGX (not Disney Burley) keeps the target PDF
+    // consistent with FullSample and avoids over-weighting diffuse samples.
     float3 N = surface.normal;
     float3 V = surface.viewDir;
     float3 L = normalize(lightSample.position - surface.worldPos);
+
+    // Reject back-facing light directions (also guards against NaN from normalize(0))
+    if (dot(L, surface.geoNormal) <= 0.0)
+        return 0.0;
 
     float NdotL = max(0.0, dot(N, L));
     if (NdotL <= 0.0)
         return 0.0;
 
+    // Simple Lambert diffuse (NdotL) — matches FullSample's Lambert() function
+    float d = NdotL;
+
+    // GGX specular × NdotL — matches FullSample's GGX_times_NdotL()
+    static const float kMinRoughness = 0.05;
     float3 H    = normalize(V + L);
     float NdotH = max(0.0, dot(N, H));
     float NdotV = max(0.0, dot(N, V));
     float VdotH = max(0.0, dot(V, H));
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
-    float  kD = 1.0 - Luminance(F0); // simplified metallic proxy
+    float3 s  = (surface.material.roughness == 0.0)
+              ? float3(0,0,0)
+              : ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, max(surface.material.roughness, kMinRoughness)) * NdotL;
 
-    // Use DisneyBurleyDiffuse to match the actual BRDF used in shading.
-    // DisneyBurleyDiffuse already includes NdotL / PI.
-    float  burley   = DisneyBurleyDiffuse(NdotL, NdotV, dot(L, H), surface.roughness);
-    float3 diffuse  = kD * surface.material.diffuseAlbedo * burley;
-    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
-    float3 reflectedRadiance = lightSample.radiance * (diffuse + specular);
+    float3 reflectedRadiance = lightSample.radiance * (d * surface.material.diffuseAlbedo + s);
     return Luminance(reflectedRadiance) / lightSample.solidAnglePdf;
 }
 
@@ -830,6 +945,11 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
 
 float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirection)
 {
+    // Matches FullSample's EvaluateBrdf in ShadingHelpers.hlsli:
+    //   diffuse  = Lambert(N, -L)  * diffuseAlbedo   = NdotL/PI * albedo
+    //   specular = GGX_times_NdotL(V, L, N, roughness, F0)
+    // Using Lambert (not Disney Burley) keeps the shading consistent with the
+    // target PDF used in RAB_GetLightSampleTargetPdfForSurface.
     float3 N  = surface.normal;
     float3 L  = inDirection;
     float3 V  = outDirection;
@@ -840,15 +960,20 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
     float NdotH = max(0.0, dot(N, H));
     float VdotH = max(0.0, dot(V, H));
 
+    // Lambert diffuse: NdotL (no PI division) — matches FullSample's Lambert(N,-L) = max(0,NdotL).
+    // The 1/PI factor is part of the BRDF definition but FullSample omits it here for consistency
+    // with the target PDF in RAB_GetLightSampleTargetPdfForSurface (which also uses d = NdotL).
+    float3 diffuse = NdotL * surface.material.diffuseAlbedo;
+
+    // GGX specular × NdotL (matches FullSample's GGX_times_NdotL)
+    static const float kMinRoughness = 0.05;
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
+    float3 specular = (surface.roughness == 0.0)
+        ? float3(0, 0, 0)
+        : ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, max(surface.roughness, kMinRoughness)) * NdotL;
 
-    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness);
-    float  kD       = 1.0 - Luminance(F0); // simplified metallic proxy
-    float  burley   = DisneyBurleyDiffuse(NdotL, NdotV, VdotH, surface.roughness); // VdotH == LdotH when H = normalize(V+L)
-    float3 diffuse  = kD * surface.material.diffuseAlbedo * burley;
-
-    return (diffuse + specular * NdotL);
+    return (diffuse + specular);
 }
 
 // ---- Separated BRDF components for NRD denoising -----------------------------------------------
@@ -857,17 +982,13 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 
 float3 RAB_EvaluateBrdfDiffuseOnly(RAB_Surface surface, float3 L)
 {
-    // Demodulated diffuse for NRD RELAX: Disney Burley term only, no albedo or kD.
-    // Matches the DisneyBurleyDiffuse used in the non-RTXDI deferred lighting path.
+    // Demodulated diffuse for NRD RELAX: Lambert term only (NdotL), no albedo, no PI.
+    // Matches FullSample's EvaluateBrdf: brdf.demodulatedDiffuse = Lambert(N, -L) = max(0, NdotL).
+    // FullSample's Lambert() does NOT divide by PI — it returns max(0, dot(N, L)).
     // The compositing pass re-modulates by multiplying with diffuseAlbedo.
-    float3 N    = surface.normal;
-    float3 V    = surface.viewDir;
-    float3 H    = normalize(V + L);
-    float NdotL = max(0.0, dot(N, L));
-    float NdotV = max(0.0, dot(N, V));
-    float LdotH = max(0.0, dot(L, H));
-    float burley = DisneyBurleyDiffuse(NdotL, NdotV, LdotH, surface.roughness);
-    return float3(burley, burley, burley);
+    // Must be consistent with RAB_GetLightSampleTargetPdfForSurface which uses d = NdotL.
+    float NdotL = max(0.0, dot(surface.normal, L));
+    return float3(NdotL, NdotL, NdotL);
 }
 
 float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
@@ -875,6 +996,10 @@ float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
     // Demodulated specular for NRD RELAX: divide out specularF0 so the denoiser
     // sees a signal normalised to [0,1] range. The compositing pass re-modulates
     // by multiplying with specularF0.
+    // Must clamp roughness to kMinRoughness to match RAB_EvaluateBrdf and
+    // RAB_GetLightSampleTargetPdfForSurface — prevents D(NdotH)→∞ on mirror-like
+    // surfaces which would produce extreme firefly spikes.
+    static const float kMinRoughness = 0.05;
     float3 N  = surface.normal;
     float3 H  = normalize(V + L);
     float NdotL = max(0.0, dot(N, L));
@@ -883,7 +1008,9 @@ float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)
     float VdotH = max(0.0, dot(V, H));
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
-    float3 specular = ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, surface.roughness) * NdotL;
+    float3 specular = (surface.roughness == 0.0)
+        ? float3(0, 0, 0)
+        : ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, max(surface.roughness, kMinRoughness)) * NdotL;
     // Demodulate: divide by max(F0, 0.01) per-channel to avoid division by zero on black metals.
     return specular / max(F0, float3(0.01, 0.01, 0.01));
 }

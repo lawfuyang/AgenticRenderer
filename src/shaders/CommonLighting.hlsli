@@ -330,11 +330,18 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
 {
     if (!inputs.enableRTShadows) return 1.0f;
 
+    // Use a small TMin-only offset (no normal bias on Origin) to avoid
+    // self-intersection. A large normal bias (N * 0.1) causes:
+    //   - Coplanar decals to appear unoccluded (origin pushed past them).
+    //   - Contact shadows to vanish for nearby geometry.
+    // This matches the RTXDI SetupShadowRay convention (offset = 0.01 for
+    // final shading, 0.001 for conservative visibility).
+    static const float kShadowBias = 0.01f;
     RayDesc ray;
-    ray.Origin = inputs.worldPos + inputs.N * 0.1f;
+    ray.Origin    = inputs.worldPos;
     ray.Direction = L;
-    ray.TMin = 0.1f;
-    ray.TMax = maxDist;
+    ray.TMin      = kShadowBias;
+    ray.TMax      = max(kShadowBias, maxDist - kShadowBias * 2.0f);
 
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | (bWithTransmission ? RAY_FLAG_NONE : RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH)> q;
     q.TraceRayInline(inputs.sceneAS, RAY_FLAG_NONE, 0xFF, ray);

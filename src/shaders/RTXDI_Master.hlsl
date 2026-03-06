@@ -271,6 +271,18 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         #endif
         selectedSample);
 
+    // Initial visibility: trace a conservative shadow ray for the selected sample.
+    // Matches FullSample's GenerateInitialSamples.hlsl — gates on enableInitialVisibility
+    // and only tests valid reservoirs. Culling invisible samples early prevents them
+    // from polluting the temporal/spatial reservoir history.
+    if (g_RTXDIConst.m_EnableInitialVisibility != 0u && RTXDI_IsValidDIReservoir(reservoir))
+    {
+        if (!RAB_GetConservativeVisibility(surface, selectedSample))
+        {
+            RTXDI_StoreVisibilityInDIReservoir(reservoir, 0, true);
+        }
+    }
+
     RTXDI_StoreDIReservoir(reservoir, rbp, reservoirPosition,
         g_RTXDIConst.m_InitialSamplingOutputBufferIndex);
 }
@@ -483,49 +495,75 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
             uint lightIndex = RTXDI_GetDIReservoirLightIndex(reservoir);
             float2 randXY   = RTXDI_GetDIReservoirSampleUV(reservoir);
 
-            RAB_LightInfo   lightInfo     = RAB_LoadLightInfo(lightIndex, false);
-            RAB_LightSample lightSample   = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
+            RAB_LightInfo   lightInfo   = RAB_LoadLightInfo(lightIndex, false);
+            RAB_LightSample lightSample = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
 
-            // Final-shading visibility: use GetFinalVisibility instead of the conservative
-            // variant. GetFinalVisibility properly commits non-opaque triangle hits that RAB_GetConservativeVisibility deliberately
-            // skips with RAY_FLAG_CULL_NON_OPAQUE. Without this, non-opaque triangles like
-            // are never committed and light leaks straight through them.
-            // Pass surface.normal so GetFinalVisibility can apply the same normal-bias
-            // self-intersection avoidance used in CalculateRTShadow (deferred path).
-            bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos, RAB_GetSurfaceNormal(surface), lightSample.position);
+            bool needToStore = false;
 
-            if (visible)
+            // Final visibility — mirrors FullSample's ShadeSurfaceWithLightSample logic:
+            //   1. Optionally reuse a cached visibility result from a previous frame
+            //      (RTXDI_GetDIReservoirVisibility) to avoid re-tracing the same ray.
+            //   2. If not reused, trace a full shadow ray (GetFinalVisibility) and
+            //      store the result back into the reservoir for future reuse.
+            if (g_RTXDIConst.m_EnableFinalVisibility != 0u)
             {
-                // Scale radiance by the reservoir weight and divide by the solid-angle PDF.
-                // This matches FullSample's ShadingHelpers.hlsli:
-                //   lightSample.radiance *= RTXDI_GetDIReservoirInvPdf(reservoir) / lightSample.solidAnglePdf;
-                // The solidAnglePdf (sr^-1) converts the per-steradian radiance into the
-                // correct irradiance contribution. Without this division the env-light
-                // contribution is inflated by ~(W*H)/(2*pi^2) — thousands of times too bright.
-                float invPdf = RTXDI_GetDIReservoirInvPdf(reservoir);
-                float solidAnglePdf = max(lightSample.solidAnglePdf, 1e-10);
-                float3 scaledRadiance = lightSample.radiance * (invPdf / solidAnglePdf);
+                float3 visibility = 0;
+                bool visibilityReused = false;
 
-                if (any(scaledRadiance > 0.0))
+                if (g_RTXDIConst.m_ReuseFinalVisibility != 0u)
                 {
-                    float3 V = RAB_GetSurfaceViewDirection(surface);
-                    float3 L = lightSample.direction;
+                    RTXDI_VisibilityReuseParameters rparams;
+                    rparams.maxAge      = g_RTXDIConst.m_FinalVisibilityMaxAge;
+                    rparams.maxDistance = g_RTXDIConst.m_FinalVisibilityMaxDistance;
+                    visibilityReused = RTXDI_GetDIReservoirVisibility(reservoir, rparams, visibility);
+                }
+
+                if (!visibilityReused)
+                {
+                    // Full shadow ray — handles alpha-masked geometry correctly.
+                    bool visible = GetFinalVisibility(g_SceneAS, surface.worldPos,
+                        RAB_GetSurfaceNormal(surface), lightSample.position);
+                    visibility = visible ? 1.0 : 0.0;
+                    RTXDI_StoreVisibilityInDIReservoir(reservoir, visibility,
+                        g_RTXDIConst.m_DiscardInvisibleSamples != 0u);
+                    needToStore = true;
+                }
+
+                lightSample.radiance *= visibility;
+            }
+
+        // Scale radiance by the reservoir weight and divide by the solid-angle PDF.
+            // Matches FullSample's ShadingHelpers.hlsli:
+            //   lightSample.radiance *= RTXDI_GetDIReservoirInvPdf(reservoir) / lightSample.solidAnglePdf;
+            lightSample.radiance *= RTXDI_GetDIReservoirInvPdf(reservoir)
+                                  / max(lightSample.solidAnglePdf, 1e-10);
+
+            if (any(lightSample.radiance > 0.0))
+            {
+                float3 V = RAB_GetSurfaceViewDirection(surface);
+                float3 L = lightSample.direction;
 
 #if RTXDI_ENABLE_RELAX_DENOISING
-                    // Split BRDF into diffuse and specular so each can be denoised separately.
-                    float3 diffBrdf  = RAB_EvaluateBrdfDiffuseOnly(surface, L);
-                    float3 specBrdf  = RAB_EvaluateBrdfSpecularOnly(surface, L, V);
-                    diffuseRadiance  = scaledRadiance * diffBrdf;
-                    specularRadiance = scaledRadiance * specBrdf;
-                    // Finite hit distance for point/spot lights; large sentinel for directional.
-                    hitDistance      = (lightSample.distance < 1e9f) ? lightSample.distance : 1e6f;
-                    radiance         = diffuseRadiance + specularRadiance;
+                // Split BRDF into diffuse and specular so each can be denoised separately.
+                float3 diffBrdf  = RAB_EvaluateBrdfDiffuseOnly(surface, L);
+                float3 specBrdf  = RAB_EvaluateBrdfSpecularOnly(surface, L, V);
+                diffuseRadiance  = lightSample.radiance * diffBrdf;
+                specularRadiance = lightSample.radiance * specBrdf;
+                // Finite hit distance for point/spot lights; large sentinel for directional.
+                hitDistance = (lightSample.distance < 1e9f) ? lightSample.distance : 1e6f;
+                radiance    = diffuseRadiance + specularRadiance;
 #else
-                    // Combined BRDF — RAB_EvaluateBrdf already includes NdotL.
-                    float3 brdf = RAB_EvaluateBrdf(surface, L, V);
-                    radiance    = scaledRadiance * brdf;
+                // Combined BRDF — RAB_EvaluateBrdf already includes NdotL.
+                float3 brdf = RAB_EvaluateBrdf(surface, L, V);
+                radiance    = lightSample.radiance * brdf;
 #endif
-                }
+            }
+
+            // Write back the reservoir if visibility was freshly traced and stored.
+            if (needToStore)
+            {
+                RTXDI_StoreDIReservoir(reservoir, rbp, reservoirPosition,
+                    g_RTXDIConst.m_ShadingInputBufferIndex);
             }
         }
     }
