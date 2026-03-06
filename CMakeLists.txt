@@ -288,6 +288,7 @@ add_custom_target(build_shaders
             --vulkanMemoryLayout dx
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
             --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
+            --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
             --relaxedInclude "pch.h"
 
     # DXIL output for D3D12
@@ -303,6 +304,7 @@ add_custom_target(build_shaders
             --hlsl2021
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
             --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
+            --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
             --relaxedInclude "pch.h"
 
     # SPIR-V output for Vulkan for NRD

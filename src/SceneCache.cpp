@@ -274,7 +274,6 @@ bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& a
 			ReadPOD(is, prim.m_VertexCount);
 			ReadPOD(is, prim.m_MaterialIndex);
 			ReadPOD(is, prim.m_MeshDataIndex);
-			prim.m_BLAS = nullptr;
 		}
 		ReadPOD(is, mesh.m_Center);
 		ReadPOD(is, mesh.m_Radius);

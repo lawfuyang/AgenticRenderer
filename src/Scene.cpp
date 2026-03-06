@@ -104,41 +104,53 @@ void Scene::BuildAccelerationStructures()
     // Mapping from MeshDataIndex to Primitive pointer for TLAS build
     std::vector<Primitive*> meshDataToPrimitive(m_MeshData.size(), nullptr);
 
-    // 1. Build BLAS for each primitive in each mesh
+	// 1. Build one BLAS per LOD level per primitive
+	uint64_t totalBLASMemoryBytes = 0;
 	for (Mesh& mesh : m_Meshes)
 	{
 		for (Primitive& primitive : mesh.m_Primitives)
 		{
-			SDL_assert(!primitive.m_BLAS);
-            meshDataToPrimitive[primitive.m_MeshDataIndex] = &primitive;
+			SDL_assert(primitive.m_BLAS.empty());
+			meshDataToPrimitive[primitive.m_MeshDataIndex] = &primitive;
 
 			const MeshData& meshData = m_MeshData[primitive.m_MeshDataIndex];
+			const uint32_t lodCount = meshData.m_LODCount;
+			SDL_assert(lodCount > 0 && lodCount <= MAX_LOD_COUNT);
 
-			nvrhi::rt::GeometryDesc geometryDesc;
-			nvrhi::rt::GeometryTriangles& geometryTriangle = geometryDesc.geometryData.triangles;
-			geometryTriangle.indexBuffer = m_IndexBuffer;
-			geometryTriangle.vertexBuffer = m_VertexBufferQuantized;
-			geometryTriangle.indexFormat = nvrhi::Format::R32_UINT;
-			geometryTriangle.vertexFormat = nvrhi::Format::RGB32_FLOAT;
-			geometryTriangle.indexOffset = meshData.m_IndexOffsets[0] * nvrhi::getFormatInfo(geometryTriangle.indexFormat).bytesPerBlock;
-			geometryTriangle.vertexOffset = 0; // Indices are already global relative to the start of the vertex buffer
-			geometryTriangle.indexCount = meshData.m_IndexCounts[0];
-			geometryTriangle.vertexCount = primitive.m_VertexCount;
-			geometryTriangle.vertexStride = sizeof(VertexQuantized);
+			primitive.m_BLAS.resize(lodCount);
 
-			geometryDesc.flags = nvrhi::rt::GeometryFlags::None; // can't be opaque since we have alpha tested materials that can be applied to this mesh
-			geometryDesc.geometryType = nvrhi::rt::GeometryType::Triangles;
+			for (uint32_t lod = 0; lod < lodCount; ++lod)
+			{
+				nvrhi::rt::GeometryDesc geometryDesc;
+				nvrhi::rt::GeometryTriangles& geometryTriangle = geometryDesc.geometryData.triangles;
+				geometryTriangle.indexBuffer = m_IndexBuffer;
+				geometryTriangle.vertexBuffer = m_VertexBufferQuantized;
+				geometryTriangle.indexFormat = nvrhi::Format::R32_UINT;
+				geometryTriangle.vertexFormat = nvrhi::Format::RGB32_FLOAT;
+				geometryTriangle.indexOffset = meshData.m_IndexOffsets[lod] * nvrhi::getFormatInfo(geometryTriangle.indexFormat).bytesPerBlock;
+				geometryTriangle.vertexOffset = 0; // Indices are already global relative to the start of the vertex buffer
+				geometryTriangle.indexCount = meshData.m_IndexCounts[lod];
+				geometryTriangle.vertexCount = primitive.m_VertexCount;
+				geometryTriangle.vertexStride = sizeof(VertexQuantized);
 
-			nvrhi::rt::AccelStructDesc blasDesc;
-			blasDesc.bottomLevelGeometries = { geometryDesc };
-			blasDesc.debugName = "BLAS";
-			blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::AllowCompaction | nvrhi::rt::AccelStructBuildFlags::PreferFastTrace;
+				geometryDesc.flags = nvrhi::rt::GeometryFlags::None; // can't be opaque since we have alpha tested materials that can be applied to this mesh
+				geometryDesc.geometryType = nvrhi::rt::GeometryType::Triangles;
 
-			primitive.m_BLAS = device->createAccelStruct(blasDesc);
+				nvrhi::rt::AccelStructDesc blasDesc;
+				blasDesc.bottomLevelGeometries = { geometryDesc };
+				blasDesc.debugName = (std::string("BLAS_LOD") + std::to_string(lod)).c_str();
+				blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PreferFastTrace;
 
-			nvrhi::utils::BuildBottomLevelAccelStruct(scopedCmd, primitive.m_BLAS, blasDesc);
+				primitive.m_BLAS[lod] = device->createAccelStruct(blasDesc);
+				nvrhi::utils::BuildBottomLevelAccelStruct(scopedCmd, primitive.m_BLAS[lod], blasDesc);
+
+				// Accumulate memory for logging (Req 7)
+				totalBLASMemoryBytes += device->getAccelStructMemoryRequirements(primitive.m_BLAS[lod]).size;
+			}
 		}
 	}
+
+	SDL_Log("[Scene] Total BLAS memory across all LODs: %.2f MB", totalBLASMemoryBytes / (1024.0 * 1024.0));
 
 	// 2. Build TLAS for the scene
 	nvrhi::rt::AccelStructDesc tlasDesc;
@@ -171,7 +183,8 @@ void Scene::BuildAccelerationStructures()
         instanceDesc.instanceMask = 1;
         instanceDesc.instanceContributionToHitGroupIndex = 0;
         instanceDesc.flags = instanceFlags;
-        instanceDesc.blasDeviceAddress = primitive->m_BLAS->getDeviceAddress();
+        // Default to LOD 0 BLAS; TLASPatch_CS will overwrite with the correct LOD address each frame.
+        instanceDesc.blasDeviceAddress = primitive->m_BLAS[0]->getDeviceAddress();
     }
 
     // Create RT instance desc buffer
@@ -179,8 +192,10 @@ void Scene::BuildAccelerationStructures()
     {
         nvrhi::BufferDesc rtInstDesc;
         rtInstDesc.byteSize = (uint32_t)(m_RTInstanceDescs.size() * sizeof(nvrhi::rt::InstanceDesc));
+		rtInstDesc.structStride = sizeof(nvrhi::rt::InstanceDesc);
         rtInstDesc.debugName = "RTInstanceDescBuffer";
         rtInstDesc.isAccelStructBuildInput = true;
+        rtInstDesc.canHaveUAVs = true; // TLASPatch_CS writes into this buffer
         rtInstDesc.initialState = nvrhi::ResourceStates::AccelStructBuildInput;
         rtInstDesc.keepInitialState = true;
         m_RTInstanceDescBuffer = device->createBuffer(rtInstDesc);
@@ -189,6 +204,41 @@ void Scene::BuildAccelerationStructures()
         scopedCmd->writeBuffer(m_RTInstanceDescBuffer, m_RTInstanceDescs.data(), rtInstDesc.byteSize);
 
         scopedCmd->buildTopLevelAccelStructFromBuffer(m_TLAS, m_RTInstanceDescBuffer, 0, (uint32_t)m_RTInstanceDescs.size());
+    }
+
+    // 3. Build the flat BLAS address buffer: blasAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex]
+    //    This is uploaded once at scene load and read by TLASPatch_CS each frame.
+    {
+        const uint32_t numInstances = (uint32_t)m_InstanceData.size();
+        const uint32_t totalEntries = numInstances * MAX_LOD_COUNT;
+        std::vector<uint64_t> blasAddresses(totalEntries, 0);
+
+        for (uint32_t instanceID = 0; instanceID < numInstances; ++instanceID)
+        {
+            const PerInstanceData& instData = m_InstanceData[instanceID];
+            Primitive* primitive = meshDataToPrimitive.at(instData.m_MeshDataIndex);
+            const uint32_t lodCount = (uint32_t)primitive->m_BLAS.size();
+
+            for (uint32_t lod = 0; lod < MAX_LOD_COUNT; ++lod)
+            {
+                // Clamp to highest available LOD to avoid null/invalid addresses (Req 2 AC3)
+                const uint32_t clampedLod = (lod < lodCount) ? lod : (lodCount - 1);
+                blasAddresses[instanceID * MAX_LOD_COUNT + lod] = primitive->m_BLAS[clampedLod]->getDeviceAddress();
+            }
+        }
+
+        nvrhi::BufferDesc blasAddrDesc;
+        blasAddrDesc.byteSize = totalEntries * sizeof(uint64_t);
+        blasAddrDesc.structStride = sizeof(uint64_t);
+        blasAddrDesc.debugName = "BLASAddressBuffer";
+        blasAddrDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+        blasAddrDesc.keepInitialState = true;
+        m_BLASAddressBuffer = device->createBuffer(blasAddrDesc);
+
+        if (totalEntries > 0)
+        {
+            scopedCmd->writeBuffer(m_BLASAddressBuffer, blasAddresses.data(), blasAddrDesc.byteSize);
+        }
     }
 }
 
@@ -469,6 +519,8 @@ void Scene::Shutdown()
 	m_LightBuffer = nullptr;
 	m_TLAS = nullptr;
 	m_RTInstanceDescBuffer = nullptr;
+	m_BLASAddressBuffer = nullptr;
+	m_InstanceLODBuffer = nullptr;
 	m_RTInstanceDescs.clear();
 
 	// Clear CPU-side containers

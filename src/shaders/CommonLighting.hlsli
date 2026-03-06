@@ -366,7 +366,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
 
             if (mat.m_AlphaMode == ALPHA_MODE_MASK)
             {
-                TriangleVertices tv = GetTriangleVertices(primitiveIndex, mesh, inputs.indices, inputs.vertices);
+                TriangleVertices tv = GetTriangleVertices(primitiveIndex, inst.m_LODIndex, mesh, inputs.indices, inputs.vertices);
                 RayGradients grad = GetShadowRayGradients(tv, bary, ray.Origin, inst.m_World);
                 
                 if (AlphaTestGrad(grad.uv, grad.ddx, grad.ddy, mat))
@@ -378,7 +378,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
             {
                 // Surface coverage attenuation (alpha blend); transmissive materials should
                 // remain hittable and be handled as light filters instead of disappearing.
-                float2 uvSample = GetInterpolatedUV(primitiveIndex, bary, mesh, inputs.indices, inputs.vertices);
+                float2 uvSample = GetInterpolatedUV(primitiveIndex, inst.m_LODIndex, bary, mesh, inputs.indices, inputs.vertices);
                 float alpha = mat.m_BaseColor.w;
                 if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
                 {
@@ -393,7 +393,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
                     // Volumetric attenuation for thick transmissive media.
                     if (mat.m_TransmissionFactor > 0.0f && mat.m_IsThinSurface == 0)
                     {
-                        TriangleVertices tv = GetTriangleVertices(primitiveIndex, mesh, inputs.indices, inputs.vertices);
+                        TriangleVertices tv = GetTriangleVertices(primitiveIndex, inst.m_LODIndex, mesh, inputs.indices, inputs.vertices);
                         float3 localNormal = tv.v0.m_Normal * (1.0f - bary.x - bary.y) + tv.v1.m_Normal * bary.x + tv.v2.m_Normal * bary.y;
                         float3 worldNormal = normalize(TransformNormal(localNormal, inst.m_World));
                         bool isFrontFace = dot(worldNormal, ray.Direction) < 0.0f;

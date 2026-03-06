@@ -1075,7 +1075,7 @@ bool GetFinalVisibility(RaytracingAccelerationStructure accelStruct, float3 orig
 
             if (mat.m_AlphaMode == ALPHA_MODE_MASK)
             {
-                TriangleVertices tv   = GetTriangleVertices(primitiveIndex, mesh, g_RTXDI_Indices, g_RTXDI_Vertices);
+                TriangleVertices tv   = GetTriangleVertices(primitiveIndex, inst.m_LODIndex, mesh, g_RTXDI_Indices, g_RTXDI_Vertices);
                 RayGradients     grad = GetShadowRayGradients(tv, bary, ray.Origin, inst.m_World);
 
                 if (AlphaTestGrad(grad.uv, grad.ddx, grad.ddy, mat))

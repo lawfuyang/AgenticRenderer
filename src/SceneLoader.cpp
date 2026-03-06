@@ -1700,10 +1700,25 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 		nvrhi::BufferDesc desc{};
 		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(PerInstanceData));
 		desc.structStride = sizeof(PerInstanceData);
+		desc.canHaveUAVs = true; // TLASPatch_CS writes m_LODIndex each frame
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_InstanceDataBuffer";
 		scene.m_InstanceDataBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
+	}
+
+	// Create per-instance LOD index buffer: instanceLOD[instanceIndex] = lodIndex.
+	// Written each frame by the GPU culling passes; read by TLASRenderer to patch BLAS addresses.
+	if (!scene.m_InstanceData.empty())
+	{
+		nvrhi::BufferDesc desc{};
+		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(uint32_t));
+		desc.structStride = sizeof(uint32_t);
+		desc.canHaveUAVs = true;
+		desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+		desc.keepInitialState = true;
+		desc.debugName = "Scene_InstanceLODBuffer";
+		scene.m_InstanceLODBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 	}
 
 	// Upload instance data

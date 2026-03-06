@@ -239,7 +239,9 @@ protected:
             nvrhi::BindingSetItem::StructuredBuffer_UAV(4, (args.m_CullingPhase == 0 && handles.occludedIndirect) ? handles.occludedIndirect : CommonResources::GetInstance().DummyUAVBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(5, handles.meshletJob ? handles.meshletJob : CommonResources::GetInstance().DummyUAVBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_UAV(6, handles.meshletJobCount ? handles.meshletJobCount : CommonResources::GetInstance().DummyUAVBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(7, handles.meshletIndirect ? handles.meshletIndirect : CommonResources::GetInstance().DummyUAVBuffer)
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(7, handles.meshletIndirect ? handles.meshletIndirect : CommonResources::GetInstance().DummyUAVBuffer),
+            // u8: per-instance LOD index output — written for every visible instance
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(8, renderer->m_Scene.m_InstanceLODBuffer),
         };
 
         if (args.m_CullingPhase == 0)

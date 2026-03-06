@@ -426,7 +426,11 @@ struct PerInstanceData
   uint32_t m_MaterialIndex;
   uint32_t m_MeshDataIndex;
   float m_Radius;
-  uint32_t padding0;
+  // Current LOD index for this instance.
+  // Written each frame by TLASPatch_CS (meshlet path) so that RT shaders
+  // can use m_IndexOffsets[m_LODIndex] in GetTriangleVertices.
+  // Defaults to 0 so instances not yet processed by the culling pass use LOD 0.
+  uint32_t m_LODIndex;
   Vector3 m_Center;
 };
 

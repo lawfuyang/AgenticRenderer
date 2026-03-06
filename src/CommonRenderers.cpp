@@ -179,12 +179,46 @@ public:
         Renderer* renderer = Renderer::GetInstance();
         Scene& scene = renderer->m_Scene;
 
-        // Perform GPU TLAS update
+        // ── TLAS Patch ────────────────────────────────────────────────────────
+        // Dispatch TLASPatch_CS to write the correct per-LOD BLAS address and
+        // m_LODIndex for each instance, using the LOD indices written by the
+        // GPU culling passes into m_InstanceLODBuffer.
+        if (scene.m_BLASAddressBuffer && scene.m_InstanceLODBuffer)
+        {
+            nvrhi::utils::ScopedMarker patchMarker(commandList, "TLASPatch");
+
+            nvrhi::BindingSetDesc bset;
+            bset.bindings =
+            {
+                nvrhi::BindingSetItem::PushConstants(0, sizeof(uint32_t)),
+                nvrhi::BindingSetItem::StructuredBuffer_SRV(0, scene.m_BLASAddressBuffer),
+                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, scene.m_InstanceLODBuffer),
+                // u0: RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc> for writing blasDeviceAddress
+                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, scene.m_RTInstanceDescBuffer),
+                // u1: RWStructuredBuffer<PerInstanceData> for writing m_LODIndex
+                nvrhi::BindingSetItem::StructuredBuffer_UAV(1, scene.m_InstanceDataBuffer),
+            };
+
+            const uint32_t numInstances = (uint32_t)scene.m_InstanceData.size();
+            const uint32_t dispatchX = DivideAndRoundUp(numInstances, 64u);
+
+            Renderer::RenderPassParams params;
+            params.commandList    = commandList;
+            params.shaderName     = "TLASPatch_TLASPatch_CSMain";
+            params.bindingSetDesc = bset;
+            params.bIncludeBindlessResources = false;
+            params.pushConstants     = &numInstances;
+            params.pushConstantsSize = sizeof(numInstances);
+            params.dispatchParams = { .x = dispatchX, .y = 1, .z = 1 };
+            renderer->AddComputePass(params);
+        }
+
+        // ── TLAS Build ────────────────────────────────────────────────────────
         commandList->buildTopLevelAccelStructFromBuffer(
             scene.m_TLAS,
             scene.m_RTInstanceDescBuffer,
-            0, // offset
-            scene.m_RTInstanceDescs.size()
+            0,
+            (uint32_t)scene.m_RTInstanceDescs.size()
         );
     }
 

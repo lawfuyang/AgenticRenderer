@@ -73,7 +73,7 @@ bool TraceRay(RayDesc ray, RNG rng, out RayHitInfo hit)
             MeshData mesh        = g_MeshData[inst.m_MeshDataIndex];
             MaterialConstants mat= g_Materials[inst.m_MaterialIndex];
 
-            float2 uvSample = GetInterpolatedUV(primitiveIndex, bary, mesh, g_Indices, g_Vertices);
+            float2 uvSample = GetInterpolatedUV(primitiveIndex, 0 /*LOD 0: path tracer always uses LOD 0 BLAS*/, bary, mesh, g_Indices, g_Vertices);
 
             if (mat.m_AlphaMode == ALPHA_MODE_MASK)
             {
@@ -159,6 +159,8 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
                 throughput *= EvalTransmittance(interiorSigmaA, interiorSigmaS, hit.m_RayT);
             }
 
+            // Path tracer always uses LOD 0 geometry (TLASPatch_CS does not run in ReferencePathTracer mode).
+            inst.m_LODIndex = 0;
             FullHitAttributes attr = GetFullHitAttributes(hit, ray, inst, mesh, g_Indices, g_Vertices);
             PBRAttributes     pbr  = GetPBRAttributes(attr, mat, 0.0f);
 

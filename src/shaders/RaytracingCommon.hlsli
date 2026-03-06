@@ -28,11 +28,12 @@ struct TriangleVertices
 
 TriangleVertices GetTriangleVertices(
     uint primitiveIndex,
+    uint lodIndex,
     MeshData mesh,
     StructuredBuffer<uint> indices,
     StructuredBuffer<VertexQuantized> vertices)
 {
-    uint baseIndex = mesh.m_IndexOffsets[0];
+    uint baseIndex = mesh.m_IndexOffsets[lodIndex];
     uint i0 = indices[baseIndex + 3 * primitiveIndex + 0];
     uint i1 = indices[baseIndex + 3 * primitiveIndex + 1];
     uint i2 = indices[baseIndex + 3 * primitiveIndex + 2];
@@ -52,7 +53,7 @@ FullHitAttributes GetFullHitAttributes(
     StructuredBuffer<uint> indices,
     StructuredBuffer<VertexQuantized> vertices)
 {
-    TriangleVertices tv = GetTriangleVertices(hit.m_PrimitiveIndex, mesh, indices, vertices);
+    TriangleVertices tv = GetTriangleVertices(hit.m_PrimitiveIndex, inst.m_LODIndex, mesh, indices, vertices);
 
     float3 bary = float3(1.0f - hit.m_Barycentrics.x - hit.m_Barycentrics.y, hit.m_Barycentrics.x, hit.m_Barycentrics.y);
 
@@ -73,12 +74,13 @@ FullHitAttributes GetFullHitAttributes(
 
 float2 GetInterpolatedUV(
     uint primitiveIndex,
+    uint lodIndex,
     float2 barycentrics,
     MeshData mesh,
     StructuredBuffer<uint> indices,
     StructuredBuffer<VertexQuantized> vertices)
 {
-    TriangleVertices tv = GetTriangleVertices(primitiveIndex, mesh, indices, vertices);
+    TriangleVertices tv = GetTriangleVertices(primitiveIndex, lodIndex, mesh, indices, vertices);
     return tv.v0.m_Uv * (1.0f - barycentrics.x - barycentrics.y) + tv.v1.m_Uv * barycentrics.x + tv.v2.m_Uv * barycentrics.y;
 }
 

@@ -878,7 +878,6 @@ void Renderer::Run()
         extern IRenderer* g_ImGuiRenderer;
         extern IRenderer* g_PathTracerRenderer;
 
-        m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
         m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
 
         if (m_Mode == RenderingMode::ReferencePathTracer)
@@ -890,6 +889,9 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
             m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+            // TLASRenderer patches BLAS addresses (using m_InstanceLODBuffer written by culling)
+            // then builds the TLAS.
+            m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
             m_RenderGraph.ScheduleRenderer(g_RTXDIRenderer);
             m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);

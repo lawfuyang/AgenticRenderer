@@ -16,7 +16,8 @@ public:
         uint32_t m_VertexCount = 0;
         int m_MaterialIndex = -1;
         uint32_t m_MeshDataIndex = 0;
-        nvrhi::rt::AccelStructHandle m_BLAS;
+        // One BLAS per LOD level; m_BLAS[lod] corresponds to meshData.m_IndexOffsets[lod].
+        std::vector<nvrhi::rt::AccelStructHandle> m_BLAS;
     };
 
     struct Mesh
@@ -222,6 +223,13 @@ public:
     std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
     nvrhi::BufferHandle m_RTInstanceDescBuffer;
+    // Flat GPU buffer: blasAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex]
+    // Uploaded once at scene load; read by TLASPatch_CS to look up per-LOD device addresses.
+    nvrhi::BufferHandle m_BLASAddressBuffer;
+    // Per-instance LOD index buffer: instanceLOD[instanceIndex] = lodIndex.
+    // Written each frame by the GPU culling passes (opaque, masked, transparent).
+    // Read by TLASRenderer to patch BLAS addresses before the TLAS build.
+    nvrhi::BufferHandle m_InstanceLODBuffer;
     nvrhi::rt::AccelStructHandle m_TLAS;
     std::vector<nvrhi::rt::InstanceDesc> m_RTInstanceDescs;
 

@@ -32,6 +32,9 @@ RWStructuredBuffer<DispatchIndirectArguments> g_DispatchIndirectArgs : register(
 RWStructuredBuffer<MeshletJob> g_MeshletJobs : register(u5);
 RWStructuredBuffer<uint> g_MeshletJobCount : register(u6);
 RWStructuredBuffer<DispatchIndirectArguments> g_MeshletIndirectArgs : register(u7);
+// Per-instance LOD index output: g_InstanceLOD[actualInstanceIndex] = lodIndex.
+// Written for every visible instance so TLASRenderer can patch BLAS addresses.
+RWStructuredBuffer<uint> g_InstanceLOD : register(u8);
 
 [numthreads(kThreadsPerGroup, 1, 1)]
 void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
@@ -127,6 +130,10 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 
             g_VisibleArgs[visibleIndex] = args;
         }
+
+        // Always write the selected LOD index for this instance so TLASRenderer
+        // can patch the correct BLAS address regardless of rendering path.
+        g_InstanceLOD[actualInstanceIndex] = lodIndex;
     }
 
     if (g_Culling.m_Phase == 0)
