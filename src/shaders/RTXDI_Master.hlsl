@@ -549,22 +549,22 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
                 float3 specBrdf  = RAB_EvaluateBrdfSpecularOnly(surface, L, V);
                 diffuseRadiance  = lightSample.radiance * diffBrdf;
                 specularRadiance = lightSample.radiance * specBrdf;
-                // Hit distance for RELAX denoiser:
-                //   - Point / spot lights: actual world-space distance to the light sample.
-                //     RELAX uses this to estimate the penumbra size (penumbra ∝ dist × tan(sourceRadius)).
-                //   - Directional / infinite lights (sun): lightSample.distance = 1e10.
-                //     Passing 1e10 or a large sentinel tells RELAX the light is "infinitely far",
-                //     which produces an overly large blur radius that is CONSTANT regardless of
-                //     camera distance — causing the penumbra to shrink as the camera moves closer
-                //     (the blur covers more pixels at close range) and to be too large at distance.
-                //     Fix: use surface.linearDepth as a proxy for the occluder-to-receiver distance.
-                //     The sun penumbra width at a receiver ≈ occluderDist × tan(sunAngularRadius),
-                //     and the closest possible occluder is at the surface itself (depth from camera).
-                //     This makes the blur scale correctly with camera distance, matching FullSample's
-                //     behaviour where StoreShadingOutput uses viewDepth for directional lights.
-                hitDistance = (lightSample.distance < 1e9f)
-                    ? lightSample.distance
-                    : surface.linearDepth;
+                // Hit distance for RELAX denoiser.
+                // Matches FullSample's ShadingHelpers.hlsli StoreShadingOutput:
+                //   lightDistance = length(lightSample.position - surface.worldPos)
+                // For point/spot lights this is the actual world-space distance.
+                // For directional/sun lights, lightSample.position = worldPos + dir * DISTANT_LIGHT_DISTANCE,
+                // so lightDistance = DISTANT_LIGHT_DISTANCE = 10000.0 — a fixed constant.
+                //
+                // IMPORTANT: Do NOT use surface.linearDepth for directional lights.
+                // RELAX uses hitDist to estimate the penumbra blur radius. If you pass
+                // linearDepth (camera-to-surface distance), the blur radius changes as
+                // the camera moves, making the penumbra shrink when zooming in and grow
+                // when zooming out — exactly the camera-distance-dependent artifact.
+                // Passing a fixed large constant (10000.0) gives a camera-independent
+                // penumbra that is purely determined by the sun's angular size and the
+                // occluder geometry, which is the physically correct behaviour.
+                hitDistance = length(lightSample.position - surface.worldPos);
                 radiance    = diffuseRadiance + specularRadiance;
 #else
                 // Combined BRDF — RAB_EvaluateBrdf already includes NdotL.

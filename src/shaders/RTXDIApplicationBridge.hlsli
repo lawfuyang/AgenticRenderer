@@ -849,11 +849,15 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
             pdf       = 1.0 / (2.0 * PI * (1.0 - lightInfo.cosSunAngularRadius));
         }
 
+        // DISTANT_LIGHT_DISTANCE = 10000.0 — matches FullSample's DirectionalLight::calcSample.
+        // This value is used as hitDist for RELAX: length(position - worldPos) = 10000.0.
+        // Using a fixed constant (not 1e10) ensures the penumbra blur is camera-independent.
+        static const float DISTANT_LIGHT_DISTANCE = 10000.0;
         s.direction     = direction;
-        s.distance      = 1e10;
+        s.distance      = DISTANT_LIGHT_DISTANCE;
         s.radiance      = lightInfo.radiance;
         s.solidAnglePdf  = pdf;
-        s.position      = surface.worldPos + direction * 1e10;
+        s.position      = surface.worldPos + direction * DISTANT_LIGHT_DISTANCE;
     }
     else // Point (1) or Spot (2)
     {
