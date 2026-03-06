@@ -549,8 +549,22 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
                 float3 specBrdf  = RAB_EvaluateBrdfSpecularOnly(surface, L, V);
                 diffuseRadiance  = lightSample.radiance * diffBrdf;
                 specularRadiance = lightSample.radiance * specBrdf;
-                // Finite hit distance for point/spot lights; large sentinel for directional.
-                hitDistance = (lightSample.distance < 1e9f) ? lightSample.distance : 1e6f;
+                // Hit distance for RELAX denoiser:
+                //   - Point / spot lights: actual world-space distance to the light sample.
+                //     RELAX uses this to estimate the penumbra size (penumbra ∝ dist × tan(sourceRadius)).
+                //   - Directional / infinite lights (sun): lightSample.distance = 1e10.
+                //     Passing 1e10 or a large sentinel tells RELAX the light is "infinitely far",
+                //     which produces an overly large blur radius that is CONSTANT regardless of
+                //     camera distance — causing the penumbra to shrink as the camera moves closer
+                //     (the blur covers more pixels at close range) and to be too large at distance.
+                //     Fix: use surface.linearDepth as a proxy for the occluder-to-receiver distance.
+                //     The sun penumbra width at a receiver ≈ occluderDist × tan(sunAngularRadius),
+                //     and the closest possible occluder is at the surface itself (depth from camera).
+                //     This makes the blur scale correctly with camera distance, matching FullSample's
+                //     behaviour where StoreShadingOutput uses viewDepth for directional lights.
+                hitDistance = (lightSample.distance < 1e9f)
+                    ? lightSample.distance
+                    : surface.linearDepth;
                 radiance    = diffuseRadiance + specularRadiance;
 #else
                 // Combined BRDF — RAB_EvaluateBrdf already includes NdotL.

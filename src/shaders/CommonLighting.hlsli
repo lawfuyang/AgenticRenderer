@@ -550,6 +550,96 @@ LightingComponents AccumulateDirectLighting(LightingInputs inputs, uint lightCou
     return total;
 }
 
+// ─── GGX VNDF Importance Sampling (shared by PathTracer & RTXDI bridge) ──────
+// Heitz 2018: "Sampling the GGX Distribution of Visible Normals"
+// All functions operate in world space; the caller supplies N, V, L as world-space vectors.
+
+// Build an orthonormal tangent frame (T, B) around a world-space normal N.
+void BuildTangentFrame(float3 N, out float3 T, out float3 B)
+{
+    float3 up = abs(N.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    T = normalize(cross(up, N));
+    B = cross(N, T);
+}
+
+// Sample a GGX microfacet half-vector using the Visible Normal Distribution (VNDF).
+// Returns the half-vector in world space.
+// u        = two uniform random numbers in [0,1)
+// N, V     = world-space surface normal and view direction
+// roughness = perceptual roughness (alpha = roughness^2 is used internally)
+float3 SampleGGX_VNDF(float2 u, float3 N, float3 V, float roughness)
+{
+    float alpha = roughness * roughness;
+
+    float3 T, B;
+    BuildTangentFrame(N, T, B);
+
+    // View in local tangent space (T=x, N=y, B=z)
+    float3 Vl = float3(dot(V, T), dot(V, N), dot(V, B));
+
+    // Stretch by alpha
+    float3 Vh = normalize(float3(alpha * Vl.x, Vl.y, alpha * Vl.z));
+
+    // Orthonormal basis around stretched view
+    float lensq = Vh.x * Vh.x + Vh.z * Vh.z;
+    float3 T1   = lensq > 0.0f ? float3(-Vh.z, 0.0f, Vh.x) / sqrt(lensq)
+                                : float3(1.0f, 0.0f, 0.0f);
+    float3 T2   = cross(Vh, T1);
+
+    // Disk sample
+    float r   = sqrt(u.x);
+    float phi = 2.0f * PI * u.y;
+    float t1  = r * cos(phi);
+    float t2  = r * sin(phi);
+    float s   = 0.5f * (1.0f + Vh.y);
+    t2        = lerp(sqrt(max(0.0f, 1.0f - t1 * t1)), t2, s);
+
+    // Half-vector in GGX-aligned space
+    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0f, 1.0f - t1 * t1 - t2 * t2)) * Vh;
+
+    // Unstretch and transform back to world space
+    float3 Ne = normalize(float3(alpha * Nh.x, max(0.0f, Nh.y), alpha * Nh.z));
+    return T * Ne.x + N * Ne.y + B * Ne.z;
+}
+
+// Evaluate the PDF of VNDF GGX sampling for a given (N, V, L) triple.
+// Returns the solid-angle PDF of sampling direction L given view V on surface N.
+float SampleGGX_VNDF_PDF(float roughness, float3 N, float3 V, float3 L)
+{
+    float3 H    = normalize(V + L);
+    float NdotH = saturate(dot(N, H));
+    float NdotV = saturate(dot(N, V));
+    float VdotH = saturate(dot(V, H));
+    float alpha  = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float denom  = (NdotH * NdotH * (alpha2 - 1.0f) + 1.0f);
+    float D      = alpha2 / (PI * denom * denom);
+    // VNDF PDF = D * G1(V) * VdotH / NdotV
+    float G1 = 2.0f * NdotV / (NdotV + sqrt(alpha2 + (1.0f - alpha2) * NdotV * NdotV));
+    return D * G1 * VdotH / max(NdotV, 1e-5f);
+}
+
+// Evaluate the BRDF weight (reflectance / PDF) for a GGX VNDF-sampled specular bounce.
+// Weight = F * G2/G1  (the distribution D and PDF cancel, leaving only the masking ratio).
+float3 EvalGGX_VNDF_Weight(float3 F0, float3 N, float3 V, float3 L, float3 H, float roughness)
+{
+    float alpha  = roughness * roughness;
+    float alpha2 = alpha * alpha;
+
+    float NdotV = saturate(dot(N, V));
+    float NdotL = saturate(dot(N, L));
+    float VdotH = saturate(dot(V, H));
+
+    if (NdotV <= 0.0f || NdotL <= 0.0f)
+        return float3(0.0f, 0.0f, 0.0f);
+
+    float3 F = F_Schlick(F0, VdotH);
+
+    // Smith G2/G1 for GGX (height-correlated ratio simplifies to G1(L))
+    float G1L = 2.0f * NdotL / (NdotL + sqrt(alpha2 + (1.0f - alpha2) * NdotL * NdotL));
+    return F * G1L;
+}
+
 // Samples a direction uniformly within a solid-angle cone cap around `dir`.
 // cosHalfAngle = cos(half-angle of cone); u = two uniform randoms in [0,1).
 // PDF = 1 / (2*PI*(1 - cosHalfAngle)); caller averages N samples so PDFs cancel.

@@ -923,7 +923,6 @@ public:
         cb.m_LocalRISBufferOffset = 0u;
         cb.m_LocalRISTileSize     = k_RISTileSize;
         cb.m_LocalRISTileCount    = k_RISTileCount;
-        cb.m_LocalRISPad          = 0u;
 
         // ---- Environment-light sampling ----
         cb.m_EnvPDFTextureSize = { k_EnvPDFTexSize, k_EnvPDFTexSize };
@@ -1083,6 +1082,8 @@ public:
         if (lbp.localLightBufferRegion.numLights > 0)
         {
             {
+                PROFILE_SCOPED("Build Local Light PDF Mip 0");
+
                 nvrhi::BindingSetDesc buildPDFBset;
                 buildPDFBset.bindings = {
                     nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
@@ -1122,6 +1123,8 @@ public:
             // the RIS tiles with importance-sampled lights, storing compact data.
             // ------------------------------------------------------------------
             {
+                PROFILE_SCOPED("Presample Local Lights");
+
                 const uint32_t presampleGroupsX = DivideAndRoundUp(k_RISTileSize, 256u);
                 Renderer::RenderPassParams params{
                     .commandList = commandList,
@@ -1146,6 +1149,8 @@ public:
             // Step 1: fill mip-0 with luminance × sin(θ) weights (ReSTIR-DI)
             //         or solid-angle-only weights (BRDF mode).
             {
+                PROFILE_SCOPED("Build Environment Light PDF Mip 0");
+
                 nvrhi::BindingSetDesc buildEnvPDFBset;
                 buildEnvPDFBset.bindings = {
                     nvrhi::BindingSetItem::ConstantBuffer(1, rtxdiCB),
@@ -1179,6 +1184,8 @@ public:
 
             // Step 3: presample the env RIS segment.
             {
+                PROFILE_SCOPED("Presample Environment Light");
+
                 const uint32_t presampleGroupsX = DivideAndRoundUp(k_EnvRISTileSize, 256u);
                 Renderer::RenderPassParams params{
                     .commandList    = commandList,
@@ -1198,6 +1205,8 @@ public:
         // Generate Initial Samples
         // ------------------------------------------------------------------
         {
+            PROFILE_SCOPED("Generate Initial Samples");
+
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDI_Master_RTXDI_GenerateInitialSamples_Main",
@@ -1219,6 +1228,8 @@ public:
                                   g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal);
         if (doTemporal)
         {
+            PROFILE_SCOPED("Temporal Resampling");
+
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDI_Master_RTXDI_TemporalResampling_Main",
@@ -1240,6 +1251,8 @@ public:
                                  g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal);
         if (doSpatial)
         {
+            PROFILE_SCOPED("Spatial Resampling");
+
             Renderer::RenderPassParams params{
                 .commandList  = commandList,
                 .shaderName   = "RTXDI_Master_RTXDI_SpatialResampling_Main",
@@ -1273,6 +1286,8 @@ public:
 
             // ShadeSamples (denoising permutation): writes packed diffuse/specular to u5/u6.
             {
+                PROFILE_SCOPED("Shade Samples with RELAX permutation");
+
                 Renderer::RenderPassParams params{
                     .commandList  = commandList,
                     .shaderName   = "RTXDI_Master_RTXDI_ShadeSamples_Main_RTXDI_ENABLE_RELAX_DENOISING=1",
@@ -1288,6 +1303,8 @@ public:
 
             // GenerateViewZ: full-screen pass that writes linear view-space depth to u7.
             {
+                PROFILE_SCOPED("Generate ViewZ for RELAX");
+                
                 Renderer::RenderPassParams params{
                     .commandList  = commandList,
                     .shaderName   = "RTXDI_Master_RTXDI_GenerateViewZ_Main_RTXDI_ENABLE_RELAX_DENOISING=1",
@@ -1328,6 +1345,8 @@ public:
         }
         else
         {
+            PROFILE_SCOPED("Shade Samples without RELAX");
+
             // ---- Non-denoising path: combined radiance to g_RTXDIDIOutput ----
             Renderer::RenderPassParams params{
                 .commandList  = commandList,

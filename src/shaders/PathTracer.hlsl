@@ -55,67 +55,6 @@ float3 EvalTransmittance(float3 sigmaA, float3 sigmaS, float dist)
     return exp(-(sigmaA + sigmaS) * dist);
 }
 
-// ─── GGX VNDF Importance Sampling ────────────────────────────────────────────
-// Heitz 2018: "Sampling the GGX Distribution of Visible Normals"
-// Returns the sampled microfacet half-vector in world space.
-float3 SampleGGX_VNDF(float2 u, float3 N, float3 V, float roughness)
-{
-    float alpha = roughness * roughness;
-
-    // Build tangent frame
-    float3 up = abs(N.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
-    float3 T  = normalize(cross(up, N));
-    float3 B  = cross(N, T);
-
-    // View in local tangent space
-    float3 Vl = float3(dot(V, T), dot(V, N), dot(V, B));
-
-    // Stretch by alpha
-    float3 Vh = normalize(float3(alpha * Vl.x, Vl.y, alpha * Vl.z));
-
-    // Orthonormal basis around stretched view
-    float lensq = Vh.x * Vh.x + Vh.z * Vh.z;
-    float3 T1   = lensq > 0.0f ? float3(-Vh.z, 0.0f, Vh.x) / sqrt(lensq)
-                                : float3(1.0f, 0.0f, 0.0f);
-    float3 T2   = cross(Vh, T1);
-
-    // Disk sample
-    float r   = sqrt(u.x);
-    float phi = 2.0f * PI * u.y;
-    float t1  = r * cos(phi);
-    float t2  = r * sin(phi);
-    float s   = 0.5f * (1.0f + Vh.y);
-    t2        = lerp(sqrt(max(0.0f, 1.0f - t1 * t1)), t2, s);
-
-    // Half-vector in GGX-aligned space
-    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0f, 1.0f - t1 * t1 - t2 * t2)) * Vh;
-
-    // Unstretch and transform back to world space
-    float3 Ne = normalize(float3(alpha * Nh.x, max(0.0f, Nh.y), alpha * Nh.z));
-    return T * Ne.x + N * Ne.y + B * Ne.z;
-}
-
-// Evaluates the BRDF weight (reflectance / PDF) for GGX VNDF sampling.
-// Weight = F * G2/G1  (PDF cancels with the distribution term).
-float3 EvalGGX_Weight(float3 F0, float3 N, float3 V, float3 L, float3 H, float roughness)
-{
-    float alpha  = roughness * roughness;
-    float alpha2 = alpha * alpha;
-
-    float NdotV = saturate(dot(N, V));
-    float NdotL = saturate(dot(N, L));
-    float VdotH = saturate(dot(V, H));
-
-    if (NdotV <= 0.0f || NdotL <= 0.0f)
-        return float3(0.0f, 0.0f, 0.0f);
-
-    float3 F = F_Schlick(F0, VdotH);
-
-    // Smith G2/G1 for GGX (height-correlated ratio simplifies nicely)
-    float G1L = 2.0f * NdotL / (NdotL + sqrt(alpha2 + (1.0f - alpha2) * NdotL * NdotL));
-    return F * G1L;
-}
-
 // ─── Utility: trace a ray and fill a RayHitInfo ────────────────────────────
 bool TraceRay(RayDesc ray, RNG rng, out RayHitInfo hit)
 {
@@ -405,7 +344,7 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
                 if (dot(N, newDir) <= 0.0f)
                     break;
 
-                brdfWeight = EvalGGX_Weight(inputs.F0, N, V, newDir, H, pbr.roughness) / specProb;
+                brdfWeight = EvalGGX_VNDF_Weight(inputs.F0, N, V, newDir, H, pbr.roughness) / specProb;
             }
             else
             {

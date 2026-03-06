@@ -381,61 +381,16 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
 // Tangent-space helpers for VNDF GGX importance sampling
 float3 WorldToTangent(RAB_Surface surface, float3 w)
 {
-    float3 tangent, bitangent;
-    float3 up = abs(surface.normal.z) < 0.999 ? float3(0,0,1) : float3(1,0,0);
-    tangent   = normalize(cross(up, surface.normal));
-    bitangent = cross(surface.normal, tangent);
-    return float3(dot(bitangent, w), dot(tangent, w), dot(surface.normal, w));
+    float3 T, B;
+    BuildTangentFrame(surface.normal, T, B);
+    return float3(dot(B, w), dot(T, w), dot(surface.normal, w));
 }
 
 float3 TangentToWorld(RAB_Surface surface, float3 h)
 {
-    float3 tangent, bitangent;
-    float3 up = abs(surface.normal.z) < 0.999 ? float3(0,0,1) : float3(1,0,0);
-    tangent   = normalize(cross(up, surface.normal));
-    bitangent = cross(surface.normal, tangent);
-    return bitangent * h.x + tangent * h.y + surface.normal * h.z;
-}
-
-// VNDF GGX importance sampling — matches FullSample's ImportanceSampleGGX_VNDF
-// Returns a half-vector in tangent space.
-float3 ImportanceSampleGGX_VNDF(float2 u, float roughness, float3 Ve, float anisotropy)
-{
-    float alpha = roughness * roughness;
-    // Stretch view
-    float3 Vh = normalize(float3(alpha * Ve.x, alpha * Ve.y, Ve.z));
-    // Orthonormal basis
-    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
-    float3 T1 = lensq > 0 ? float3(-Vh.y, Vh.x, 0) / sqrt(lensq) : float3(1,0,0);
-    float3 T2 = cross(Vh, T1);
-    // Sample point with polar coordinates
-    float r   = sqrt(u.x);
-    float phi = 2.0 * PI * u.y;
-    float t1  = r * cos(phi);
-    float t2  = r * sin(phi);
-    float s   = 0.5 * (1.0 + Vh.z);
-    t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
-    // Compute normal
-    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1*t1 - t2*t2)) * Vh;
-    // Unstretch
-    float3 Ne = normalize(float3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
-    return Ne;
-}
-
-// PDF of VNDF GGX sampling for a given direction
-float ImportanceSampleGGX_VNDF_PDF(float roughness, float3 N, float3 V, float3 L)
-{
-    float3 H = normalize(V + L);
-    float NdotH = saturate(dot(N, H));
-    float NdotV = saturate(dot(N, V));
-    float VdotH = saturate(dot(V, H));
-    float alpha = roughness * roughness;
-    float alpha2 = alpha * alpha;
-    float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);
-    float D = alpha2 / (PI * denom * denom);
-    // VNDF PDF = D * G1(V) * VdotH / NdotV
-    float G1 = 2.0 * NdotV / (NdotV + sqrt(alpha2 + (1.0 - alpha2) * NdotV * NdotV));
-    return D * G1 * VdotH / max(NdotV, 1e-5);
+    float3 T, B;
+    BuildTangentFrame(surface.normal, T, B);
+    return B * h.x + T * h.y + surface.normal * h.z;
 }
 
 bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 direction)
@@ -457,11 +412,10 @@ bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState 
     }
     else
     {
-        // VNDF GGX importance sampling for specular
-        float3 Ve = normalize(WorldToTangent(surface, surface.viewDir));
-        float3 h  = ImportanceSampleGGX_VNDF(float2(r1, r2), max(surface.material.roughness, kMinRoughness), Ve, 1.0);
-        h         = normalize(h);
-        direction = reflect(-surface.viewDir, TangentToWorld(surface, h));
+        // VNDF GGX importance sampling for specular — uses shared SampleGGX_VNDF from CommonLighting.hlsli
+        float3 H  = SampleGGX_VNDF(float2(r1, r2), surface.normal, surface.viewDir, max(surface.material.roughness, kMinRoughness));
+        H         = normalize(H);
+        direction = reflect(-surface.viewDir, H);
     }
 
     return dot(surface.normal, direction) > 0.0;
@@ -472,7 +426,7 @@ float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 direction)
     static const float kMinRoughness = 0.05;
     float cosTheta   = saturate(dot(surface.normal, direction));
     float diffusePdf = (cosTheta > 0.0) ? (cosTheta / PI) : 0.0;
-    float specularPdf = ImportanceSampleGGX_VNDF_PDF(
+    float specularPdf = SampleGGX_VNDF_PDF(
         max(surface.material.roughness, kMinRoughness),
         surface.normal, surface.viewDir, direction);
     return (cosTheta > 0.0)
@@ -945,11 +899,11 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
 
 float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirection)
 {
-    // Matches FullSample's EvaluateBrdf in ShadingHelpers.hlsli:
-    //   diffuse  = Lambert(N, -L)  * diffuseAlbedo   = NdotL/PI * albedo
-    //   specular = GGX_times_NdotL(V, L, N, roughness, F0)
-    // Using Lambert (not Disney Burley) keeps the shading consistent with the
-    // target PDF used in RAB_GetLightSampleTargetPdfForSurface.
+    // Final shading BRDF — used for the non-denoised path (RTXDI_ENABLE_RELAX_DENOISING=0).
+    // Uses Disney Burley diffuse for better visual quality (retroreflection, roughness-dependent
+    // darkening at grazing angles). The target PDF (RAB_GetLightSampleTargetPdfForSurface) uses
+    // simple Lambert for RIS weight consistency with FullSample — that mismatch is acceptable
+    // because the target PDF only needs to be *proportional* to the integrand, not exact.
     float3 N  = surface.normal;
     float3 L  = inDirection;
     float3 V  = outDirection;
@@ -959,13 +913,15 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
     float NdotV = max(0.0, dot(N, V));
     float NdotH = max(0.0, dot(N, H));
     float VdotH = max(0.0, dot(V, H));
+    float LdotH = max(0.0, dot(L, H));
 
-    // Lambert diffuse: NdotL (no PI division) — matches FullSample's Lambert(N,-L) = max(0,NdotL).
-    // The 1/PI factor is part of the BRDF definition but FullSample omits it here for consistency
-    // with the target PDF in RAB_GetLightSampleTargetPdfForSurface (which also uses d = NdotL).
-    float3 diffuse = NdotL * surface.material.diffuseAlbedo;
+    // Disney Burley diffuse — returns Fd * NdotL / PI (already includes NdotL and 1/PI).
+    // Multiply by diffuseAlbedo and kD=(1-metallic) to get the full diffuse contribution.
+    float kD = 1.0 - Luminance(surface.material.specularF0); // approximate (1-metallic)
+    float3 diffuse = DisneyBurleyDiffuse(NdotL, NdotV, LdotH, surface.roughness)
+                   * surface.material.diffuseAlbedo * kD;
 
-    // GGX specular × NdotL (matches FullSample's GGX_times_NdotL)
+    // GGX specular × NdotL
     static const float kMinRoughness = 0.05;
     float3 F0 = surface.material.specularF0;
     float3 F  = F_Schlick(F0, VdotH);
@@ -982,13 +938,31 @@ float3 RAB_EvaluateBrdf(RAB_Surface surface, float3 inDirection, float3 outDirec
 
 float3 RAB_EvaluateBrdfDiffuseOnly(RAB_Surface surface, float3 L)
 {
-    // Demodulated diffuse for NRD RELAX: Lambert term only (NdotL), no albedo, no PI.
-    // Matches FullSample's EvaluateBrdf: brdf.demodulatedDiffuse = Lambert(N, -L) = max(0, NdotL).
-    // FullSample's Lambert() does NOT divide by PI — it returns max(0, dot(N, L)).
-    // The compositing pass re-modulates by multiplying with diffuseAlbedo.
-    // Must be consistent with RAB_GetLightSampleTargetPdfForSurface which uses d = NdotL.
-    float NdotL = max(0.0, dot(surface.normal, L));
-    return float3(NdotL, NdotL, NdotL);
+    // Demodulated diffuse for NRD RELAX.
+    // Returns the Disney Burley diffuse lobe WITHOUT albedo, so the denoiser sees a
+    // signal in a normalised range and the compositing pass can re-modulate by albedo.
+    //
+    // Why Disney Burley here instead of plain NdotL?
+    //   - RAB_GetLightSampleTargetPdfForSurface uses Lambert (NdotL) for RIS weight
+    //     consistency with FullSample — that is fine because the target PDF only needs
+    //     to be proportional to the integrand.
+    //   - But the *shading* output (what the denoiser and compositing see) should use
+    //     the physically correct BRDF for best image quality. Disney Burley adds
+    //     retroreflection and roughness-dependent darkening that Lambert lacks.
+    //   - The mismatch between target PDF (Lambert) and shading BRDF (Burley) is a
+    //     standard RIS approximation — it introduces no bias, only slightly sub-optimal
+    //     variance (which is negligible in practice).
+    //
+    // DisneyBurleyDiffuse returns Fd * NdotL / PI.
+    // The compositing pass multiplies by diffuseAlbedo to recover the full contribution.
+    float3 N    = surface.normal;
+    float3 V    = surface.viewDir;
+    float3 H    = normalize(V + L);
+    float NdotL = max(0.0, dot(N, L));
+    float NdotV = max(0.0, dot(N, V));
+    float LdotH = max(0.0, dot(L, H));
+    float fd    = DisneyBurleyDiffuse(NdotL, NdotV, LdotH, surface.roughness);
+    return float3(fd, fd, fd);
 }
 
 float3 RAB_EvaluateBrdfSpecularOnly(RAB_Surface surface, float3 L, float3 V)

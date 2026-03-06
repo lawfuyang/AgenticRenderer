@@ -538,118 +538,97 @@ struct BloomConstants
 
 struct RTXDIConstants
 {
-    // ---- viewport & frame ----
-    Vector2U m_ViewportSize;     // (width, height) in pixels
+    // Row 0: viewport, frame, runtime
+    Vector2U m_ViewportSize;             // (width, height) in pixels
     uint32_t m_FrameIndex;
-    uint32_t m_LightCount;       // total number of lights in g_Lights[]
+    uint32_t m_LightCount;               // total lights in g_Lights[]
 
-    // ---- RTXDI_RuntimeParameters ----
-    uint32_t m_NeighborOffsetMask;       // = ReSTIRDIStaticParameters.NeighborOffsetCount - 1
+    // Row 1: runtime params + local light region
+    uint32_t m_NeighborOffsetMask;       // ReSTIRDIStaticParameters.NeighborOffsetCount - 1
     uint32_t m_ActiveCheckerboardField;  // 0 = off
-    uint32_t m_RuntimePad1;
-    uint32_t m_RuntimePad2;
-
-    // ---- RTXDI_LightBufferParameters: localLightBufferRegion ----
     uint32_t m_LocalLightFirstIndex;
     uint32_t m_LocalLightCount;
-    uint32_t m_LocalRegionPad1;
-    uint32_t m_LocalRegionPad2;
 
-    // ---- RTXDI_LightBufferParameters: infiniteLightBufferRegion ----
+    // Row 2: infinite light region + env light params
     uint32_t m_InfiniteLightFirstIndex;
     uint32_t m_InfiniteLightCount;
-    uint32_t m_InfiniteRegionPad1;
-    uint32_t m_InfiniteRegionPad2;
-
-    // ---- RTXDI_LightBufferParameters: environmentLightParams ----
     uint32_t m_EnvLightPresent;
     uint32_t m_EnvLightIndex;
-    uint32_t m_EnvLightPad1;
-    uint32_t m_EnvLightPad2;
 
-    // ---- RTXDI_ReservoirBufferParameters ----
+    // Row 3: reservoir buffer params + sample counts
     uint32_t m_ReservoirBlockRowPitch;
     uint32_t m_ReservoirArrayPitch;
-    uint32_t m_ReservoirPad1;
-    uint32_t m_ReservoirPad2;
+    uint32_t m_NumLocalLightSamples;     // numPrimaryLocalLightSamples
+    uint32_t m_NumInfiniteLightSamples;  // numPrimaryInfiniteLightSamples
 
-    // ---- ReSTIRDI_BufferIndices ----
+    // Row 4: sample counts + buffer indices (part 1)
+    uint32_t m_NumEnvSamples;            // numEnvironmentMapSamples drawn per pixel
+    uint32_t m_NumBrdfSamples;           // numPrimaryBrdfSamples
     uint32_t m_InitialSamplingOutputBufferIndex;
     uint32_t m_TemporalResamplingInputBufferIndex;
+
+    // Row 5: buffer indices (part 2)
     uint32_t m_TemporalResamplingOutputBufferIndex;
     uint32_t m_SpatialResamplingInputBufferIndex;
-    //
     uint32_t m_SpatialResamplingOutputBufferIndex;
     uint32_t m_ShadingInputBufferIndex;
+
+    // Row 6: misc flags + spatial params
     uint32_t m_EnableSky;
-    uint32_t m_SpatialNumSamples;       // number of spatial neighbour candidates
-    //
-    float    m_SpatialSamplingRadius;   // pixel-space search radius for spatial resampling
-    uint32_t m_BufferIdxPad1;
-    uint32_t m_BufferIdxPad2;
-    uint32_t pad0;
-    //
+    uint32_t m_SpatialNumSamples;        // number of spatial neighbour candidates
+    float    m_SpatialSamplingRadius;    // pixel-space search radius
+    uint32_t m_SpatialNumDisocclusionBoostSamples;
+
+    // Row 7: local light PDF + RIS
     Vector2U m_LocalLightPDFTextureSize; // (width, height) of mip 0
-    uint32_t m_LocalRISBufferOffset;   // start index in the RIS buffer
-    uint32_t m_LocalRISTileSize;       // number of samples per tile
-    //
-    uint32_t m_LocalRISTileCount;      // number of tiles
-    uint32_t m_LocalRISPad;
+    uint32_t m_LocalRISBufferOffset;
+    uint32_t m_LocalRISTileSize;
+
+    // Row 8: local RIS + env RIS
+    uint32_t m_LocalRISTileCount;
     uint32_t m_EnvRISBufferOffset;
     uint32_t m_EnvRISTileSize;
-    //
     uint32_t m_EnvRISTileCount;
+
+    // Row 9: env sampling + PDF size
     uint32_t m_EnvSamplingMode;          // 0=Off  1=BRDF(uniform)  2=ReSTIR-DI(importance)
+    uint32_t _pad9;                      // keep 16-byte alignment before PlanarViewConstants
     Vector2U m_EnvPDFTextureSize;        // (width, height) of env PDF mip-0
 
     // ---- Camera: current & previous frame view matrices for reprojection ----
     PlanarViewConstants m_View;
     PlanarViewConstants m_PrevView;
 
-    Vector3 m_SunDirection;
-    float m_SunIntensity;
+    // Row after views: sun
+    Vector3  m_SunDirection;
+    float    m_SunIntensity;
 
-    //
-    uint32_t m_NumEnvSamples;            // numEnvironmentMapSamples drawn per pixel
-    uint32_t m_NumLocalLightSamples;     // numPrimaryLocalLightSamples
-    uint32_t m_NumInfiniteLightSamples;  // numPrimaryInfiniteLightSamples
-    uint32_t m_NumBrdfSamples;           // numPrimaryBrdfSamples
+    // ---- Temporal resampling parameters ----
+    uint32_t m_TemporalMaxHistoryLength;
+    uint32_t m_TemporalBiasCorrectionMode;
+    float    m_TemporalDepthThreshold;
+    float    m_TemporalNormalThreshold;
 
-    // ---- Temporal resampling parameters (from ReSTIRDI_TemporalResamplingParameters) ----
-    uint32_t m_TemporalMaxHistoryLength;          // maxHistoryLength
-    uint32_t m_TemporalBiasCorrectionMode;        // temporalBiasCorrection (ReSTIRDI_TemporalBiasCorrectionMode)
-    float    m_TemporalDepthThreshold;            // temporalDepthThreshold
-    float    m_TemporalNormalThreshold;           // temporalNormalThreshold
-    //
-    uint32_t m_TemporalEnableVisibilityShortcut;  // discardInvisibleSamples
-    uint32_t m_TemporalEnablePermutationSampling; // enablePermutationSampling
-    uint32_t m_TemporalUniformRandomNumber;       // uniformRandomNumber (JenkinsHash(frameIndex))
-    uint32_t m_TemporalEnableBoilingFilter;       // enableBoilingFilter
-    //
-    float    m_TemporalBoilingFilterStrength;     // boilingFilterStrength
-    uint32_t m_TemporalPad0;
-    uint32_t m_TemporalPad1;
-    uint32_t m_TemporalPad2;
+    uint32_t m_TemporalEnableVisibilityShortcut;
+    uint32_t m_TemporalEnablePermutationSampling;
+    uint32_t m_TemporalUniformRandomNumber;
+    uint32_t m_TemporalEnableBoilingFilter;
 
-    // ---- Spatial resampling parameters (from ReSTIRDI_SpatialResamplingParameters) ----
-    uint32_t m_SpatialNumDisocclusionBoostSamples; // numDisocclusionBoostSamples
-    uint32_t m_SpatialBiasCorrectionMode;          // spatialBiasCorrection (ReSTIRDI_SpatialBiasCorrectionMode)
-    float    m_SpatialDepthThreshold;              // spatialDepthThreshold
-    float    m_SpatialNormalThreshold;             // spatialNormalThreshold
-    //
-    uint32_t m_SpatialDiscountNaiveSamples;        // discountNaiveSamples
-    uint32_t m_SpatialPad0;
-    uint32_t m_SpatialPad1;
-    uint32_t m_SpatialPad2;
+    // Row: boiling filter + spatial bias correction + thresholds
+    float    m_TemporalBoilingFilterStrength;
+    uint32_t m_SpatialBiasCorrectionMode;
+    float    m_SpatialDepthThreshold;
+    float    m_SpatialNormalThreshold;
 
-    // ---- Shading parameters (from ReSTIRDI_ShadingParameters) ----
-    uint32_t m_EnableInitialVisibility;    // enableInitialVisibility: trace shadow ray after initial sampling
-    uint32_t m_EnableFinalVisibility;      // enableFinalVisibility: trace shadow ray at final shading
-    uint32_t m_ReuseFinalVisibility;       // reuseFinalVisibility: cache & reuse the final visibility result
-    uint32_t m_DiscardInvisibleSamples;    // discardInvisibleSamples (mirrors temporal param)
-    //
-    uint32_t m_FinalVisibilityMaxAge;      // finalVisibilityMaxAge: max reservoir age for reuse
-    float    m_FinalVisibilityMaxDistance; // finalVisibilityMaxDistance: max world-space distance for reuse
-    uint32_t m_ShadingPad0;
-    uint32_t m_ShadingPad1;
+    // Row: spatial discount + shading params
+    uint32_t m_SpatialDiscountNaiveSamples;
+    uint32_t m_EnableInitialVisibility;
+    uint32_t m_EnableFinalVisibility;
+    uint32_t m_ReuseFinalVisibility;
+
+    // Row: shading params (cont.)
+    uint32_t m_DiscardInvisibleSamples;
+    uint32_t m_FinalVisibilityMaxAge;
+    float    m_FinalVisibilityMaxDistance;
+    uint32_t _padEnd;                    // final 16-byte alignment
 };

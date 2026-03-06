@@ -268,6 +268,8 @@ void DenoiserHelper::Setup(RenderGraph& renderGraph)
 
 void DenoiserHelper::Execute(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph, const DenoisePassDesc& desc)
 {
+    PROFILE_FUNCTION();
+
     SDL_assert(m_NRDInstance && "DenoiserHelper::Execute called before Initialize");
 
     nvrhi::utils::ScopedMarker scopedMarker{ commandList, "NRD Denoise" };
@@ -332,6 +334,8 @@ void DenoiserHelper::Execute(nvrhi::CommandListHandle commandList, const RenderG
     // -------------------------------------------------------------------------
     for (uint32_t dispatchIdx = 0; dispatchIdx < dispatchDescNum; ++dispatchIdx)
     {
+        PROFILE_SCOPED("NRD Dispatch");
+        
         const nrd::DispatchDesc& dispatchDesc = dispatchDescs[dispatchIdx];
         const nrd::PipelineDesc& pipelineDesc = instanceDesc->pipelines[dispatchDesc.pipelineIndex];
 

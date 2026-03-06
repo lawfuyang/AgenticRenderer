@@ -1553,6 +1553,7 @@ void Renderer::AddComputePass(const RenderPassParams& params)
 
 void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType)
 {
+    PROFILE_FUNCTION();
     nvrhi::utils::ScopedMarker spdMarker{ commandList, markerName };
 
     const nvrhi::FormatInfo& formatInfo = nvrhi::getFormatInfo(texture->getDesc().format);
