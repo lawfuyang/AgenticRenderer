@@ -143,8 +143,14 @@ public:
     // Reset graph for new frame (doesn't free physical resources)
     void Reset();
     
+    // general purpose transient resource declaration (called during Setup phase)
+    // underlying memory is not guaranteed to be retained across the whole frame due to aliasing
     bool DeclareTexture(const RGTextureDesc& desc, RGTextureHandle& outputHandle);
     bool DeclareBuffer(const RGBufferDesc& desc, RGBufferHandle& outputHandle);
+
+    // "persistent" resources are guaranteed to NOT be aliased with any other resource
+    // they are ideal for long-term caching of resources across frames
+    // they are only freed when the "owner" does not declare them for several frames
     bool DeclarePersistentTexture(const RGTextureDesc& desc, RGTextureHandle& outputHandle);
     bool DeclarePersistentBuffer(const RGBufferDesc& desc, RGBufferHandle& outputHandle);
 
