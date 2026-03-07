@@ -18,6 +18,17 @@
 RWTexture2D<float> g_PDFMip0    : register(u4);  // mip 0 of the local-light PDF texture
 RWTexture2D<float> g_EnvPDFMip0 : register(u8);  // mip 0 of the environment-light PDF texture
 
+// ---- Visualization-only resources (only accessed by RTXDI_Visualize_Main) ----
+// t20-t23: input signals to visualize; bound per-pass by RTXDIVisualizationRenderer
+Texture2D<float4> g_RTXDI_VizRawDiffuse   : register(t20); // raw RTXDI diffuse (or combined DI output)
+Texture2D<float4> g_RTXDI_VizRawSpecular  : register(t21); // raw RTXDI specular
+Texture2D<float4> g_RTXDI_VizDenoisedDiff : register(t22); // RELAX-denoised diffuse
+Texture2D<float4> g_RTXDI_VizDenoisedSpec : register(t23); // RELAX-denoised specular
+
+// u10: HDR color output — read/write for blending the chart overlay
+VK_IMAGE_FORMAT_UNKNOWN
+RWTexture2D<float4> g_RTXDI_VizHDROutput  : register(u10);
+
 // Note: g_RTXDI_EnvLightPDFTexture (t19) is declared in RTXDIApplicationBridge.hlsli
 
 #include "Rtxdi/Utils/Checkerboard.hlsli"
@@ -621,3 +632,127 @@ void RTXDI_GenerateViewZ_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     g_RTXDILinearDepth[GlobalIndex] = linearDepth;
 }
 #endif
+
+// ============================================================================
+// SECTION 11: RTXDI_Visualize_Main
+// Overlays a logarithmic luminance histogram (mirroring FullSample's
+// VisualizeHdrSignals.hlsl) onto the HDR color output.
+//
+// The chart is drawn at the horizontal centre of the screen:
+//   - Yellow line at y=middle  →  luminance 1.0
+//   - Faint yellow lines at decade boundaries (10, 0.1, 100, …)
+//   - Cyan bar below the signal position; yellow fire where value == 0
+//   - 100 pixels per decade (log10 scale)
+//
+// Bound by RTXDIVisualizationRenderer; runs after DeferredRenderer so the
+// HDR colour output already contains the full composited scene.
+// ============================================================================
+
+float4 VizBlend(float4 top, float4 bottom)
+{
+    return float4(top.rgb * top.a + bottom.rgb * (1.0f - top.a),
+                  1.0f - (1.0f - top.a) * (1.0f - bottom.a));
+}
+
+[numthreads(8, 8, 1)]
+void RTXDI_Visualize_Main(uint2 pixelPos : SV_DispatchThreadID)
+{
+    const uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
+    if (any(pixelPos >= viewportSize))
+        return;
+
+    const uint visMode = g_RTXDIConst.m_VisualizationMode;
+    if (visMode == RTXDI_VIS_MODE_NONE)
+        return;
+
+    // The chart reads a horizontal strip at the vertical centre of the screen.
+    const int middle   = int(viewportSize.y) / 2;
+    const int2 samplePos = int2(int(pixelPos.x), middle);
+
+    // Compute the reservoir position for reservoir-weight / M modes.
+    const RTXDI_RuntimeParameters          rtp = GetRuntimeParams();
+    const RTXDI_ReservoirBufferParameters  rbp = GetReservoirBufferParams();
+    const int2 reservoirPos = RTXDI_PixelPosToReservoirPos(samplePos, rtp.activeCheckerboardField);
+
+    float input = 0.0f;
+    switch (visMode)
+    {
+    case RTXDI_VIS_MODE_COMPOSITED_COLOR:
+    case RTXDI_VIS_MODE_RESOLVED_COLOR:
+        input = Luminance(g_RTXDI_VizHDROutput[samplePos].rgb);
+        break;
+
+    case RTXDI_VIS_MODE_DIFFUSE:
+        input = Luminance(g_RTXDI_VizRawDiffuse[samplePos].rgb);
+        break;
+
+    case RTXDI_VIS_MODE_SPECULAR:
+        input = Luminance(g_RTXDI_VizRawSpecular[samplePos].rgb);
+        break;
+
+    case RTXDI_VIS_MODE_DENOISED_DIFFUSE:
+        input = Luminance(g_RTXDI_VizDenoisedDiff[samplePos].rgb);
+        break;
+
+    case RTXDI_VIS_MODE_DENOISED_SPECULAR:
+        input = Luminance(g_RTXDI_VizDenoisedSpec[samplePos].rgb);
+        break;
+
+    case RTXDI_VIS_MODE_RESERVOIR_WEIGHT:
+    {
+        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(rbp, reservoirPos, g_RTXDIConst.m_ShadingInputBufferIndex);
+        input = reservoir.weightSum;
+        break;
+    }
+
+    case RTXDI_VIS_MODE_RESERVOIR_M:
+    {
+        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(rbp, reservoirPos, g_RTXDIConst.m_ShadingInputBufferIndex);
+        input = float(reservoir.M);
+        break;
+    }
+
+    // Modes not implemented in this renderer — input stays 0 (shows fire at bottom).
+    default:
+        break;
+    }
+
+    // Log10 luminance → pixel row the signal peak maps to.
+    const float logLum  = log2(max(input, 1e-30f)) / log2(10.0f);
+    const int   chartY  = middle - int(logLum * 100.0f); // higher lum → higher on screen (lower Y)
+
+    // Build overlay colour for this pixel (default: transparent).
+    float4 overlay = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    // Horizontal reference lines.
+    const int linePos = ((middle - int(pixelPos.y)) % 100 + 100) % 100;
+    if (int(pixelPos.y) == middle)
+        overlay = VizBlend(float4(1, 1, 0, 0.6f), overlay);   // yellow = 1.0
+    else if (linePos == 0)
+        overlay = VizBlend(float4(1, 1, 0, 0.2f), overlay);   // decade grid
+
+    // Bar / fire.
+    const float barHeight = 30.0f;
+    if (input <= 0.0f || isinf(logLum))
+    {
+        // Zero / -inf: render yellow fire at bottom of screen.
+        float t = max(float(int(pixelPos.y) - int(viewportSize.y)) + barHeight, 0.0f) / barHeight;
+        float4 fire = float4(1, 1, 0, t * t * 0.8f);
+        overlay = VizBlend(fire, overlay);
+    }
+    else if (int(pixelPos.y) >= chartY)
+    {
+        float t = max(float(chartY - int(pixelPos.y)) + barHeight, 0.0f) / barHeight;
+        float4 bar = float4(0, 1, 1, t * t);
+        overlay = VizBlend(bar, overlay);
+    }
+
+    // Blend the overlay onto the HDR output.
+    if (overlay.a > 0.01f)
+    {
+        const float4 existing = g_RTXDI_VizHDROutput[pixelPos];
+        g_RTXDI_VizHDROutput[pixelPos] = float4(
+            overlay.rgb * overlay.a + existing.rgb * (1.0f - overlay.a),
+            existing.a);
+    }
+}

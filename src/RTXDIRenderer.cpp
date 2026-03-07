@@ -27,11 +27,15 @@ RGTextureHandle g_RG_RTXDIDIOutput;
 RGTextureHandle g_RG_RTXDIDiffuseOutput;  // RELAX: denoised diffuse output (OUT_DIFF_RADIANCE_HITDIST)
 RGTextureHandle g_RG_RTXDISpecularOutput; // RELAX: denoised specular output (OUT_SPEC_RADIANCE_HITDIST)
 RGTextureHandle g_RG_RTXDILinearDepth;    // RELAX: linear view-space depth (IN_VIEWZ)
+RGTextureHandle g_RG_RTXDIRawDiffuseOutput;
+RGTextureHandle g_RG_RTXDIRawSpecularOutput;
+RGBufferHandle  g_RG_RTXDILightReservoirBuffer;
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
 extern RGTextureHandle g_RG_GBufferNormals;
 extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
+extern RGTextureHandle g_RG_HDRColor;
 
 // ============================================================================
 
@@ -60,6 +64,18 @@ enum class ReSTIRDIQualityPreset : uint32_t
 
 bool g_ReSTIRDI_EnableCheckerboard   = false;
 bool g_ReSTIRDI_ShowAdvancedSettings = false;
+uint32_t g_ReSTIRDI_VisualizationMode = RTXDI_VIS_MODE_NONE; // current visualization mode
+
+// Reservoir + runtime params cached by RTXDIRenderer::Render() each frame
+// and consumed by RTXDIVisualizationRenderer.
+static struct
+{
+    uint32_t shadingInputBufferIndex = 0;
+    uint32_t reservoirBlockRowPitch  = 0;
+    uint32_t reservoirArrayPitch     = 0;
+    uint32_t neighborOffsetMask      = 0;
+    uint32_t activeCheckerboardField = 0;
+} g_RTXDILastFrameParams;
 rtxdi::ReSTIRDI_ResamplingMode          g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
 ReSTIRDI_InitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams  = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
 ReSTIRDI_TemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
@@ -395,6 +411,45 @@ void RTXDIIMGUISettings()
         ImGui::TreePop();
     }
 
+    // ---- Visualization --------------------------------------------------
+    ImGui::Separator();
+    if (ImGui::TreeNode("Visualization"))
+    {
+        const bool bDenoised = renderer->m_EnableReSTIRDIRelaxDenoising;
+        ImGui::PushItemWidth(220.f);
+        int vizMode = (int)g_ReSTIRDI_VisualizationMode;
+        if (ImGui::Combo("Visualization", &vizMode,
+            "None\0"
+            "Composited Color\0"
+            "Resolved Color\0"
+            "Diffuse\0"
+            "Specular\0"
+            "Diffuse (Denoised)\0"
+            "Specular (Denoised)\0"
+            "Reservoir Weight\0"
+            "Reservoir M\0"
+            "Diffuse Gradients\0"
+            "Specular Gradients\0"
+            "Diffuse Confidence\0"
+            "Specular Confidence\0"
+            "GI Reservoir Weight\0"
+            "GI Reservoir M\0"))
+        {
+            g_ReSTIRDI_VisualizationMode = (uint32_t)vizMode;
+        }
+        ImGui::PopItemWidth();
+
+        // Clamp to None if a denoised mode is selected without denoising active.
+        if (!bDenoised && g_ReSTIRDI_VisualizationMode >= RTXDI_VIS_MODE_SPECULAR
+                       && g_ReSTIRDI_VisualizationMode <= RTXDI_VIS_MODE_DENOISED_SPECULAR)
+        {
+            g_ReSTIRDI_VisualizationMode = RTXDI_VIS_MODE_NONE;
+            ImGui::TextDisabled("(Enable RELAX Denoising for split diffuse/specular modes.)");
+        }
+
+        ImGui::TreePop();
+    }
+
     ImGui::Unindent();
 }
 
@@ -406,7 +461,8 @@ public:
     // ------------------------------------------------------------------
     RGBufferHandle m_RG_NeighborOffsetsBuffer;
     RGBufferHandle m_RG_RISBuffer;
-    RGBufferHandle m_RG_LightReservoirBuffer;
+    // Light reservoir buffer — stored via global g_RG_RTXDILightReservoirBuffer
+    // so the RTXDIVisualizationRenderer can sample reservoirs after shading.
 
     // Track if neighbor offsets buffer was newly allocated (needs initial fill)
     bool m_NeighborOffsetsBufferIsNew = false;
@@ -446,9 +502,6 @@ public:
     RGTextureHandle m_GBufferAlbedoHistory;
     RGTextureHandle m_GbufferNormalsHistory;
     RGTextureHandle m_GBufferORMHistory;
-
-    RGTextureHandle m_RG_RTXDIRawDiffuseOutput;  // IN_DIFF_RADIANCE_HITDIST
-    RGTextureHandle m_RG_RTXDIRawSpecularOutput; // IN_SPEC_RADIANCE_HITDIST
 
     // Temporal sample positions UAV — written by the temporal resampling pass.
     // Screen-sized RG32_SINT texture storing the reprojected pixel position for each reservoir.
@@ -597,7 +650,7 @@ public:
                 desc.m_NvrhiDesc.isUAV  = true;
                 desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
                 desc.m_NvrhiDesc.debugName    = "RTXDIRawDiffuseOutput";
-                renderGraph.DeclareTexture(desc, m_RG_RTXDIRawDiffuseOutput);
+                renderGraph.DeclareTexture(desc, g_RG_RTXDIRawDiffuseOutput);
             }
             {
                 RGTextureDesc desc;
@@ -607,7 +660,7 @@ public:
                 desc.m_NvrhiDesc.isUAV  = true;
                 desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
                 desc.m_NvrhiDesc.debugName    = "RTXDIRawSpecularOutput";
-                renderGraph.DeclareTexture(desc, m_RG_RTXDIRawSpecularOutput);
+                renderGraph.DeclareTexture(desc, g_RG_RTXDIRawSpecularOutput);
             }
 
             // Denoised RELAX outputs consumed by DeferredRenderer.
@@ -755,7 +808,7 @@ public:
             bd.m_NvrhiDesc.canHaveUAVs = true;
             bd.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             bd.m_NvrhiDesc.debugName = "RTXDI_LightReservoirBuffer";
-            renderGraph.DeclareBuffer(bd, m_RG_LightReservoirBuffer);
+            renderGraph.DeclareBuffer(bd, g_RG_RTXDILightReservoirBuffer);
         }
 
         // ---- Compact light data buffer --------------------------------
@@ -874,6 +927,13 @@ public:
         const ReSTIRDI_BufferIndices          bix = m_Context->GetBufferIndices();
         const RTXDI_LightBufferParameters     lbp = BuildLightBufferParams(renderer);
 
+        // Cache the per-frame params needed by RTXDIVisualizationRenderer.
+        g_RTXDILastFrameParams.shadingInputBufferIndex = bix.shadingInputBufferIndex;
+        g_RTXDILastFrameParams.reservoirBlockRowPitch  = rbp.reservoirBlockRowPitch;
+        g_RTXDILastFrameParams.reservoirArrayPitch     = rbp.reservoirArrayPitch;
+        g_RTXDILastFrameParams.neighborOffsetMask      = rtp.neighborOffsetMask;
+        g_RTXDILastFrameParams.activeCheckerboardField = rtp.activeCheckerboardField;
+
         const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
@@ -981,6 +1041,7 @@ public:
         cb.m_FinalVisibilityMaxAge      = shadingParams.finalVisibilityMaxAge;
         cb.m_FinalVisibilityMaxDistance = shadingParams.finalVisibilityMaxDistance;
         cb.m_EnableRTShadows            = renderer->m_EnableRTShadows ? 1u : 0u;
+        cb.m_VisualizationMode          = g_ReSTIRDI_VisualizationMode;
 
         // View matrices
         cb.m_View     = renderer->m_Scene.m_View;
@@ -1007,7 +1068,7 @@ public:
         nvrhi::TextureHandle normalsHistoryTex = renderGraph.GetTexture(m_GbufferNormalsHistory, RGResourceAccessMode::Write);
         nvrhi::BufferHandle neighborOffsetsBuffer = renderGraph.GetBuffer(m_RG_NeighborOffsetsBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle risBuffer = renderGraph.GetBuffer(m_RG_RISBuffer, RGResourceAccessMode::Read);
-        nvrhi::BufferHandle lightReservoirBuffer = renderGraph.GetBuffer(m_RG_LightReservoirBuffer, RGResourceAccessMode::Read);
+        nvrhi::BufferHandle lightReservoirBuffer = renderGraph.GetBuffer(g_RG_RTXDILightReservoirBuffer, RGResourceAccessMode::Read);
         nvrhi::BufferHandle risLightDataBuffer = renderGraph.GetBuffer(m_RG_RISLightDataBuffer, RGResourceAccessMode::Write);
         nvrhi::TextureHandle localLightPDFTex = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
         nvrhi::TextureHandle envLightPDFTex   = renderGraph.GetTexture(m_RG_EnvLightPDFTexture,   RGResourceAccessMode::Write);
@@ -1273,8 +1334,8 @@ public:
         if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
             // ---- Denoising path: split BRDF, pack diffuse/specular, then RELAX ----
-            nvrhi::TextureHandle rawDiffuseOutputTex  = renderGraph.GetTexture(m_RG_RTXDIRawDiffuseOutput,  RGResourceAccessMode::Write);
-            nvrhi::TextureHandle rawSpecularOutputTex = renderGraph.GetTexture(m_RG_RTXDIRawSpecularOutput, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle rawDiffuseOutputTex  = renderGraph.GetTexture(g_RG_RTXDIRawDiffuseOutput,  RGResourceAccessMode::Write);
+            nvrhi::TextureHandle rawSpecularOutputTex = renderGraph.GetTexture(g_RG_RTXDIRawSpecularOutput, RGResourceAccessMode::Write);
             nvrhi::TextureHandle denoisedDiffuseOutputTex  = renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Write);
             nvrhi::TextureHandle denoisedSpecularOutputTex = renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Write);
             nvrhi::TextureHandle linearDepthTex    = renderGraph.GetTexture(g_RG_RTXDILinearDepth,    RGResourceAccessMode::Write);
@@ -1418,3 +1479,118 @@ private:
 };
 
 REGISTER_RENDERER(RTXDIRenderer);
+
+// ============================================================================
+// RTXDIVisualizationRenderer
+// Runs AFTER DeferredRenderer (and after Bloom) so the HDR colour output already
+// contains the fully composited scene.  Overlays a log-luminance histogram on
+// the HDR colour texutre using the RTXDI_Visualize_Main compute shader.
+// ============================================================================
+class RTXDIVisualizationRenderer : public IRenderer
+{
+public:
+    bool Setup(RenderGraph& renderGraph) override
+    {
+        Renderer* renderer = Renderer::GetInstance();
+
+        // Only run when RTXDI is enabled and a visualization mode is active.
+        if (!renderer->m_EnableReSTIRDI)
+            return false;
+        if (g_ReSTIRDI_VisualizationMode == RTXDI_VIS_MODE_NONE)
+            return false;
+
+        // Read the RTXDI textures (must have been declared by RTXDIRenderer).
+        if (renderer->m_EnableReSTIRDIRelaxDenoising)
+        {
+            renderGraph.ReadTexture(g_RG_RTXDIRawDiffuseOutput);
+            renderGraph.ReadTexture(g_RG_RTXDIRawSpecularOutput);
+            renderGraph.ReadTexture(g_RG_RTXDIDiffuseOutput);
+            renderGraph.ReadTexture(g_RG_RTXDISpecularOutput);
+        }
+        else
+        {
+            renderGraph.ReadTexture(g_RG_RTXDIDIOutput);
+        }
+        renderGraph.ReadBuffer(g_RG_RTXDILightReservoirBuffer);
+
+        // Write (overlay) to the HDR colour output.
+        renderGraph.WriteTexture(g_RG_HDRColor);
+
+        return true;
+    }
+
+    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    {
+        PROFILE_FUNCTION();
+        Renderer* renderer = Renderer::GetInstance();
+        nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
+
+        const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
+        const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+        const bool bDenoised  = renderer->m_EnableReSTIRDIRelaxDenoising;
+
+        // Resolve textures ──────────────────────────────────────────────
+        // t20: raw diffuse (or combined DI output when denoising is off)
+        nvrhi::TextureHandle vizDiffuse = bDenoised
+            ? renderGraph.GetTexture(g_RG_RTXDIRawDiffuseOutput,  RGResourceAccessMode::Read)
+            : renderGraph.GetTexture(g_RG_RTXDIDIOutput,           RGResourceAccessMode::Read);
+
+        // t21: raw specular (or dummy when denoising is off)
+        nvrhi::TextureHandle vizSpecular = bDenoised
+            ? renderGraph.GetTexture(g_RG_RTXDIRawSpecularOutput,  RGResourceAccessMode::Read)
+            : CommonResources::GetInstance().DefaultTextureBlack;
+
+        // t22/t23: denoised outputs (or dummy when denoising is off)
+        nvrhi::TextureHandle vizDenoisedDiff = bDenoised
+            ? renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Read)
+            : CommonResources::GetInstance().DefaultTextureBlack;
+        nvrhi::TextureHandle vizDenoisedSpec = bDenoised
+            ? renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Read)
+            : CommonResources::GetInstance().DefaultTextureBlack;
+
+        nvrhi::BufferHandle  reservoirBuffer = renderGraph.GetBuffer(g_RG_RTXDILightReservoirBuffer, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle hdrOutput       = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
+
+        // Build a minimal RTXDIConstants that carries the vis mode + reservoir params.
+        // Fields filled from the per-frame params cached by RTXDIRenderer::Render().
+        RTXDIConstants visCB{};
+        visCB.m_ViewportSize             = { width, height };
+        visCB.m_VisualizationMode        = g_ReSTIRDI_VisualizationMode;
+        visCB.m_ShadingInputBufferIndex  = g_RTXDILastFrameParams.shadingInputBufferIndex;
+        visCB.m_ReservoirBlockRowPitch   = g_RTXDILastFrameParams.reservoirBlockRowPitch;
+        visCB.m_ReservoirArrayPitch      = g_RTXDILastFrameParams.reservoirArrayPitch;
+        visCB.m_NeighborOffsetMask       = g_RTXDILastFrameParams.neighborOffsetMask;
+        visCB.m_ActiveCheckerboardField  = g_RTXDILastFrameParams.activeCheckerboardField;
+
+        const nvrhi::BufferHandle visCBHandle = device->createBuffer(
+            nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(RTXDIConstants), "RTXDIVisCB", 1));
+        commandList->writeBuffer(visCBHandle, &visCB, sizeof(visCB));
+
+        nvrhi::BindingSetDesc bset;
+        bset.bindings = {
+            nvrhi::BindingSetItem::ConstantBuffer(1,           visCBHandle),
+            nvrhi::BindingSetItem::Texture_SRV(20,             vizDiffuse),
+            nvrhi::BindingSetItem::Texture_SRV(21,             vizSpecular),
+            nvrhi::BindingSetItem::Texture_SRV(22,             vizDenoisedDiff),
+            nvrhi::BindingSetItem::Texture_SRV(23,             vizDenoisedSpec),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1,     reservoirBuffer),  // accessed via RTXDI_LoadDIReservoir
+            nvrhi::BindingSetItem::Texture_UAV(10,             hdrOutput),
+        };
+
+        Renderer::RenderPassParams params{
+            .commandList    = commandList,
+            .shaderName     = "RTXDI_Master_RTXDI_Visualize_Main",
+            .bindingSetDesc = bset,
+            .dispatchParams = {
+                .x = DivideAndRoundUp(width,  8u),
+                .y = DivideAndRoundUp(height, 8u),
+                .z = 1u
+            }
+        };
+        renderer->AddComputePass(params);
+    }
+
+    const char* GetName() const override { return "RTXDIVisualization"; }
+};
+
+REGISTER_RENDERER(RTXDIVisualizationRenderer);

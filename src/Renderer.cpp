@@ -870,6 +870,7 @@ void Renderer::Run()
         extern IRenderer* g_MaskedPassRenderer;
         extern IRenderer* g_HZBGeneratorPhase2;
         extern IRenderer* g_RTXDIRenderer;
+        extern IRenderer* g_RTXDIVisualizationRenderer;
         extern IRenderer* g_DeferredRenderer;
         extern IRenderer* g_SkyRenderer;
         extern IRenderer* g_TransparentPassRenderer;
@@ -889,14 +890,13 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
             m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
-            // TLASRenderer patches BLAS addresses (using m_InstanceLODBuffer written by culling)
-            // then builds the TLAS.
             m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
             m_RenderGraph.ScheduleRenderer(g_RTXDIRenderer);
             m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
             m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+            m_RenderGraph.ScheduleRenderer(g_RTXDIVisualizationRenderer);
         }
 
         m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
