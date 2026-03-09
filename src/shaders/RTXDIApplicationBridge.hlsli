@@ -463,24 +463,13 @@ bool RAB_IsAnalyticLightSample(RAB_LightSample s)
 
 float RAB_LightSampleSolidAnglePdf(RAB_LightSample s) { return s.solidAnglePdf; }
 
-float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Surface surface)
+// Helper function to compute target PDF for both GI samples and light samples
+// Shared logic between RAB_GetGISampleTargetPdfForSurface and RAB_GetLightSampleTargetPdfForSurface
+float RAB_ComputeTargetPdf(float3 L, float3 sampleRadiance, RAB_Surface surface)
 {
-    // Guard: zero solidAnglePdf means an invalid/degenerate sample — reject it.
-    if (lightSample.solidAnglePdf <= 0.0)
-        return 0.0;
-
-    // Target pdf = reflected luminance / solidAnglePdf.
-    // Matches FullSample's RAB_GetReflectedLuminanceForSurface:
-    //   d = Lambert(N, -L)  = max(0, NdotL)
-    //   s = GGX_times_NdotL(V, L, N, roughness, F0)
-    //   reflectedRadiance = radiance * (d * diffuseAlbedo + s)
-    // Using simple Lambert + GGX (not Disney Burley) keeps the target PDF
-    // consistent with FullSample and avoids over-weighting diffuse samples.
     float3 N = surface.normal;
     float3 V = surface.viewDir;
-    float3 L = normalize(lightSample.position - surface.worldPos);
 
-    // Reject back-facing light directions (also guards against NaN from normalize(0))
     if (dot(L, surface.geoNormal) <= 0.0)
         return 0.0;
 
@@ -488,10 +477,8 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     if (NdotL <= 0.0)
         return 0.0;
 
-    // Simple Lambert diffuse (NdotL) — matches FullSample's Lambert() function
     float d = NdotL;
 
-    // GGX specular × NdotL — matches FullSample's GGX_times_NdotL()
     static const float kMinRoughness = 0.05;
     float3 H    = normalize(V + L);
     float NdotH = max(0.0, dot(N, H));
@@ -503,8 +490,29 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
               ? float3(0,0,0)
               : ComputeSpecularBRDF(F, NdotH, NdotV, NdotL, max(surface.material.roughness, kMinRoughness)) * NdotL;
 
-    float3 reflectedRadiance = lightSample.radiance * (d * surface.material.diffuseAlbedo + s);
-    return Luminance(reflectedRadiance) / lightSample.solidAnglePdf;
+    float3 reflectedRadiance = sampleRadiance * (d * surface.material.diffuseAlbedo + s);
+    return Luminance(reflectedRadiance);
+}
+
+// Computes the weight of a GI sample for the given surface.
+// Mirrors FullSample's bridge hook used by RTXDI GI / ReGIR paths.
+float RAB_GetGISampleTargetPdfForSurface(float3 samplePosition, float3 sampleRadiance, RAB_Surface surface)
+{
+    float3 L = normalize(samplePosition - surface.worldPos);
+    return RAB_ComputeTargetPdf(L, sampleRadiance, surface);
+}
+
+float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Surface surface)
+{
+    // Guard: zero solidAnglePdf means an invalid/degenerate sample — reject it.
+    if (lightSample.solidAnglePdf <= 0.0)
+        return 0.0;
+
+    float3 L = normalize(lightSample.position - surface.worldPos);
+    float targetPdf = RAB_ComputeTargetPdf(L, lightSample.radiance, surface);
+    
+    // Divide by solidAnglePdf for light samples (GI samples don't need this division)
+    return targetPdf / lightSample.solidAnglePdf;
 }
 
 void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
@@ -1164,6 +1172,19 @@ int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
     if (pixelPosition.y >= height)  pixelPosition.y = 2 * height - pixelPosition.y - 1;
 
     return pixelPosition;
+}
+
+// Check if a GI sample is valid given its Jacobian and optionally clamp the Jacobian.
+// This mirrors FullSample's spatial helper hook used by GI/reservoir reuse paths.
+bool RAB_ValidateGISampleWithJacobian(inout float jacobian)
+{
+    // Reject extreme solid-angle ratios.
+    if (jacobian > 10.0 || jacobian < (1.0 / 10.0))
+        return false;
+
+    // Clamp to a stable range to reduce outlier influence.
+    jacobian = clamp(jacobian, 1.0 / 3.0, 3.0);
+    return true;
 }
 
 // ============================================================================
