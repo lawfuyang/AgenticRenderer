@@ -3,7 +3,7 @@
 //
 // Key adaptations for this codebase:
 //   - Removed Donut dependencies (PlanarView, RenderTargets, BindingCache, dm:: math).
-//   - Pool textures are owned directly (not via RenderGraph).
+//   - Pool textures are now managed via RenderGraph (persistent and transient pools).
 //   - Pipelines and samplers created from NRD's embedded DXIL/SPIRV bytecode.
 //   - PackNormalRoughness pre-pass dispatched via Renderer::AddComputePass.
 //   - FillNRDCommonSettings uses this codebase's PlanarViewConstants / scene.
@@ -154,14 +154,11 @@ NrdIntegration::~NrdIntegration()
     {
         nrd::DestroyInstance(*m_Instance);
         m_Instance    = nullptr;
-        m_Initialized = false;
     }
 }
 
-bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
+bool NrdIntegration::Initialize()
 {
-    SDL_assert(!m_Initialized && "NrdIntegration::Initialize called twice");
-
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
 
@@ -354,6 +351,21 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
         m_Pipelines.push_back(std::move(pipeline));
     }
 
+    return true;
+}
+
+void NrdIntegration::Setup(RenderGraph& renderGraph)
+{
+    Renderer* renderer = Renderer::GetInstance();
+    nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
+    const nrd::InstanceDesc* instanceDesc = nrd::GetInstanceDesc(*m_Instance);
+
+    m_PermanentPoolTextures.resize(instanceDesc->permanentPoolSize);
+    m_TransientPoolTextures.resize(instanceDesc->transientPoolSize);
+
+    const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
+    const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+
     // -------------------------------------------------------------------------
     // Permanent and transient pool textures
     // -------------------------------------------------------------------------
@@ -371,35 +383,31 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
         if (fmt == nvrhi::Format::UNKNOWN)
         {
             SDL_assert(false && "NrdIntegration: unsupported NRD texture format");
-            return false;
         }
 
         char name[64];
         snprintf(name, sizeof(name), "NRD %s [%u]",
                  isPermanent ? "Permanent" : "Transient", poolIdx);
 
-        nvrhi::TextureDesc texDesc;
-        texDesc.width         = (width  + nrdTex.downsampleFactor - 1u) / nrdTex.downsampleFactor;
-        texDesc.height        = (height + nrdTex.downsampleFactor - 1u) / nrdTex.downsampleFactor;
-        texDesc.format        = fmt;
-        texDesc.mipLevels     = 1;
-        texDesc.dimension     = nvrhi::TextureDimension::Texture2D;
-        texDesc.initialState  = nvrhi::ResourceStates::ShaderResource;
-        texDesc.keepInitialState = true;
-        texDesc.isUAV         = true;
-        texDesc.debugName     = name;
-
-        nvrhi::TextureHandle tex = device->createTexture(texDesc);
-        if (!tex)
-        {
-            SDL_assert(false && "NrdIntegration: failed to create pool texture");
-            return false;
-        }
+        RGTextureDesc desc;
+        desc.m_NvrhiDesc.width         = (width  + nrdTex.downsampleFactor - 1u) / nrdTex.downsampleFactor;
+        desc.m_NvrhiDesc.height        = (height + nrdTex.downsampleFactor - 1u) / nrdTex.downsampleFactor;
+        desc.m_NvrhiDesc.format        = fmt;
+        desc.m_NvrhiDesc.mipLevels     = 1;
+        desc.m_NvrhiDesc.dimension     = nvrhi::TextureDimension::Texture2D;
+        desc.m_NvrhiDesc.initialState  = nvrhi::ResourceStates::ShaderResource;
+        desc.m_NvrhiDesc.keepInitialState = true;
+        desc.m_NvrhiDesc.isUAV         = true;
+        desc.m_NvrhiDesc.debugName     = name;
 
         if (isPermanent)
-            m_PermanentTextures.push_back(std::move(tex));
+        {
+            renderGraph.DeclarePersistentTexture(desc, m_PermanentPoolTextures[poolIdx]);
+        }
         else
-            m_TransientTextures.push_back(std::move(tex));
+        {
+            renderGraph.DeclareTexture(desc, m_TransientPoolTextures[poolIdx]);
+        }
     }
 
     SDL_Log("[NrdIntegration] Initialized: %u permanent, %u transient pool textures, %u pipelines",
@@ -411,26 +419,18 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
     // Written each frame by the PackNormalRoughness pre-pass.
     // -------------------------------------------------------------------------
     {
-        nvrhi::TextureDesc packDesc;
-        packDesc.width            = width;
-        packDesc.height           = height;
-        packDesc.format           = nvrhi::Format::R10G10B10A2_UNORM;
-        packDesc.dimension        = nvrhi::TextureDimension::Texture2D;
-        packDesc.initialState     = nvrhi::ResourceStates::ShaderResource;
-        packDesc.keepInitialState = true;
-        packDesc.isUAV            = true;
-        packDesc.debugName        = "NRD PackedNormalRoughness";
+        RGTextureDesc packDesc;
+        packDesc.m_NvrhiDesc.width            = width;
+        packDesc.m_NvrhiDesc.height           = height;
+        packDesc.m_NvrhiDesc.format           = nvrhi::Format::R10G10B10A2_UNORM;
+        packDesc.m_NvrhiDesc.dimension        = nvrhi::TextureDimension::Texture2D;
+        packDesc.m_NvrhiDesc.initialState     = nvrhi::ResourceStates::ShaderResource;
+        packDesc.m_NvrhiDesc.keepInitialState = true;
+        packDesc.m_NvrhiDesc.isUAV            = true;
+        packDesc.m_NvrhiDesc.debugName        = "NRD PackedNormalRoughness";
 
-        m_PackedNormalRoughnessTex = device->createTexture(packDesc);
-        if (!m_PackedNormalRoughnessTex)
-        {
-            SDL_assert(false && "NrdIntegration: failed to create packed normal texture");
-            return false;
-        }
+        renderGraph.DeclareTexture(packDesc, m_RG_PackedNormalRoughnessTex);
     }
-
-    m_Initialized = true;
-    return true;
 }
 
 // ============================================================================
@@ -439,6 +439,7 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
 
 nvrhi::ITexture* NrdIntegration::ResolveResource(
     nrd::ResourceType type, uint16_t indexInPool,
+    const RenderGraph& renderGraph,
     nvrhi::ITexture* packedNormals,
     nvrhi::ITexture* diffuse,  nvrhi::ITexture* specular,
     nvrhi::ITexture* viewZ,    nvrhi::ITexture* motionVectors,
@@ -447,12 +448,12 @@ nvrhi::ITexture* NrdIntegration::ResolveResource(
     switch (type)
     {
     case nrd::ResourceType::TRANSIENT_POOL:
-        SDL_assert(indexInPool < static_cast<uint16_t>(m_TransientTextures.size()));
-        return m_TransientTextures[indexInPool];
+        SDL_assert(indexInPool < static_cast<uint16_t>(m_TransientPoolTextures.size()));
+        return renderGraph.GetTexture(m_TransientPoolTextures[indexInPool], RGResourceAccessMode::Write);
 
     case nrd::ResourceType::PERMANENT_POOL:
-        SDL_assert(indexInPool < static_cast<uint16_t>(m_PermanentTextures.size()));
-        return m_PermanentTextures[indexInPool];
+        SDL_assert(indexInPool < static_cast<uint16_t>(m_PermanentPoolTextures.size()));
+        return renderGraph.GetTexture(m_PermanentPoolTextures[indexInPool], RGResourceAccessMode::Write);
 
     case nrd::ResourceType::IN_NORMAL_ROUGHNESS:        return packedNormals;
     case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:   return diffuse;
@@ -476,6 +477,7 @@ nvrhi::ITexture* NrdIntegration::ResolveResource(
 
 void NrdIntegration::RunDenoiserPasses(
     nvrhi::ICommandList*       commandList,
+    const RenderGraph&         renderGraph,
     nvrhi::ITexture*           gbufferNormals,
     nvrhi::ITexture*           gbufferORM,
     nvrhi::ITexture*           diffuseRadiance,
@@ -487,14 +489,14 @@ void NrdIntegration::RunDenoiserPasses(
     const nrd::CommonSettings& commonSettings,
     const void*                denoiserSettings)
 {
-    SDL_assert(m_Initialized && "NrdIntegration::RunDenoiserPasses called before Initialize");
-
     nvrhi::utils::ScopedMarker marker{ commandList, "NRD Denoise" };
 
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
     const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
     const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+
+    nvrhi::TextureHandle packedNormalRoughnessTex = renderGraph.GetTexture(m_RG_PackedNormalRoughnessTex, RGResourceAccessMode::Write);
 
     // -------------------------------------------------------------------------
     // PackNormalRoughness pre-pass
@@ -511,7 +513,7 @@ void NrdIntegration::RunDenoiserPasses(
             nvrhi::BindingSetItem::PushConstants(0, sizeof(resolution)),
             nvrhi::BindingSetItem::Texture_SRV(0, gbufferNormals),
             nvrhi::BindingSetItem::Texture_SRV(1, gbufferORM),
-            nvrhi::BindingSetItem::Texture_UAV(0, m_PackedNormalRoughnessTex),
+            nvrhi::BindingSetItem::Texture_UAV(0, packedNormalRoughnessTex),
         };
 
         Renderer::RenderPassParams passParams{};
@@ -592,7 +594,8 @@ void NrdIntegration::RunDenoiserPasses(
 
                 nvrhi::ITexture* texture = ResolveResource(
                     res.type, res.indexInPool,
-                    m_PackedNormalRoughnessTex,
+                    renderGraph,
+                    packedNormalRoughnessTex,
                     diffuseRadiance, specularRadiance,
                     viewZ, motionVectors,
                     outDiffuse, outSpecular);

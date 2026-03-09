@@ -2,6 +2,7 @@
 
 #include "pch.h"
 #include "NRD.h"
+#include "RenderGraph.h"
 
 // ============================================================================
 // NRD Error Handling
@@ -31,10 +32,9 @@ void FillNRDCommonSettings(nrd::CommonSettings& settings);
 
 // Adapted from NVIDIA's Donut framework NrdIntegration (NrdIntegration.h/.cpp).
 //
-// Manages a single NRD denoiser instance: directly creates and owns compute
-// pipelines from NRD's embedded DXIL/SPIRV bytecode, samplers, and all
-// permanent/transient pool textures.  Dispatches NRD passes directly through
-// the NVRHI command list (no RenderGraph involvement for pool textures).
+// Manages a single NRD denoiser instance: creates and owns compute pipelines
+// from NRD's embedded DXIL/SPIRV bytecode and samplers. All permanent/transient
+// pool textures are now managed via the RenderGraph.
 //
 // Also owns an internal R10G10B10A2_UNORM packed normal+roughness texture and
 // runs a PackNormalRoughness pre-pass each frame to convert the GBuffer's
@@ -42,16 +42,18 @@ void FillNRDCommonSettings(nrd::CommonSettings& settings);
 //
 // Typical usage:
 //
-//   // Initialization:
+//   // Initialization (called during RTXDIRenderer::Initialize):
 //   m_NrdIntegration = std::make_unique<NrdIntegration>(
-//       device, nrd::Denoiser::RELAX_DIFFUSE_SPECULAR);
-//   m_NrdIntegration->Initialize(width, height);
+//       nrd::Denoiser::RELAX_DIFFUSE_SPECULAR);
+//
+//   // During RTXDIRenderer::Setup(RenderGraph&), declare pool textures:
+//   m_NrdIntegration->Initialize(renderGraph, width, height);
 //
 //   // Per-frame render:
 //   nrd::CommonSettings commonSettings{};
 //   FillNRDCommonSettings(commonSettings);
 //   m_NrdIntegration->RunDenoiserPasses(
-//       commandList,
+//       commandList, renderGraph,
 //       rawGBufferNormals, rawGBufferORM,
 //       rawDiffuse, rawSpecular, linearViewZ, motionVectors,
 //       outDenoisedDiffuse, outDenoisedSpecular,
@@ -67,14 +69,17 @@ public:
 
     ~NrdIntegration();
 
-    // Create NRD instance, allocate pool textures, build compute pipelines from
-    // NRD's embedded bytecode.  Must be called once before RunDenoiserPasses.
-    bool Initialize(uint32_t width, uint32_t height);
+    // Create NRD instance, allocate pool textures via RenderGraph, and build
+    // compute pipelines from NRD's embedded bytecode.  Must be called during
+    // the RenderGraph Setup phase.
+    bool Initialize();
 
-    bool IsAvailable() const { return m_Initialized; }
+    void Setup(RenderGraph& renderGraph);
 
     // Run the full NRD denoiser dispatch chain for one frame.
     //
+    // commandList     — NVRHI command list for GPU work submission.
+    // renderGraph     — RenderGraph for retrieving pool textures.
     // gbufferNormals  — oct-encoded normals (RG16_FLOAT) read from GBuffer.
     // gbufferORM      — ORM texture (RG8_UNORM); roughness is in the .r channel.
     // diffuseRadiance — packed RELAX diffuse input  (IN_DIFF_RADIANCE_HITDIST).
@@ -87,17 +92,18 @@ public:
     // gbufferNormals + gbufferORM are packed internally into R10G10B10A2_UNORM
     // before being forwarded to NRD as IN_NORMAL_ROUGHNESS.
     void RunDenoiserPasses(
-        nvrhi::ICommandList*    commandList,
-        nvrhi::ITexture*        gbufferNormals,
-        nvrhi::ITexture*        gbufferORM,
-        nvrhi::ITexture*        diffuseRadiance,
-        nvrhi::ITexture*        specularRadiance,
-        nvrhi::ITexture*        viewZ,
-        nvrhi::ITexture*        motionVectors,
-        nvrhi::ITexture*        outDiffuse,
-        nvrhi::ITexture*        outSpecular,
+        nvrhi::ICommandList*       commandList,
+        const RenderGraph&         renderGraph,
+        nvrhi::ITexture*           gbufferNormals,
+        nvrhi::ITexture*           gbufferORM,
+        nvrhi::ITexture*           diffuseRadiance,
+        nvrhi::ITexture*           specularRadiance,
+        nvrhi::ITexture*           viewZ,
+        nvrhi::ITexture*           motionVectors,
+        nvrhi::ITexture*           outDiffuse,
+        nvrhi::ITexture*           outSpecular,
         const nrd::CommonSettings& commonSettings,
-        const void*             denoiserSettings);
+        const void*                denoiserSettings);
 
 private:
     // -------------------------------------------------------------------------
@@ -112,7 +118,6 @@ private:
     };
 
     const nrd::Denoiser              m_Denoiser;
-    bool                             m_Initialized = false;
     nrd::Instance*                   m_Instance    = nullptr;
 
     // Shared binding layout: constant buffer + samplers (space = cbAndSamplers space).
@@ -124,18 +129,19 @@ private:
     std::vector<NrdPipeline>         m_Pipelines;
     nvrhi::SamplerHandle             m_Samplers[(int)nrd::Sampler::MAX_NUM];
 
-    // NRD internal pool textures (owned directly, not via RenderGraph).
-    std::vector<nvrhi::TextureHandle> m_PermanentTextures;
-    std::vector<nvrhi::TextureHandle> m_TransientTextures;
+    // NRD managed pool textures via RenderGraph.
+    std::vector<RGTextureHandle>     m_PermanentPoolTextures;
+    std::vector<RGTextureHandle>     m_TransientPoolTextures;
 
     // Packed normal+roughness (R10G10B10A2_UNORM) — written each frame by
     // the PackNormalRoughness pre-pass and read by NRD as IN_NORMAL_ROUGHNESS.
-    nvrhi::TextureHandle             m_PackedNormalRoughnessTex;
+    RGTextureHandle                  m_RG_PackedNormalRoughnessTex;
 
     // Resolve an NRD ResourceDesc to the physical NVRHI texture it should
     // be bound to for a given dispatch.
     nvrhi::ITexture* ResolveResource(
         nrd::ResourceType type, uint16_t indexInPool,
+        const RenderGraph& renderGraph,
         nvrhi::ITexture* packedNormals,
         nvrhi::ITexture* diffuse,  nvrhi::ITexture* specular,
         nvrhi::ITexture* viewZ,    nvrhi::ITexture* motionVectors,

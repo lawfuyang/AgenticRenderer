@@ -547,7 +547,7 @@ public:
         CreateRTXDIContext();
 
         m_NrdIntegration = std::make_unique<NrdIntegration>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR);
-        m_NrdIntegration->Initialize(renderer->m_RHI->m_SwapchainExtent.x, renderer->m_RHI->m_SwapchainExtent.y);
+        m_NrdIntegration->Initialize();
 
         // default settings: follow RTXDI sample
         m_NRDRelaxSettings.diffuseMaxFastAccumulatedFrameNum = 1;
@@ -608,6 +608,8 @@ public:
         // ------------------------------------------------------------------
         if (renderer->m_EnableReSTIRDIRelaxDenoising)
         {
+            m_NrdIntegration->Setup(renderGraph);
+
             // Raw RELAX inputs from RTXDI front-end packing.
             {
                 RGTextureDesc desc;
@@ -1348,6 +1350,7 @@ public:
 
                 m_NrdIntegration->RunDenoiserPasses(
                     commandList,
+                    renderGraph,
                     normalsTex,                 // IN_NORMAL_ROUGHNESS (packed internally)
                     ormTex,                     // roughness source for pack pass
                     rawDiffuseOutputTex,        // IN_DIFF_RADIANCE_HITDIST
