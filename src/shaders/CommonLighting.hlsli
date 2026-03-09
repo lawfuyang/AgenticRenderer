@@ -376,17 +376,17 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
             }
             else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
             {
-                // Surface coverage attenuation (alpha blend); transmissive materials should
-                // remain hittable and be handled as light filters instead of disappearing.
-                float2 uvSample = GetInterpolatedUV(primitiveIndex, inst.m_LODIndex, bary, mesh, inputs.indices, inputs.vertices);
-                float alpha = mat.m_BaseColor.w;
-                if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
-                {
-                    alpha *= SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uvSample).w;
-                }
-                    
                 if (bWithTransmission)
                 {
+                    // Surface coverage attenuation (alpha blend); transmissive materials should
+                    // remain hittable and be handled as light filters instead of disappearing.
+                    float2 uvSample = GetInterpolatedUV(primitiveIndex, inst.m_LODIndex, bary, mesh, inputs.indices, inputs.vertices);
+                    float alpha = mat.m_BaseColor.w;
+                    if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+                    {
+                        alpha *= SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uvSample).w;
+                    }
+                    
                     float opacity = saturate(alpha * (1.0f - mat.m_TransmissionFactor));
                     transmission *= (1.0f - opacity);
 
