@@ -283,10 +283,10 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
         view.m_MatViewToWorld._32,
         view.m_MatViewToWorld._33);
 
-    // Use view-space depth (projection of worldPos onto camera forward) so that
-    // linearDepth is consistent with screenSpaceMotion.z (which is prevClipW - curClipW,
-    // i.e., the change in view-space Z).
-    s.linearDepth = dot(s.worldPos - camPos, camForward);
+    // Use positive view-space depth (distance along camera forward).
+    // Keeping depth positive avoids invalid relative-depth comparisons in
+    // RTXDI_IsValidNeighbor during spatial/temporal reuse.
+    s.linearDepth = abs(dot(s.worldPos - camPos, camForward));
     s.viewDir     = normalize(camPos - s.worldPos);
 
     float4 albedoSample;
@@ -1098,6 +1098,11 @@ bool RAB_GetConservativeVisibilityPrevious(RAB_Surface surface, RAB_LightSample 
 
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
 {
+    // Match FullSample behavior: when previous-frame acceleration data isn't
+    // valid yet (first frame), fall back to current-frame conservative visibility.
+    if (g_RTXDIConst.m_FrameIndex == 0u)
+        return RAB_GetConservativeVisibility(currentSurface, lightSample);
+
     return RAB_GetConservativeVisibilityPrevious(previousSurface, lightSample);
 }
 
@@ -1105,6 +1110,11 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 {
     if (g_RTXDIConst.m_EnableRTShadows == 0u)
         return true;
+
+    // Match FullSample behavior: when previous-frame acceleration data isn't
+    // valid yet (first frame), fall back to current-frame conservative visibility.
+    if (g_RTXDIConst.m_FrameIndex == 0u)
+        return RAB_GetConservativeVisibility(currentSurface, samplePosition);
 
     RayDesc ray = SetupShadowRay(previousSurface.worldPos, previousSurface.normal, samplePosition);
 
@@ -1160,10 +1170,12 @@ bool RAB_ValidateGISampleWithJacobian(inout float jacobian)
 // ============================================================================
 bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
 {
-    // Surfaces with roughness below 0.1 are considered "complex" (mirror-like).
-    // Permutation sampling on such surfaces causes visible noise because the
-    // specular lobe is very narrow and small position offsets land outside it.
-    return surface.roughness < 0.1f;
+    // FullSample compares original roughness against curvature-adjusted roughness.
+    // This renderer doesn't keep a separate original-roughness texture in this pass,
+    // so use permutationSamplingThreshold as a tunable mirror-likeness cutoff.
+    // threshold in [0.8, 1.0] maps to cutoff in [0.2, 0.0].
+    float roughnessCutoff = saturate(1.0f - g_RTXDIConst.m_TemporalPermutationSamplingThreshold);
+    return surface.roughness < roughnessCutoff;
 }
 
 // ============================================================================
