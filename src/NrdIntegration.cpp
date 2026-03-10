@@ -410,10 +410,6 @@ void NrdIntegration::Setup(RenderGraph& renderGraph)
         }
     }
 
-    SDL_Log("[NrdIntegration] Initialized: %u permanent, %u transient pool textures, %u pipelines",
-            instanceDesc->permanentPoolSize, instanceDesc->transientPoolSize,
-            instanceDesc->pipelinesNum);
-
     // -------------------------------------------------------------------------
     // Packed normal+roughness texture (R10G10B10A2_UNORM)
     // Written each frame by the PackNormalRoughness pre-pass.
