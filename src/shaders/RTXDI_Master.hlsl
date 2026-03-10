@@ -546,8 +546,15 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
             {
                 float3 V = RAB_GetSurfaceViewDirection(surface);
                 float3 L = lightSample.direction;
+                float3 H = normalize(V + L);
 
-                diffuseDemodulated = lightSample.radiance * LambertOverPi(surface.normal, L);
+                float NdotL = saturate(dot(surface.normal, L));
+                float NdotV = saturate(dot(surface.normal, V));
+                float LdotH = saturate(dot(L, H));
+
+                // Disney Burley diffuse (returns Fd * NdotL / PI)
+                float diffuseTerm = DisneyBurleyDiffuse(NdotL, NdotV, LdotH, surface.roughness);
+                diffuseDemodulated = lightSample.radiance * diffuseTerm;
 
                 static const float kMinRoughness = 0.05;
                 float3 specular = GGXTimesNdotL_Exact(

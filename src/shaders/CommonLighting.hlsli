@@ -55,16 +55,30 @@ float LambertOverPi(float3 N, float3 L)
     return max(0.0f, dot(N, L)) / PI;
 }
 
-// Exact Smith G term used by FullSample's donut::shaders::brdf.hlsli GGX_times_NdotL.
+// GGX normal distribution function.
+// Returns D(NdotH, roughness) = alpha^2 / (PI * ((NdotH^2*(alpha^2-1)+1))^2)
+float D_GGX(float NdotH, float roughness)
+{
+    float alpha  = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float denom  = (NdotH * NdotH * (alpha2 - 1.0f) + 1.0f);
+    return alpha2 / (PI * denom * denom);
+}
+
+// Height-correlated Smith G2 divided by (4 * NdotV), expressed as G2/NdotV.
+// Returns 2*NdotL / (NdotV*sqrt(alpha2+(1-alpha2)*NdotL^2) + NdotL*sqrt(alpha2+(1-alpha2)*NdotV^2))
+// Matches FullSample's donut::shaders::brdf.hlsli GGX_times_NdotL convention.
 float G_SmithOverNdotV_Exact(float roughness, float NdotV, float NdotL)
 {
-    float alpha = roughness * roughness;
+    float alpha  = roughness * roughness;
     float alpha2 = alpha * alpha;
     float g1 = NdotV * sqrt(alpha2 + (1.0f - alpha2) * NdotL * NdotL);
     float g2 = NdotL * sqrt(alpha2 + (1.0f - alpha2) * NdotV * NdotV);
     return 2.0f * NdotL / max(g1 + g2, 1e-6f);
 }
 
+// Evaluate the full GGX specular BRDF * NdotL for a given light direction.
+// Returns F * D * G * 0.25 (the 4*NdotV*NdotL denominator is folded into G_SmithOverNdotV_Exact).
 float3 GGXTimesNdotL_Exact(float3 V, float3 L, float3 N, float roughness, float3 F0)
 {
     float3 H = normalize(V + L);
@@ -77,47 +91,12 @@ float3 GGXTimesNdotL_Exact(float3 V, float3 L, float3 N, float roughness, float3
     float NdotV = saturate(dot(N, V));
     float NdotH = saturate(dot(N, H));
 
-    float G = G_SmithOverNdotV_Exact(roughness, NdotV, NdotL);
-    float alpha = roughness * roughness;
-    float alpha2 = alpha * alpha;
-    float denom = NdotH * NdotH * alpha2 + (1.0f - NdotH * NdotH);
-    float D = alpha2 / (PI * denom * denom);
-    float Fc = pow(max(1.0f - VdotH, 0.0f), 5.0f);
-    float3 F = F0 + (1.0f - F0) * Fc;
+    float  G  = G_SmithOverNdotV_Exact(roughness, NdotV, NdotL);
+    float  D  = D_GGX(NdotH, roughness);
+    float  Fc = pow(max(1.0f - VdotH, 0.0f), 5.0f);
+    float3 F  = F0 + (1.0f - F0) * Fc;
 
     return F * (D * G * 0.25f);
-}
-
-float DistributionGGX(float NdotH, float roughness)
-{
-    float a = roughness*roughness;
-    float a2 = a*a;
-    float NdotH2 = NdotH*NdotH;
-
-    float nom   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-
-    return nom / denom;
-}
-
-float GeometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r*r) / 8.0;
-
-    float nom   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
-}
-
-float GeometrySmith(float NdotV, float NdotL, float roughness)
-{
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
 }
 
 // [Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"]
@@ -341,14 +320,22 @@ struct LightingComponents
     float3 specular;
 };
 
-// Compute the specular BRDF term: (D * G * F) / (4 * NdotV * NdotL)
+// Compute the specular BRDF term: (D * G2 * F) / (4 * NdotV * NdotL)
+// Uses the height-correlated Smith G2 (Exact) for correctness.
+// Does NOT include NdotL — caller (EvaluateDirectLight) multiplies by NdotL.
 float3 ComputeSpecularBRDF(float3 F, float NdotH, float NdotV, float NdotL, float roughness)
 {
-    float D = DistributionGGX(NdotH, roughness);
-    float G = GeometrySmith(NdotV, NdotL, roughness);
-    float3 numerator = D * G * F;
-    float denominator = 4.0 * NdotV * NdotL + 0.0001;
-    return numerator / denominator;
+    float alpha  = roughness * roughness;
+    float alpha2 = alpha * alpha;
+
+    float D = D_GGX(NdotH, roughness);
+
+    // Height-correlated Smith G2 (full form, no NdotL baked in)
+    float g1 = NdotV * sqrt(alpha2 + (1.0f - alpha2) * NdotL * NdotL);
+    float g2 = NdotL * sqrt(alpha2 + (1.0f - alpha2) * NdotV * NdotV);
+    float G2 = 0.5f / max(g1 + g2, 1e-6f); // = G2 / (4*NdotV*NdotL)
+
+    return D * G2 * F;
 }
 
 LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, float shadow)
@@ -658,8 +645,7 @@ float SampleGGX_VNDF_PDF(float roughness, float3 N, float3 V, float3 L)
     float VdotH = saturate(dot(V, H));
     float alpha  = roughness * roughness;
     float alpha2 = alpha * alpha;
-    float denom  = (NdotH * NdotH * (alpha2 - 1.0f) + 1.0f);
-    float D      = alpha2 / (PI * denom * denom);
+    float D      = D_GGX(NdotH, roughness);
     // VNDF PDF = D * G1(V) * VdotH / NdotV
     float G1 = 2.0f * NdotV / (NdotV + sqrt(alpha2 + (1.0f - alpha2) * NdotV * NdotV));
     return D * G1 * VdotH / max(NdotV, 1e-5f);
