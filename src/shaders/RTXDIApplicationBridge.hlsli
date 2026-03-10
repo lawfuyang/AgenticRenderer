@@ -749,6 +749,11 @@ float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
     if (g_RTXDIConst.m_LocalLightCount == 0)
         return 0.0;
 
+    // Reject indices outside the local-light region to avoid invalid Z-curve lookups.
+    if (lightIndex < g_RTXDIConst.m_LocalLightFirstIndex ||
+        lightIndex >= (g_RTXDIConst.m_LocalLightFirstIndex + g_RTXDIConst.m_LocalLightCount))
+        return 0.0;
+
     // lightIndex is the global light index as used by RAB_LoadLightInfo.
     // The PDF texture is indexed by the LOCAL index (0-based within the local light region),
     // matching the convention used in RTXDI_BuildLocalLightPDF_Main.

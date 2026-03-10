@@ -137,12 +137,16 @@ void RTXDI_BuildLocalLightPDF_Main(uint2 gid : SV_DispatchThreadID)
 
         if (gl.m_Type == 1u) // Point light: isotropic flux = luminance * 4π
         {
-            weight = max(lum * 4.0f * PI, 1e-8f);
+            weight = max(lum * 4.0f * PI, 0.0f);
         }
-        else if (gl.m_Type == 2u) // Spot light: cone flux = luminance * 2π * (1 - cos(outerAngle))
+        else if (gl.m_Type == 2u) // Spot light: integrate smooth cone attenuation over solid angle.
         {
+            float cosInner = cos(gl.m_SpotInnerConeAngle);
             float cosOuter = cos(gl.m_SpotOuterConeAngle);
-            weight = max(lum * 2.0f * PI * (1.0f - cosOuter), 1e-8f);
+            float coneFactor = (cosInner > cosOuter)
+                ? (1.0f - 0.5f * (cosInner + cosOuter))
+                : (1.0f - cosOuter);
+            weight = max(lum * 2.0f * PI * coneFactor, 0.0f);
         }
         // Type 0 (directional) → weight stays 0: directional lights are infinite lights,
         // handled separately and never presampled via the local light PDF texture.
@@ -177,12 +181,12 @@ void RTXDI_BuildEnvLightPDF_Main(uint2 gid : SV_DispatchThreadID)
     // Full luminance * relative solid-angle importance sampling.
     // FullSample's getPixelWeight uses: luma * cos(elevation)
     // Exclude the sun disk (bAddSunDisk=false): the sun is a separate infinite light.
-    // Including the sun disk would make the PDF texture spike at the sun direction,
-    // causing the RIS sampler to over-select that texel and produce fireflies.
-    float3 radiance = GetAtmosphereSkyRadiance(
-        float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, false);
-    float weight = max(Luminance(radiance) * cosElevation, 1e-8);
-
+    float3 radiance = GetAtmosphereSkyRadiance(float3(0.0, 0.0, 0.0), dir, g_RTXDIConst.m_SunDirection, g_RTXDIConst.m_SunIntensity, false);
+    float lum = Luminance(radiance);
+    if (isinf(lum) || isnan(lum))
+        lum = 0.0f;
+    float weight = max(lum * cosElevation, 0.0f);
+    
     g_EnvPDFMip0[gid] = weight;
 }
 
@@ -257,6 +261,15 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     ReSTIRDI_LocalLightSamplingMode localLightSamplingMode =
         (ReSTIRDI_LocalLightSamplingMode)g_RTXDIConst.m_LocalLightSamplingMode;
+
+#if RTXDI_REGIR_MODE == RTXDI_REGIR_DISABLED
+    // ReGIR mode silently falls back to uniform sampling when ReGIR is not compiled.
+    // Mirror FullSample behavior by remapping it to Power_RIS in this configuration.
+    if (localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode_REGIR_RIS)
+    {
+        localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode_POWER_RIS;
+    }
+#endif
 
     RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
         numLocalSamples,
