@@ -197,6 +197,12 @@ void ImGuiLayer::UpdateFrame()
                         scene.m_LightsDirty |= ImGui::DragFloat("Inner Angle", &light.m_SpotInnerConeAngle, 0.01f, 0.0f, light.m_SpotOuterConeAngle);
                         scene.m_LightsDirty |= ImGui::DragFloat("Outer Angle", &light.m_SpotOuterConeAngle, 0.01f, light.m_SpotInnerConeAngle, DirectX::XM_PI);
                     }
+                    if (light.m_NodeIndex >= 0)
+                    {
+                        bool highlighted = (renderer->m_SelectedNodeIndex == light.m_NodeIndex);
+                        if (ImGui::Checkbox("Highlight", &highlighted))
+                            renderer->m_SelectedNodeIndex = highlighted ? light.m_NodeIndex : -1;
+                    }
                     ImGui::TreePop();
                 }
             }
