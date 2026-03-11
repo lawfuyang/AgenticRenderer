@@ -273,23 +273,6 @@ endif()
 
 # Custom target to compile shaders offline with ShaderMake
 add_custom_target(build_shaders
-    # SPIR-V output for Vulkan
-    COMMAND ${SHADERMAKE_PATH_GENEX}
-            -p SPIRV
-            --binaryBlob
-            -D SPIRV
-            -c "${SHADER_CONFIG}"
-            -o "${SHADER_OUTPUT_DIR_SPIRV}"
-            --embedPDB
-            --compiler "${DXC_EXE}"
-            --shaderModel 6_8
-            --hlsl2021
-            --vulkanVersion 1.3
-            --vulkanMemoryLayout dx
-            --include "${CMAKE_SOURCE_DIR}/src/shaders"
-            --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
-            --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
-            --relaxedInclude "pch.h"
 
     # DXIL output for D3D12
     COMMAND ${SHADERMAKE_PATH_GENEX}
@@ -306,25 +289,6 @@ add_custom_target(build_shaders
             --include "${CMAKE_SOURCE_DIR}/external/rtxdi/Include"
             --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
             --relaxedInclude "pch.h"
-
-    # SPIR-V output for Vulkan for NRD
-    COMMAND ${SHADERMAKE_PATH_GENEX}
-            -p SPIRV
-            --binaryBlob
-            -D SPIRV
-            -c "${NRD_SHADER_CONFIG}"
-            -o "${SHADER_OUTPUT_DIR_SPIRV}"
-            --embedPDB
-            --compiler "${DXC_EXE}"
-            --allResourcesBound
-            --shaderModel 6_8
-            --hlsl2021
-            --vulkanVersion 1.3
-            --vulkanMemoryLayout dx
-            --include "${NRD_SRC_DIR}/Shaders"
-            --include "${ML_SRC_DIR}"
-            --binaryBlob
-            -D NRD_INTERNAL
 
     # DXIL output for D3D12 for NRD
     COMMAND ${SHADERMAKE_PATH_GENEX}
