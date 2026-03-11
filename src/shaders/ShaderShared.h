@@ -531,25 +531,7 @@ struct BloomConstants
     float m_UpsampleRadius;
 };
 // ============================================================================
-// ============================================================================
-// RTXDI Visualization Modes — mirrors FullSample ShaderParameters.h VIS_MODE_*
-// ============================================================================
-#define RTXDI_VIS_MODE_NONE                0
-#define RTXDI_VIS_MODE_COMPOSITED_COLOR    1  // luminance of the composited HDR output
-#define RTXDI_VIS_MODE_RESOLVED_COLOR      2  // same as composited (no TAA distinction)
-#define RTXDI_VIS_MODE_DIFFUSE             3  // raw RTXDI diffuse illumination
-#define RTXDI_VIS_MODE_SPECULAR            4  // raw RTXDI specular illumination
-#define RTXDI_VIS_MODE_DENOISED_DIFFUSE    5  // RELAX-denoised diffuse
-#define RTXDI_VIS_MODE_DENOISED_SPECULAR   6  // RELAX-denoised specular
-#define RTXDI_VIS_MODE_RESERVOIR_WEIGHT    7  // DI reservoir weightSum
-#define RTXDI_VIS_MODE_RESERVOIR_M         8  // DI reservoir M (history length)
-#define RTXDI_VIS_MODE_DIFFUSE_GRADIENTS   9  // (not implemented — shows zero)
-#define RTXDI_VIS_MODE_SPECULAR_GRADIENTS  10 // (not implemented — shows zero)
-#define RTXDI_VIS_MODE_DIFFUSE_CONFIDENCE  11 // (not implemented — shows zero)
-#define RTXDI_VIS_MODE_SPECULAR_CONFIDENCE 12 // (not implemented — shows zero)
-#define RTXDI_VIS_MODE_GI_RESERVOIR_WEIGHT 13 // (not implemented — shows zero)
-#define RTXDI_VIS_MODE_GI_RESERVOIR_M      14 // (not implemented — shows zero)
-
+// RTXDIConstants
 // RTXDIConstants — GPU-shared constant buffer for ReSTIR DI passes.
 //
 // Layout mirrors the RTXDI SDK parameter structs so that C++ can fill them
@@ -616,8 +598,8 @@ struct RTXDIConstants
     uint32_t m_EnableRTShadows;          // enables ray-traced shadows in visibility functions
     //
     Vector2U m_EnvPDFTextureSize;        // (width, height) of env PDF mip-0
-    uint32_t m_VisualizationMode;        // RTXDI_VIS_MODE_* constant
     float    m_SunIntensity;
+    uint32_t pad1;
     //
     Vector3  m_SunDirection;
     uint32_t m_TemporalMaxHistoryLength;

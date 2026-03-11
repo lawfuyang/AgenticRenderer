@@ -32,6 +32,9 @@
 // by RAB_EvaluateLocalLightSourcePdf and RTXDI_BuildLocalLightPDF_Main.
 #include "Rtxdi/Utils/Math.hlsli"
 
+// SDK RNG: RTXDI_RandomSamplerState, RTXDI_InitRandomSampler, RTXDI_GetNextRandom
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
+
 // ============================================================================
 // Resource declarations
 // ============================================================================
@@ -121,39 +124,6 @@ float3 equirectUVToDirection(float2 uv, out float cosElevation)
         sin(elevation),
         sin(azimuth) * cosElevation
     );
-}
-
-// ============================================================================
-// RAB_RandomSamplerState — robust PCG-based RNG
-// ============================================================================
-struct RAB_RandomSamplerState
-{
-    uint seed;
-    uint index;
-};
-
-RAB_RandomSamplerState RAB_InitRandomSampler(uint2 pixelIndex, uint inPass)
-{
-    RAB_RandomSamplerState rng;
-    // PCG seed: mix pixel position, pass, and frame index
-    uint h = pixelIndex.x * 1973u + pixelIndex.y * 9277u
-           + inPass * 26699u + g_RTXDIConst.m_FrameIndex * 2699u;
-    h ^= h >> 16u;
-    h *= 0x45d9f3bu;
-    h ^= h >> 16u;
-    rng.seed  = h;
-    rng.index = 1u;
-    return rng;
-}
-
-float RAB_GetNextRandom(inout RAB_RandomSamplerState rng)
-{
-    // PCG hash
-    uint state = rng.seed * 747796405u + rng.index * 2891336453u;
-    rng.index++;
-    uint word   = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    uint result = (word >> 22u) ^ word;
-    return float(result) * (1.0 / 4294967296.0);
 }
 
 // ============================================================================
@@ -347,11 +317,11 @@ float3 TangentToWorld(RAB_Surface surface, float3 h)
     return B * h.x + T * h.y + surface.normal * h.z;
 }
 
-bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 direction)
+bool RAB_SurfaceImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_RandomSamplerState rng, out float3 direction)
 {
-    float r0 = RAB_GetNextRandom(rng);
-    float r1 = RAB_GetNextRandom(rng);
-    float r2 = RAB_GetNextRandom(rng);
+    float r0 = RTXDI_GetNextRandom(rng);
+    float r1 = RTXDI_GetNextRandom(rng);
+    float r2 = RTXDI_GetNextRandom(rng);
 
     static const float kMinRoughness = 0.05;
 
@@ -375,7 +345,7 @@ bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState 
     return dot(surface.normal, direction) > 0.0;
 }
 
-float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 direction)
+float RAB_SurfaceEvaluateBrdfPdf(RAB_Surface surface, float3 direction)
 {
     static const float kMinRoughness = 0.05;
     float cosTheta   = saturate(dot(surface.normal, direction));
@@ -776,7 +746,7 @@ float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 
 // Samples a polymorphic light relative to the given receiver surface.
 // For most light types, the "uv" parameter is just a pair of uniform random numbers, originally
-// produced by the RAB_GetNextRandom function and then stored in light reservoirs.
+// produced by the RTXDI_GetNextRandom function and then stored in light reservoirs.
 // For importance sampled environment lights, the "uv" parameter has the texture coordinates
 // in the PDF texture, normalized to the (0..1) range.
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface surface, float2 uv)

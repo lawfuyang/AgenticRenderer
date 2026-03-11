@@ -18,17 +18,6 @@
 RWTexture2D<float> g_PDFMip0    : register(u4);  // mip 0 of the local-light PDF texture
 RWTexture2D<float> g_EnvPDFMip0 : register(u8);  // mip 0 of the environment-light PDF texture
 
-// ---- Visualization-only resources (only accessed by RTXDI_Visualize_Main) ----
-// t20-t23: input signals to visualize; bound per-pass by RTXDIVisualizationRenderer
-Texture2D<float4> g_RTXDI_VizRawDiffuse   : register(t20); // raw RTXDI diffuse illumination
-Texture2D<float4> g_RTXDI_VizRawSpecular  : register(t21); // raw RTXDI specular
-Texture2D<float4> g_RTXDI_VizDenoisedDiff : register(t22); // RELAX-denoised diffuse
-Texture2D<float4> g_RTXDI_VizDenoisedSpec : register(t23); // RELAX-denoised specular
-
-// u10: HDR color output — read/write for blending the chart overlay
-VK_IMAGE_FORMAT_UNKNOWN
-RWTexture2D<float4> g_RTXDI_VizHDROutput  : register(u10);
-
 // Note: g_RTXDI_EnvLightPDFTexture (t19) is declared in RTXDIApplicationBridge.hlsli
 
 #include "Rtxdi/Utils/Checkerboard.hlsli"
@@ -207,9 +196,7 @@ void RTXDI_PresampleEnvironmentMap_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         tileIndex    >= g_RTXDIConst.m_EnvRISTileCount)
         return;
 
-    // Match FullSample: use (sampleInTile, tileIndex) directly as the 2-D seed.
-    // RAB_InitRandomSampler already mixes in the frame index internally.
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(sampleInTile, tileIndex), 0u);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(uint2(sampleInTile, tileIndex), g_RTXDIConst.m_FrameIndex, 0);
 
     RTXDI_PresampleEnvironmentMap(
         rng,
@@ -238,9 +225,9 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     int2  iPixel = int2(pixelPosition);
 
-    // Initialise RNG
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1u);
-    RAB_RandomSamplerState coherentRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1u);
+    // Initialise RNG — use SDK's RTXDI_InitRandomSampler with the named per-pass seed constants.
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_RTXDIConst.m_FrameIndex, RTXDI_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
+    RTXDI_RandomSamplerState tileRng = RTXDI_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, g_RTXDIConst.m_FrameIndex, RTXDI_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
 
     // Fetch G-buffer surface for this pixel
     RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
@@ -248,9 +235,7 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     RTXDI_LightBufferParameters lbp = GetLightBufferParams();
 
     // Use sample counts from the constant buffer — these are set by RTXDIRenderer.cpp
-    // from the UI-controlled g_ReSTIRDI_InitialSamplingParams, matching FullSample's
-    // RTXDI_InitSampleParameters(numPrimaryLocalLightSamples, numPrimaryInfiniteLightSamples,
-    //                             numPrimaryEnvironmentSamples, numPrimaryBrdfSamples, ...)
+    // from the UI-controlled g_ReSTIRDI_InitialSamplingParams.
     uint numLocalSamples = (lbp.localLightBufferRegion.numLights > 0u)
         ? g_RTXDIConst.m_NumLocalLightSamples : 0u;
     uint numInfiniteSamples = (lbp.infiniteLightBufferRegion.numLights > 0u)
@@ -271,13 +256,15 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     }
 #endif
 
-    RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-        numLocalSamples,
-        numInfiniteSamples,
-        numEnvSamples,
-        numBrdfSamples,
-        g_RTXDIConst.m_BrdfCutoff,
-        /*randomThreshold=*/ 0.001f);
+    RTXDI_DIInitialSamplingParameters sampleParams;
+    sampleParams.numLocalLightSamples       = numLocalSamples;
+    sampleParams.numInfiniteLightSamples    = numInfiniteSamples;
+    sampleParams.numEnvironmentSamples      = numEnvSamples;
+    sampleParams.numBrdfSamples             = numBrdfSamples;
+    sampleParams.brdfCutoff                 = g_RTXDIConst.m_BrdfCutoff;
+    sampleParams.localLightSamplingMode     = localLightSamplingMode;
+    sampleParams.enableInitialVisibility    = false; // handled manually below
+    sampleParams.environmentMapImportanceSampling = (g_RTXDIConst.m_EnvSamplingMode == 2u);
 
     // Build RIS segment parameters from the constant buffer.
     RTXDI_RISBufferSegmentParameters localRISParams = GetLocalLightRISSegmentParams();
@@ -285,8 +272,7 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     RAB_LightSample selectedSample;
     RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(
-        rng, coherentRng, surface, sampleParams, lbp,
-        localLightSamplingMode,
+        rng, tileRng, surface, sampleParams, lbp,
         #if RTXDI_ENABLE_PRESAMPLING
             localRISParams,
             envRISParams,
@@ -294,9 +280,9 @@ void RTXDI_GenerateInitialSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         selectedSample);
 
     // Initial visibility: trace a conservative shadow ray for the selected sample.
-    // Matches FullSample's GenerateInitialSamples.hlsl — gates on enableInitialVisibility
-    // and only tests valid reservoirs. Culling invisible samples early prevents them
-    // from polluting the temporal/spatial reservoir history.
+    // Note: FullSample 3.0.0 does NOT perform initial visibility here — it relies on
+    // the temporal/spatial passes. We keep it as an optional quality improvement,
+    // gated on m_EnableInitialVisibility.
     if (g_RTXDIConst.m_EnableInitialVisibility != 0u && RTXDI_IsValidDIReservoir(reservoir))
     {
         if (!RAB_GetConservativeVisibility(surface, selectedSample))
@@ -323,13 +309,9 @@ void RTXDI_PresampleLights_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         tileIndex    >= g_RTXDIConst.m_LocalRISTileCount)
         return;
 
-    // Match FullSample: use (sampleInTile, tileIndex) directly as the 2-D seed.
-    // RAB_InitRandomSampler already mixes in the frame index internally, so no
-    // need to pass it as a coordinate (doing so would double-count it).
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(sampleInTile, tileIndex), 0u);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(uint2(sampleInTile, tileIndex), g_RTXDIConst.m_FrameIndex, 0);
 
-    // Delegate entirely to the RTXDI SDK function.  It will:
-    //   - descend the PDF mip chain to pick a light proportional to its weight
+    // Delegate entirely to the RTXDI SDK function.    //   - descend the PDF mip chain to pick a light proportional to its weight
     //   - call RAB_StoreCompactLightInfo to cache the light data
     //   - write the (index, invPdf) pair to RTXDI_RIS_BUFFER
     RTXDI_PresampleLocalLights(
@@ -362,7 +344,7 @@ void RTXDI_TemporalResampling_Main(
 
     int2  iPixel        = int2(pixelPosition);
 
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2u);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_RTXDIConst.m_FrameIndex, RTXDI_DI_TEMPORAL_RESAMPLING_RANDOM_SEED);
 
     // Load current surface
     RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
@@ -384,22 +366,23 @@ void RTXDI_TemporalResampling_Main(
             && !IsComplexSurface(iPixel, surface);
 
         RTXDI_DITemporalResamplingParameters tparams;
-        tparams.screenSpaceMotion        = pixelMotion;
-        tparams.sourceBufferIndex        = g_RTXDIConst.m_TemporalResamplingInputBufferIndex;
-        tparams.maxHistoryLength         = g_RTXDIConst.m_TemporalMaxHistoryLength;
-        tparams.biasCorrectionMode       = g_RTXDIConst.m_TemporalBiasCorrectionMode;
-        tparams.depthThreshold           = g_RTXDIConst.m_TemporalDepthThreshold;
-        tparams.normalThreshold          = g_RTXDIConst.m_TemporalNormalThreshold;
-        tparams.enableVisibilityShortcut = g_RTXDIConst.m_TemporalEnableVisibilityShortcut != 0u;
+        tparams.maxHistoryLength          = g_RTXDIConst.m_TemporalMaxHistoryLength;
+        tparams.biasCorrectionMode        = g_RTXDIConst.m_TemporalBiasCorrectionMode;
+        tparams.depthThreshold            = g_RTXDIConst.m_TemporalDepthThreshold;
+        tparams.normalThreshold           = g_RTXDIConst.m_TemporalNormalThreshold;
+        tparams.enableVisibilityShortcut  = g_RTXDIConst.m_TemporalEnableVisibilityShortcut != 0u;
         tparams.enablePermutationSampling = usePermutationSampling;
-        tparams.uniformRandomNumber      = g_RTXDIConst.m_TemporalUniformRandomNumber;
+        tparams.uniformRandomNumber       = g_RTXDIConst.m_TemporalUniformRandomNumber;
 
         RAB_LightSample selectedSample = RAB_EmptyLightSample();
         int2 temporalPixelPos;
 
         outReservoir = RTXDI_DITemporalResampling(
             pixelPosition, surface, curReservoir, rng,
-            rtParams, rbp, tparams,
+            rtParams, rbp,
+            pixelMotion,
+            g_RTXDIConst.m_TemporalResamplingInputBufferIndex,
+            tparams,
             temporalPixelPos, selectedSample);
 
         // Write the reprojected pixel position for gradient/confidence denoising passes.
@@ -440,7 +423,7 @@ void RTXDI_SpatialResampling_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     int2  iPixel        = int2(pixelPosition);
 
     // Use pass index 3 (distinct from initial=1, temporal=2) for decorrelated RNG
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 3u);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_RTXDIConst.m_FrameIndex, RTXDI_DI_SPATIAL_RESAMPLING_RANDOM_SEED);
 
     RAB_Surface surface = RAB_GetGBufferSurface(iPixel, false);
 
@@ -454,10 +437,9 @@ void RTXDI_SpatialResampling_Main(uint2 GlobalIndex : SV_DispatchThreadID)
             g_RTXDIConst.m_SpatialResamplingInputBufferIndex);
 
         RTXDI_DISpatialResamplingParameters sparams;
-        sparams.sourceBufferIndex             = g_RTXDIConst.m_SpatialResamplingInputBufferIndex;
         sparams.numSamples                    = g_RTXDIConst.m_SpatialNumSamples;
         sparams.numDisocclusionBoostSamples   = g_RTXDIConst.m_SpatialNumDisocclusionBoostSamples;
-        sparams.targetHistoryLength           = g_RTXDIConst.m_TemporalMaxHistoryLength; // match temporal, per FullSample
+        sparams.targetHistoryLength           = g_RTXDIConst.m_TemporalMaxHistoryLength; // match temporal history length
         sparams.biasCorrectionMode            = g_RTXDIConst.m_SpatialBiasCorrectionMode;
         sparams.samplingRadius                = g_RTXDIConst.m_SpatialSamplingRadius;
         sparams.depthThreshold                = g_RTXDIConst.m_SpatialDepthThreshold;
@@ -468,7 +450,9 @@ void RTXDI_SpatialResampling_Main(uint2 GlobalIndex : SV_DispatchThreadID)
         RAB_LightSample selectedSample = RAB_EmptyLightSample();
         outReservoir = RTXDI_DISpatialResampling(
             pixelPosition, surface, centerReservoir,
-            rng, rtParams, rbp, sparams, selectedSample);
+            rng, rtParams, rbp,
+            g_RTXDIConst.m_SpatialResamplingInputBufferIndex,
+            sparams, selectedSample);
     }
 
     RTXDI_StoreDIReservoir(outReservoir, rbp, reservoirPosition,
@@ -604,7 +588,6 @@ void RTXDI_ShadeSamples_Main(uint2 GlobalIndex : SV_DispatchThreadID)
 }
 
 // ============================================================================
-// SECTION 10: RTXDIGenerateViewZ
 // Linear view-space depth (IN_VIEWZ) required by the NRD RELAX denoiser.
 // Runs full-screen — sky pixels get a large sentinel so NRD skips them.
 // Only compiled when RTXDI_ENABLE_RELAX_DENOISING=1.
@@ -633,127 +616,3 @@ void RTXDI_GenerateViewZ_Main(uint2 GlobalIndex : SV_DispatchThreadID)
     g_RTXDILinearDepth[GlobalIndex] = linearDepth;
 }
 #endif
-
-// ============================================================================
-// SECTION 11: RTXDI_Visualize_Main
-// Overlays a logarithmic luminance histogram (mirroring FullSample's
-// VisualizeHdrSignals.hlsl) onto the HDR color output.
-//
-// The chart is drawn at the horizontal centre of the screen:
-//   - Yellow line at y=middle  →  luminance 1.0
-//   - Faint yellow lines at decade boundaries (10, 0.1, 100, …)
-//   - Cyan bar below the signal position; yellow fire where value == 0
-//   - 100 pixels per decade (log10 scale)
-//
-// Bound by RTXDIVisualizationRenderer; runs after DeferredRenderer so the
-// HDR colour output already contains the full composited scene.
-// ============================================================================
-
-float4 VizBlend(float4 top, float4 bottom)
-{
-    return float4(top.rgb * top.a + bottom.rgb * (1.0f - top.a),
-                  1.0f - (1.0f - top.a) * (1.0f - bottom.a));
-}
-
-[numthreads(8, 8, 1)]
-void RTXDI_Visualize_Main(uint2 pixelPos : SV_DispatchThreadID)
-{
-    const uint2 viewportSize = g_RTXDIConst.m_ViewportSize;
-    if (any(pixelPos >= viewportSize))
-        return;
-
-    const uint visMode = g_RTXDIConst.m_VisualizationMode;
-    if (visMode == RTXDI_VIS_MODE_NONE)
-        return;
-
-    // The chart reads a horizontal strip at the vertical centre of the screen.
-    const int middle   = int(viewportSize.y) / 2;
-    const int2 samplePos = int2(int(pixelPos.x), middle);
-
-    // Compute the reservoir position for reservoir-weight / M modes.
-    const RTXDI_RuntimeParameters          rtp = GetRuntimeParams();
-    const RTXDI_ReservoirBufferParameters  rbp = GetReservoirBufferParams();
-    const int2 reservoirPos = RTXDI_PixelPosToReservoirPos(samplePos, rtp.activeCheckerboardField);
-
-    float input = 0.0f;
-    switch (visMode)
-    {
-    case RTXDI_VIS_MODE_COMPOSITED_COLOR:
-    case RTXDI_VIS_MODE_RESOLVED_COLOR:
-        input = Luminance(g_RTXDI_VizHDROutput[samplePos].rgb);
-        break;
-
-    case RTXDI_VIS_MODE_DIFFUSE:
-        input = Luminance(g_RTXDI_VizRawDiffuse[samplePos].rgb);
-        break;
-
-    case RTXDI_VIS_MODE_SPECULAR:
-        input = Luminance(g_RTXDI_VizRawSpecular[samplePos].rgb);
-        break;
-
-    case RTXDI_VIS_MODE_DENOISED_DIFFUSE:
-        input = Luminance(g_RTXDI_VizDenoisedDiff[samplePos].rgb);
-        break;
-
-    case RTXDI_VIS_MODE_DENOISED_SPECULAR:
-        input = Luminance(g_RTXDI_VizDenoisedSpec[samplePos].rgb);
-        break;
-
-    case RTXDI_VIS_MODE_RESERVOIR_WEIGHT:
-    {
-        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(rbp, reservoirPos, g_RTXDIConst.m_ShadingInputBufferIndex);
-        input = reservoir.weightSum;
-        break;
-    }
-
-    case RTXDI_VIS_MODE_RESERVOIR_M:
-    {
-        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(rbp, reservoirPos, g_RTXDIConst.m_ShadingInputBufferIndex);
-        input = float(reservoir.M);
-        break;
-    }
-
-    // Modes not implemented in this renderer — input stays 0 (shows fire at bottom).
-    default:
-        break;
-    }
-
-    // Log10 luminance → pixel row the signal peak maps to.
-    const float logLum  = log2(max(input, 1e-30f)) / log2(10.0f);
-    const int   chartY  = middle - int(logLum * 100.0f); // higher lum → higher on screen (lower Y)
-
-    // Build overlay colour for this pixel (default: transparent).
-    float4 overlay = float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // Horizontal reference lines.
-    const int linePos = ((middle - int(pixelPos.y)) % 100 + 100) % 100;
-    if (int(pixelPos.y) == middle)
-        overlay = VizBlend(float4(1, 1, 0, 0.6f), overlay);   // yellow = 1.0
-    else if (linePos == 0)
-        overlay = VizBlend(float4(1, 1, 0, 0.2f), overlay);   // decade grid
-
-    // Bar / fire.
-    const float barHeight = 30.0f;
-    if (input <= 0.0f || isinf(logLum))
-    {
-        // Zero / -inf: render yellow fire at bottom of screen.
-        float t = max(float(int(pixelPos.y) - int(viewportSize.y)) + barHeight, 0.0f) / barHeight;
-        float4 fire = float4(1, 1, 0, t * t * 0.8f);
-        overlay = VizBlend(fire, overlay);
-    }
-    else if (int(pixelPos.y) >= chartY)
-    {
-        float t = max(float(chartY - int(pixelPos.y)) + barHeight, 0.0f) / barHeight;
-        float4 bar = float4(0, 1, 1, t * t);
-        overlay = VizBlend(bar, overlay);
-    }
-
-    // Blend the overlay onto the HDR output.
-    if (overlay.a > 0.01f)
-    {
-        const float4 existing = g_RTXDI_VizHDROutput[pixelPos];
-        g_RTXDI_VizHDROutput[pixelPos] = float4(
-            overlay.rgb * overlay.a + existing.rgb * (1.0f - overlay.a),
-            existing.a);
-    }
-}

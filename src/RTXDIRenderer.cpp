@@ -63,23 +63,12 @@ enum class ReSTIRDIQualityPreset : uint32_t
 };
 
 bool g_ReSTIRDI_ShowAdvancedSettings = false;
-uint32_t g_ReSTIRDI_VisualizationMode = RTXDI_VIS_MODE_NONE; // current visualization mode
-
-// Reservoir + runtime params cached by RTXDIRenderer::Render() each frame
-// and consumed by RTXDIVisualizationRenderer.
-static struct
-{
-    uint32_t shadingInputBufferIndex = 0;
-    uint32_t reservoirBlockRowPitch  = 0;
-    uint32_t reservoirArrayPitch     = 0;
-    uint32_t neighborOffsetMask      = 0;
-    uint32_t activeCheckerboardField = 0;
-} g_RTXDILastFrameParams;
 rtxdi::ReSTIRDI_ResamplingMode          g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
-ReSTIRDI_InitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams  = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
-ReSTIRDI_TemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
-ReSTIRDI_SpatialResamplingParameters    g_ReSTIRDI_SpatialResamplingParams  = rtxdi::GetDefaultReSTIRDISpatialResamplingParams();
-ReSTIRDI_ShadingParameters              g_ReSTIRDI_ShadingParams            = rtxdi::GetDefaultReSTIRDIShadingParams();
+RTXDI_DIInitialSamplingParameters      g_ReSTIRDI_InitialSamplingParams  = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
+RTXDI_DITemporalResamplingParameters   g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
+RTXDI_BoilingFilterParameters          g_ReSTIRDI_BoilingFilterParams      = rtxdi::GetDefaultReSTIRDIBoilingFilterParams();
+RTXDI_DISpatialResamplingParameters    g_ReSTIRDI_SpatialResamplingParams  = rtxdi::GetDefaultReSTIRDISpatialResamplingParams();
+RTXDI_ShadingParameters                g_ReSTIRDI_ShadingParams            = rtxdi::GetDefaultReSTIRDIShadingParams();
 uint32_t g_ReSTIRDI_NumLocalLightUniformSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
@@ -97,15 +86,15 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 4;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 4;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 4;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 4;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 0;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 1;
-        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
-        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Off;
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Off;
-        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 4;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 0;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 1;
+        g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 1u;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode = ReSTIRDI_TemporalBiasCorrectionMode::Off;
+        g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode = ReSTIRDI_SpatialBiasCorrectionMode::Off;
+        g_ReSTIRDI_SpatialResamplingParams.numSamples = 1;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 2;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
         break;
@@ -116,15 +105,15 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
-        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
-        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
-        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 1u;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
+        g_ReSTIRDI_SpatialResamplingParams.numSamples = 1;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
         break;
@@ -135,15 +124,15 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 16;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
-        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 0u;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
-        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 0u;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.0f;
+        g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.numSamples = 1;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 0u;
         break;
@@ -154,15 +143,15 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 16;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 16;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 16;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 16;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 16;
-        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 0u;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
-        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 4;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 16;
+        g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 0u;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.0f;
+        g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.numSamples = 4;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 16;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 0u;
         break;
@@ -173,11 +162,11 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 16;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 16;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 0;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 16;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 16;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 0u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.0f;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 16;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 16;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 0u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.0f;
         break;
 
         // my own settings
@@ -187,16 +176,16 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples = 2;
-        g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = 1u;
-        g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength = 0.2f;
-        g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 2;
+        g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 1u;
+        g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 1u;
+        g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.2f;
+        g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode = ReSTIRDI_TemporalBiasCorrectionMode::Raytraced;
         g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = 0u; // disabling this somehow increases image quality?
-        g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
-        g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples = 1;
+        g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode = ReSTIRDI_SpatialBiasCorrectionMode::Raytraced;
+        g_ReSTIRDI_SpatialResamplingParams.numSamples = 1;
         g_ReSTIRDI_SpatialResamplingParams.numDisocclusionBoostSamples = 8;
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
     default:
@@ -266,17 +255,17 @@ void RTXDIIMGUISettings()
             ImGui::RadioButton("ReGIR RIS##llMode", localLightMode, (int)ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS);
             ImGui::SliderInt("ReGIR RIS Samples", (int*)&g_ReSTIRDI_NumLocalLightReGIRRISSamples, 0, 32);
 
-            // Keep numPrimaryLocalLightSamples in sync with the active mode
+            // Keep numLocalLightSamples in sync with the active mode
             switch (g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode)
             {
             case ReSTIRDI_LocalLightSamplingMode::Uniform:
-                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightUniformSamples;
+                g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = g_ReSTIRDI_NumLocalLightUniformSamples;
                 break;
             case ReSTIRDI_LocalLightSamplingMode::Power_RIS:
-                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightPowerRISSamples;
+                g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = g_ReSTIRDI_NumLocalLightPowerRISSamples;
                 break;
             case ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS:
-                g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples = g_ReSTIRDI_NumLocalLightReGIRRISSamples;
+                g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = g_ReSTIRDI_NumLocalLightReGIRRISSamples;
                 break;
             default: break;
             }
@@ -285,11 +274,11 @@ void RTXDIIMGUISettings()
         }
 
         ImGui::SliderInt("Initial BRDF Samples",
-            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples, 0, 8);
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numBrdfSamples, 0, 8);
         ImGui::SliderInt("Initial Infinite Light Samples",
-            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples, 0, 32);
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples, 0, 32);
         ImGui::SliderInt("Initial Environment Samples",
-            (int*)&g_ReSTIRDI_InitialSamplingParams.numPrimaryEnvironmentSamples, 0, 32);
+            (int*)&g_ReSTIRDI_InitialSamplingParams.numEnvironmentSamples, 0, 32);
 
         bool enableInitVis = g_ReSTIRDI_InitialSamplingParams.enableInitialVisibility != 0;
         if (ImGui::Checkbox("Enable Initial Visibility", &enableInitVis))
@@ -312,15 +301,15 @@ void RTXDIIMGUISettings()
             g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = enablePermutation ? 1u : 0u;
 
         ImGui::Combo("Temporal Bias Correction",
-            (int*)&g_ReSTIRDI_TemporalResamplingParams.temporalBiasCorrection,
+            (int*)&g_ReSTIRDI_TemporalResamplingParams.biasCorrectionMode,
             "Off\0Basic\0Pairwise\0Ray Traced\0");
 
         if (g_ReSTIRDI_ShowAdvancedSettings)
         {
             ImGui::SliderFloat("Temporal Depth Threshold",
-                &g_ReSTIRDI_TemporalResamplingParams.temporalDepthThreshold, 0.0f, 1.0f);
+                &g_ReSTIRDI_TemporalResamplingParams.depthThreshold, 0.0f, 1.0f);
             ImGui::SliderFloat("Temporal Normal Threshold",
-                &g_ReSTIRDI_TemporalResamplingParams.temporalNormalThreshold, 0.0f, 1.0f);
+                &g_ReSTIRDI_TemporalResamplingParams.normalThreshold, 0.0f, 1.0f);
             ImGui::SliderFloat("Permutation Sampling Threshold",
                 &g_ReSTIRDI_TemporalResamplingParams.permutationSamplingThreshold, 0.8f, 1.0f);
         }
@@ -328,13 +317,13 @@ void RTXDIIMGUISettings()
         ImGui::SliderInt("Max History Length",
             (int*)&g_ReSTIRDI_TemporalResamplingParams.maxHistoryLength, 1, 100);
 
-        bool boilingEnabled = g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter != 0;
+        bool boilingEnabled = g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter != 0;
         if (ImGui::Checkbox("##enableBoilingFilter", &boilingEnabled))
-            g_ReSTIRDI_TemporalResamplingParams.enableBoilingFilter = boilingEnabled ? 1u : 0u;
+            g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = boilingEnabled ? 1u : 0u;
         ImGui::SameLine();
         ImGui::PushItemWidth(90.f);
         ImGui::SliderFloat("Boiling Filter",
-            &g_ReSTIRDI_TemporalResamplingParams.boilingFilterStrength, 0.0f, 1.0f);
+            &g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength, 0.0f, 1.0f);
         ImGui::PopItemWidth();
 
         ImGui::TreePop();
@@ -349,12 +338,12 @@ void RTXDIIMGUISettings()
         if (g_ReSTIRDI_ResamplingMode != rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
         {
             ImGui::Combo("Spatial Bias Correction",
-                (int*)&g_ReSTIRDI_SpatialResamplingParams.spatialBiasCorrection,
+                (int*)&g_ReSTIRDI_SpatialResamplingParams.biasCorrectionMode,
                 "Off\0Basic\0Pairwise\0Ray Traced\0");
         }
 
         ImGui::SliderInt("Spatial Samples",
-            (int*)&g_ReSTIRDI_SpatialResamplingParams.numSpatialSamples, 1, 32);
+            (int*)&g_ReSTIRDI_SpatialResamplingParams.numSamples, 1, 32);
 
         if (g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial ||
             g_ReSTIRDI_ResamplingMode == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial)
@@ -364,15 +353,15 @@ void RTXDIIMGUISettings()
         }
 
         ImGui::SliderFloat("Spatial Sampling Radius",
-            &g_ReSTIRDI_SpatialResamplingParams.spatialSamplingRadius, 1.0f, 32.0f);
+            &g_ReSTIRDI_SpatialResamplingParams.samplingRadius, 1.0f, 32.0f);
 
         if (g_ReSTIRDI_ShowAdvancedSettings &&
             g_ReSTIRDI_ResamplingMode != rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
         {
             ImGui::SliderFloat("Spatial Depth Threshold",
-                &g_ReSTIRDI_SpatialResamplingParams.spatialDepthThreshold, 0.0f, 1.0f);
+                &g_ReSTIRDI_SpatialResamplingParams.depthThreshold, 0.0f, 1.0f);
             ImGui::SliderFloat("Spatial Normal Threshold",
-                &g_ReSTIRDI_SpatialResamplingParams.spatialNormalThreshold, 0.0f, 1.0f);
+                &g_ReSTIRDI_SpatialResamplingParams.normalThreshold, 0.0f, 1.0f);
             bool discountNaive = g_ReSTIRDI_SpatialResamplingParams.discountNaiveSamples != 0;
             if (ImGui::Checkbox("Discount Naive Samples", &discountNaive))
                 g_ReSTIRDI_SpatialResamplingParams.discountNaiveSamples = discountNaive ? 1u : 0u;
@@ -388,9 +377,9 @@ void RTXDIIMGUISettings()
         if (ImGui::Checkbox("Enable Final Visibility", &enableFinalVis))
             g_ReSTIRDI_ShadingParams.enableFinalVisibility = enableFinalVis ? 1u : 0u;
 
-        bool discardInvisible = g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples != 0;
+        bool discardInvisible = g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut != 0;
         if (ImGui::Checkbox("Discard Invisible Samples", &discardInvisible))
-            g_ReSTIRDI_TemporalResamplingParams.discardInvisibleSamples = discardInvisible ? 1u : 0u;
+            g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = discardInvisible ? 1u : 0u;
 
         bool reuseFinalVis = g_ReSTIRDI_ShadingParams.reuseFinalVisibility != 0;
         if (ImGui::Checkbox("Reuse Final Visibility", &reuseFinalVis))
@@ -402,45 +391,6 @@ void RTXDIIMGUISettings()
                 &g_ReSTIRDI_ShadingParams.finalVisibilityMaxDistance, 0.0f, 32.0f);
             ImGui::SliderInt("Final Visibility Max Age",
                 (int*)&g_ReSTIRDI_ShadingParams.finalVisibilityMaxAge, 0, 16);
-        }
-
-        ImGui::TreePop();
-    }
-
-    // ---- Visualization --------------------------------------------------
-    ImGui::Separator();
-    if (ImGui::TreeNode("Visualization"))
-    {
-        const bool bDenoised = renderer->m_EnableReSTIRDIRelaxDenoising;
-        ImGui::PushItemWidth(220.f);
-        int vizMode = (int)g_ReSTIRDI_VisualizationMode;
-        if (ImGui::Combo("Visualization", &vizMode,
-            "None\0"
-            "Composited Color\0"
-            "Resolved Color\0"
-            "Diffuse\0"
-            "Specular\0"
-            "Diffuse (Denoised)\0"
-            "Specular (Denoised)\0"
-            "Reservoir Weight\0"
-            "Reservoir M\0"
-            "Diffuse Gradients\0"
-            "Specular Gradients\0"
-            "Diffuse Confidence\0"
-            "Specular Confidence\0"
-            "GI Reservoir Weight\0"
-            "GI Reservoir M\0"))
-        {
-            g_ReSTIRDI_VisualizationMode = (uint32_t)vizMode;
-        }
-        ImGui::PopItemWidth();
-
-        // Clamp to None if a denoised mode is selected without denoising active.
-        if (!bDenoised && g_ReSTIRDI_VisualizationMode >= RTXDI_VIS_MODE_SPECULAR
-                       && g_ReSTIRDI_VisualizationMode <= RTXDI_VIS_MODE_DENOISED_SPECULAR)
-        {
-            g_ReSTIRDI_VisualizationMode = RTXDI_VIS_MODE_NONE;
-            ImGui::TextDisabled("(Enable RELAX Denoising for split diffuse/specular modes.)");
         }
 
         ImGui::TreePop();
@@ -544,13 +494,14 @@ public:
         // Initialize ReSTIR DI parameter structs to library defaults
         g_ReSTIRDI_InitialSamplingParams = rtxdi::GetDefaultReSTIRDIInitialSamplingParams();
         g_ReSTIRDI_TemporalResamplingParams = rtxdi::GetDefaultReSTIRDITemporalResamplingParams();
+        g_ReSTIRDI_BoilingFilterParams = rtxdi::GetDefaultReSTIRDIBoilingFilterParams();
         g_ReSTIRDI_SpatialResamplingParams = rtxdi::GetDefaultReSTIRDISpatialResamplingParams();
         g_ReSTIRDI_ShadingParams = rtxdi::GetDefaultReSTIRDIShadingParams();
 
         // Sync per-mode sample counts with initial sampling params default
-        g_ReSTIRDI_NumLocalLightUniformSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
-        g_ReSTIRDI_NumLocalLightPowerRISSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
-        g_ReSTIRDI_NumLocalLightReGIRRISSamples = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
+        g_ReSTIRDI_NumLocalLightUniformSamples = g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples;
+        g_ReSTIRDI_NumLocalLightPowerRISSamples = g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples;
+        g_ReSTIRDI_NumLocalLightReGIRRISSamples = g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples;
 
         ApplyReSTIRDIPreset(g_ReSTIRDI_CurrentPreset);
 
@@ -912,6 +863,7 @@ public:
         m_Context->SetResamplingMode(effectiveResamplingMode);
         m_Context->SetInitialSamplingParameters(g_ReSTIRDI_InitialSamplingParams);
         m_Context->SetTemporalResamplingParameters(g_ReSTIRDI_TemporalResamplingParams);
+        m_Context->SetBoilingFilterParameters(g_ReSTIRDI_BoilingFilterParams);
         m_Context->SetSpatialResamplingParameters(g_ReSTIRDI_SpatialResamplingParams);
         m_Context->SetShadingParameters(g_ReSTIRDI_ShadingParams);
 
@@ -920,15 +872,8 @@ public:
         // ------------------------------------------------------------------
         const RTXDI_ReservoirBufferParameters rbp = m_Context->GetReservoirBufferParameters();
         const RTXDI_RuntimeParameters         rtp = m_Context->GetRuntimeParams();
-        const ReSTIRDI_BufferIndices          bix = m_Context->GetBufferIndices();
+        const RTXDI_DIBufferIndices          bix = m_Context->GetBufferIndices();
         const RTXDI_LightBufferParameters     lbp = BuildLightBufferParams(renderer);
-
-        // Cache the per-frame params needed by RTXDIVisualizationRenderer.
-        g_RTXDILastFrameParams.shadingInputBufferIndex = bix.shadingInputBufferIndex;
-        g_RTXDILastFrameParams.reservoirBlockRowPitch  = rbp.reservoirBlockRowPitch;
-        g_RTXDILastFrameParams.reservoirArrayPitch     = rbp.reservoirArrayPitch;
-        g_RTXDILastFrameParams.neighborOffsetMask      = rtp.neighborOffsetMask;
-        g_RTXDILastFrameParams.activeCheckerboardField = rtp.activeCheckerboardField;
 
         const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
@@ -978,10 +923,10 @@ public:
         // ---- Environment-light sampling ----
         cb.m_EnvPDFTextureSize = { k_EnvPDFTexSize, k_EnvPDFTexSize };
         cb.m_EnvSamplingMode   = renderer->m_EnableSky ? 2u : 0u;
-        cb.m_NumEnvSamples          = renderer->m_EnableSky ? g_ReSTIRDI_InitialSamplingParams.numPrimaryEnvironmentSamples : 0u;
-        cb.m_NumLocalLightSamples   = g_ReSTIRDI_InitialSamplingParams.numPrimaryLocalLightSamples;
-        cb.m_NumInfiniteLightSamples= g_ReSTIRDI_InitialSamplingParams.numPrimaryInfiniteLightSamples;
-        cb.m_NumBrdfSamples         = g_ReSTIRDI_InitialSamplingParams.numPrimaryBrdfSamples;
+        cb.m_NumEnvSamples          = renderer->m_EnableSky ? g_ReSTIRDI_InitialSamplingParams.numEnvironmentSamples : 0u;
+        cb.m_NumLocalLightSamples   = g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples;
+        cb.m_NumInfiniteLightSamples= g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples;
+        cb.m_NumBrdfSamples         = g_ReSTIRDI_InitialSamplingParams.numBrdfSamples;
         cb.m_LocalLightSamplingMode = static_cast<uint32_t>(g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode);
         cb.m_BrdfCutoff             = g_ReSTIRDI_InitialSamplingParams.brdfCutoff;
 
@@ -1001,41 +946,41 @@ public:
         }
 
         // Spatial resampling parameters
-        const ReSTIRDI_SpatialResamplingParameters spatialParams = m_Context->GetSpatialResamplingParameters();
-        cb.m_SpatialNumSamples        = spatialParams.numSpatialSamples;
-        cb.m_SpatialSamplingRadius    = spatialParams.spatialSamplingRadius;
+        const RTXDI_DISpatialResamplingParameters spatialParams = m_Context->GetSpatialResamplingParameters();
+        cb.m_SpatialNumSamples        = spatialParams.numSamples;
+        cb.m_SpatialSamplingRadius    = spatialParams.samplingRadius;
 
         // Temporal resampling parameters — forwarded from the ReSTIRDI context
         // (the context already calls JenkinsHash(frameIndex) to compute uniformRandomNumber)
-        const ReSTIRDI_TemporalResamplingParameters temporalParams = m_Context->GetTemporalResamplingParameters();
+        const RTXDI_DITemporalResamplingParameters temporalParams = m_Context->GetTemporalResamplingParameters();
+        const RTXDI_BoilingFilterParameters boilingParams = m_Context->GetBoilingFilterParameters();
         cb.m_TemporalMaxHistoryLength          = temporalParams.maxHistoryLength;
-        cb.m_TemporalBiasCorrectionMode        = static_cast<uint32_t>(temporalParams.temporalBiasCorrection);
-        cb.m_TemporalDepthThreshold            = temporalParams.temporalDepthThreshold;
-        cb.m_TemporalNormalThreshold           = temporalParams.temporalNormalThreshold;
-        cb.m_TemporalEnableVisibilityShortcut  = temporalParams.discardInvisibleSamples;
+        cb.m_TemporalBiasCorrectionMode        = static_cast<uint32_t>(temporalParams.biasCorrectionMode);
+        cb.m_TemporalDepthThreshold            = temporalParams.depthThreshold;
+        cb.m_TemporalNormalThreshold           = temporalParams.normalThreshold;
+        cb.m_TemporalEnableVisibilityShortcut  = temporalParams.enableVisibilityShortcut;
         cb.m_TemporalEnablePermutationSampling = temporalParams.enablePermutationSampling;
         cb.m_TemporalPermutationSamplingThreshold = temporalParams.permutationSamplingThreshold;
         cb.m_TemporalUniformRandomNumber       = temporalParams.uniformRandomNumber;
-        cb.m_TemporalEnableBoilingFilter       = temporalParams.enableBoilingFilter;
-        cb.m_TemporalBoilingFilterStrength     = temporalParams.boilingFilterStrength;
+        cb.m_TemporalEnableBoilingFilter       = boilingParams.enableBoilingFilter;
+        cb.m_TemporalBoilingFilterStrength     = boilingParams.boilingFilterStrength;
 
         // Spatial resampling parameters — forwarded from the ReSTIRDI context
         cb.m_SpatialNumDisocclusionBoostSamples = spatialParams.numDisocclusionBoostSamples;
-        cb.m_SpatialBiasCorrectionMode          = static_cast<uint32_t>(spatialParams.spatialBiasCorrection);
-        cb.m_SpatialDepthThreshold              = spatialParams.spatialDepthThreshold;
-        cb.m_SpatialNormalThreshold             = spatialParams.spatialNormalThreshold;
+        cb.m_SpatialBiasCorrectionMode          = static_cast<uint32_t>(spatialParams.biasCorrectionMode);
+        cb.m_SpatialDepthThreshold              = spatialParams.depthThreshold;
+        cb.m_SpatialNormalThreshold             = spatialParams.normalThreshold;
         cb.m_SpatialDiscountNaiveSamples        = spatialParams.discountNaiveSamples;
 
         // Shading parameters — forwarded from the ReSTIRDI context
-        const ReSTIRDI_ShadingParameters shadingParams = m_Context->GetShadingParameters();
+        const RTXDI_ShadingParameters shadingParams = m_Context->GetShadingParameters();
         cb.m_EnableInitialVisibility    = g_ReSTIRDI_InitialSamplingParams.enableInitialVisibility;
         cb.m_EnableFinalVisibility      = shadingParams.enableFinalVisibility;
         cb.m_ReuseFinalVisibility       = shadingParams.reuseFinalVisibility;
-        cb.m_DiscardInvisibleSamples    = temporalParams.discardInvisibleSamples;
+        cb.m_DiscardInvisibleSamples    = temporalParams.enableVisibilityShortcut;
         cb.m_FinalVisibilityMaxAge      = shadingParams.finalVisibilityMaxAge;
         cb.m_FinalVisibilityMaxDistance = shadingParams.finalVisibilityMaxDistance;
         cb.m_EnableRTShadows            = renderer->m_EnableRTShadows ? 1u : 0u;
-        cb.m_VisualizationMode          = g_ReSTIRDI_VisualizationMode;
 
         // View matrices
         cb.m_View     = renderer->m_Scene.m_View;
@@ -1475,12 +1420,6 @@ private:
 
 REGISTER_RENDERER(RTXDIRenderer);
 
-// ============================================================================
-// RTXDIVisualizationRenderer
-// Runs AFTER DeferredRenderer (and after Bloom) so the HDR colour output already
-// contains the fully composited scene.  Overlays a log-luminance histogram on
-// the HDR colour texutre using the RTXDI_Visualize_Main compute shader.
-// ============================================================================
 class RTXDIVisualizationRenderer : public IRenderer
 {
 public:
@@ -1491,28 +1430,8 @@ public:
         // Only run when RTXDI is enabled and a visualization mode is active.
         if (!renderer->m_EnableReSTIRDI)
             return false;
-        if (g_ReSTIRDI_VisualizationMode == RTXDI_VIS_MODE_NONE)
-            return false;
-
-        // Read the RTXDI textures (must have been declared by RTXDIRenderer).
-        if (renderer->m_EnableReSTIRDIRelaxDenoising)
-        {
-            renderGraph.ReadTexture(g_RG_RTXDIRawDiffuseOutput);
-            renderGraph.ReadTexture(g_RG_RTXDIRawSpecularOutput);
-            renderGraph.ReadTexture(g_RG_RTXDIDiffuseOutput);
-            renderGraph.ReadTexture(g_RG_RTXDISpecularOutput);
-        }
-        else
-        {
-            renderGraph.ReadTexture(g_RG_RTXDIDIOutput);
-            renderGraph.ReadTexture(g_RG_RTXDISpecularOutput);
-        }
-        renderGraph.ReadBuffer(g_RG_RTXDILightReservoirBuffer);
-
-        // Write (overlay) to the HDR colour output.
-        renderGraph.WriteTexture(g_RG_HDRColor);
-
-        return true;
+            
+        return false;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
@@ -1520,70 +1439,6 @@ public:
         PROFILE_FUNCTION();
         Renderer* renderer = Renderer::GetInstance();
         nvrhi::IDevice* device = renderer->m_RHI->m_NvrhiDevice;
-
-        const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
-        const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
-        const bool bDenoised  = renderer->m_EnableReSTIRDIRelaxDenoising;
-
-        // Resolve textures ──────────────────────────────────────────────
-        // t20: raw diffuse illumination
-        nvrhi::TextureHandle vizDiffuse = bDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDIRawDiffuseOutput,  RGResourceAccessMode::Read)
-            : renderGraph.GetTexture(g_RG_RTXDIDIOutput,           RGResourceAccessMode::Read);
-
-        // t21: raw specular
-        nvrhi::TextureHandle vizSpecular = bDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDIRawSpecularOutput,  RGResourceAccessMode::Read)
-            : renderGraph.GetTexture(g_RG_RTXDISpecularOutput,      RGResourceAccessMode::Read);
-
-        // t22/t23: denoised outputs (or dummy when denoising is off)
-        nvrhi::TextureHandle vizDenoisedDiff = bDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-        nvrhi::TextureHandle vizDenoisedSpec = bDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-
-        nvrhi::BufferHandle  reservoirBuffer = renderGraph.GetBuffer(g_RG_RTXDILightReservoirBuffer, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle hdrOutput       = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);
-
-        // Build a minimal RTXDIConstants that carries the vis mode + reservoir params.
-        // Fields filled from the per-frame params cached by RTXDIRenderer::Render().
-        RTXDIConstants visCB{};
-        visCB.m_ViewportSize             = { width, height };
-        visCB.m_VisualizationMode        = g_ReSTIRDI_VisualizationMode;
-        visCB.m_ShadingInputBufferIndex  = g_RTXDILastFrameParams.shadingInputBufferIndex;
-        visCB.m_ReservoirBlockRowPitch   = g_RTXDILastFrameParams.reservoirBlockRowPitch;
-        visCB.m_ReservoirArrayPitch      = g_RTXDILastFrameParams.reservoirArrayPitch;
-        visCB.m_NeighborOffsetMask       = g_RTXDILastFrameParams.neighborOffsetMask;
-        visCB.m_ActiveCheckerboardField  = g_RTXDILastFrameParams.activeCheckerboardField;
-
-        const nvrhi::BufferHandle visCBHandle = device->createBuffer(
-            nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(RTXDIConstants), "RTXDIVisCB", 1));
-        commandList->writeBuffer(visCBHandle, &visCB, sizeof(visCB));
-
-        nvrhi::BindingSetDesc bset;
-        bset.bindings = {
-            nvrhi::BindingSetItem::ConstantBuffer(1,           visCBHandle),
-            nvrhi::BindingSetItem::Texture_SRV(20,             vizDiffuse),
-            nvrhi::BindingSetItem::Texture_SRV(21,             vizSpecular),
-            nvrhi::BindingSetItem::Texture_SRV(22,             vizDenoisedDiff),
-            nvrhi::BindingSetItem::Texture_SRV(23,             vizDenoisedSpec),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(1,     reservoirBuffer),  // accessed via RTXDI_LoadDIReservoir
-            nvrhi::BindingSetItem::Texture_UAV(10,             hdrOutput),
-        };
-
-        Renderer::RenderPassParams params{
-            .commandList    = commandList,
-            .shaderName     = "RTXDI_Master_RTXDI_Visualize_Main",
-            .bindingSetDesc = bset,
-            .dispatchParams = {
-                .x = DivideAndRoundUp(width,  8u),
-                .y = DivideAndRoundUp(height, 8u),
-                .z = 1u
-            }
-        };
-        renderer->AddComputePass(params);
     }
 
     const char* GetName() const override { return "RTXDIVisualization"; }
