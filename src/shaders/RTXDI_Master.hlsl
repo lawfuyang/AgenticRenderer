@@ -384,14 +384,6 @@ void RTXDI_TemporalResampling_Main(
             g_RTXDIConst.m_TemporalResamplingInputBufferIndex,
             tparams,
             temporalPixelPos, selectedSample);
-
-        // Write the reprojected pixel position for gradient/confidence denoising passes.
-        g_RTXDITemporalSamplePositions[reservoirPosition] = temporalPixelPos;
-    }
-    else
-    {
-        // Sky / invalid pixel: write sentinel (-1, -1) so denoising passes can skip it.
-        g_RTXDITemporalSamplePositions[reservoirPosition] = int2(-1, -1);
     }
 
     // Boiling filter (operates within the 8×8 group)

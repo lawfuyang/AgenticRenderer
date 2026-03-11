@@ -89,11 +89,6 @@ RWTexture2D<float4> g_RTXDIDiffuseOutput  : register(u5); // RELAX IN/OUT_DIFF_R
 RWTexture2D<float>  g_RTXDILinearDepth    : register(u7); // RELAX IN_VIEWZ (written by GenerateViewZ pass)
 #endif
 
-// u8 is reserved for g_EnvPDFMip0 (BuildEnvLightPDF pass).
-// Temporal sample positions: screen-sized int2 UAV written by the temporal resampling pass.
-// Stores the reprojected pixel position for each reservoir, used by gradient/confidence denoising passes.
-RWTexture2D<int2> g_RTXDITemporalSamplePositions : register(u9);
-
 // Hook up the RTXDI SDK macro names to our resources
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER   g_RTXDI_NeighborOffsets
 #define RTXDI_RIS_BUFFER                g_RTXDI_RISBuffer

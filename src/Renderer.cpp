@@ -771,8 +771,6 @@ void Renderer::Run()
         // Update animations
         if (m_EnableAnimations)
         {
-            PROFILE_SCOPED("Update Animations");
-
             m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
             if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
             {

@@ -449,11 +449,6 @@ public:
     RGTextureHandle m_GbufferNormalsHistory;
     RGTextureHandle m_GBufferORMHistory;
 
-    // Temporal sample positions UAV — written by the temporal resampling pass.
-    // Screen-sized RG32_SINT texture storing the reprojected pixel position for each reservoir.
-    // Used by gradient/confidence denoising passes.
-    RGTextureHandle m_RG_RTXDITemporalSamplePositions;
-
     // Track if history textures are newly created in current frame
     bool m_AlbedoHistoryIsNew = false;
     bool m_ORMHistoryIsNew    = false;
@@ -651,21 +646,6 @@ public:
                 desc.m_NvrhiDesc.debugName = "RTXDISpecularOutput";
                 renderGraph.DeclareTexture(desc, g_RG_RTXDISpecularOutput);
             }
-        }
-
-        // ------------------------------------------------------------------
-        // Temporal sample positions UAV (written by temporal resampling pass)
-        // RG32_SINT: stores the reprojected pixel position (int2) per reservoir.
-        // ------------------------------------------------------------------
-        {
-            RGTextureDesc desc;
-            desc.m_NvrhiDesc.width  = width;
-            desc.m_NvrhiDesc.height = height;
-            desc.m_NvrhiDesc.format = nvrhi::Format::RG32_SINT;
-            desc.m_NvrhiDesc.isUAV  = true;
-            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-            desc.m_NvrhiDesc.debugName    = "RTXDITemporalSamplePositions";
-            renderGraph.DeclareTexture(desc, m_RG_RTXDITemporalSamplePositions);
         }
 
         // ------------------------------------------------------------------
@@ -1017,7 +997,6 @@ public:
         nvrhi::BufferHandle risLightDataBuffer = renderGraph.GetBuffer(m_RG_RISLightDataBuffer, RGResourceAccessMode::Write);
         nvrhi::TextureHandle localLightPDFTex = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
         nvrhi::TextureHandle envLightPDFTex   = renderGraph.GetTexture(m_RG_EnvLightPDFTexture,   RGResourceAccessMode::Write);
-        nvrhi::TextureHandle temporalSamplePosTex = renderGraph.GetTexture(m_RG_RTXDITemporalSamplePositions, RGResourceAccessMode::Write);
 
         // ------------------------------------------------------------------
         // Initialize history textures on first frame
@@ -1078,7 +1057,6 @@ public:
             nvrhi::BindingSetItem::Texture_SRV(17, depthHistoryTex),   // previous-frame depth
             nvrhi::BindingSetItem::Texture_SRV(18, normalsHistoryTex), // previous-frame normals
             nvrhi::BindingSetItem::Texture_SRV(19, envLightPDFTex),    // environment PDF mip chain
-            nvrhi::BindingSetItem::Texture_UAV(9, temporalSamplePosTex), // temporal sample positions (written by temporal resampling pass)
         };
 
         // ------------------------------------------------------------------
