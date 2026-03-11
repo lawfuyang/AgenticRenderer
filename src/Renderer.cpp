@@ -771,26 +771,28 @@ void Renderer::Run()
         // Update animations
         if (m_EnableAnimations)
         {
-            m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
-            if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
-            {
-                nvrhi::CommandListHandle cmd = AcquireCommandList();
-                ScopedCommandList scopedCmd{ cmd, "Upload Animated Instances" };
-                uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
-                uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
-                scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
-                    &m_Scene.m_InstanceData[startIdx],
-                    count * sizeof(PerInstanceData),
-                    startIdx * sizeof(PerInstanceData));
-
-                if (m_Scene.m_RTInstanceDescBuffer)
+            nvrhi::CommandListHandle cmd = AcquireCommandList();
+            m_TaskScheduler->ScheduleTask([this, cmd]() {
+                m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
+                if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
                 {
-                    scopedCmd->writeBuffer(m_Scene.m_RTInstanceDescBuffer,
-                        &m_Scene.m_RTInstanceDescs[startIdx],
-                        count * sizeof(nvrhi::rt::InstanceDesc),
-                        startIdx * sizeof(nvrhi::rt::InstanceDesc));
+                    ScopedCommandList scopedCmd{ cmd, "Upload Animated Instances" };
+                    uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
+                    uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
+                    scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
+                        &m_Scene.m_InstanceData[startIdx],
+                        count * sizeof(PerInstanceData),
+                        startIdx * sizeof(PerInstanceData));
+
+                    if (m_Scene.m_RTInstanceDescBuffer)
+                    {
+                        scopedCmd->writeBuffer(m_Scene.m_RTInstanceDescBuffer,
+                            &m_Scene.m_RTInstanceDescs[startIdx],
+                            count * sizeof(nvrhi::rt::InstanceDesc),
+                            startIdx * sizeof(nvrhi::rt::InstanceDesc));
+                    }
                 }
-            }
+                });
         }
 
         if (m_Scene.m_LightsDirty)
