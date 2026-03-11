@@ -1,6 +1,5 @@
 #include "ShaderShared.h"
 
-PUSH_CONSTANT
 ResizeToNextLowestPowerOfTwoConstants g_ResizeToNextLowestPowerOfTwoConstants;
 
 #if NUM_CHANNELS == 1
@@ -11,7 +10,6 @@ ResizeToNextLowestPowerOfTwoConstants g_ResizeToNextLowestPowerOfTwoConstants;
 
 Texture2D<ChannelType> g_InTexture : register(t0);
 
-VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<ChannelType> g_OutTexture : register(u0);
 
 [numthreads(8,8,1)]

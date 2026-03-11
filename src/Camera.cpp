@@ -59,7 +59,7 @@ void Camera::ProcessEvent(const SDL_Event& event)
             m_LastMouseY = event.motion.y;
 
             float yawDelta = dx * m_MouseSensitivity;
-            yawDelta = -yawDelta; // Negate yaw for Vulkan coordinate system
+            yawDelta = -yawDelta;
             m_Yaw += yawDelta;
             m_Pitch += dy * m_MouseSensitivity;  // Positive dy (mouse down) should increase pitch (look down)
             // Clamp pitch
@@ -114,7 +114,7 @@ void Camera::Update()
 
     // Movement in local space
     Vector forward = DirectX::XMVectorSet(0, 0, 1, 0);
-    Vector right = DirectX::XMVectorSet(-1, 0, 0, 0); // Negate X for Vulkan right-handed coordinate system
+    Vector right = DirectX::XMVectorSet(-1, 0, 0, 0);
 
     // Construct rotation from yaw/pitch
     Vector rot = DirectX::XMQuaternionRotationRollPitchYaw(m_Pitch, m_Yaw, 0.0f);
@@ -278,7 +278,7 @@ void Camera::SetFromMatrix(const Matrix& worldTransform)
     XMFLOAT3 fwd;
     XMStoreFloat3(&fwd, worldForward);
     m_Yaw = atan2f(fwd.x, fwd.z);
-    m_Pitch = -asinf(fwd.y); // Negate pitch for Vulkan coordinate system
+    m_Pitch = -asinf(fwd.y);
 }
 
 void Camera::Reset()

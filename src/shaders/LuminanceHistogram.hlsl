@@ -3,7 +3,7 @@
 Texture2D<float3> HDRColor : register(t0);
 RWStructuredBuffer<uint> Histogram : register(u0);
 
-PUSH_CONSTANT ConstantBuffer<HistogramConstants> CB : register(b0);
+ConstantBuffer<HistogramConstants> CB : register(b0);
 
 groupshared uint LocalHistogram[256];
 

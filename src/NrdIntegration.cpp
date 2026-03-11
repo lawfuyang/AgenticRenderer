@@ -223,21 +223,11 @@ bool NrdIntegration::Initialize()
     }
 
     // -------------------------------------------------------------------------
-    // SPIRV binding offsets (from NRD library descriptor)
-    // -------------------------------------------------------------------------
-    nvrhi::VulkanBindingOffsets bindingOffsets;
-    bindingOffsets.shaderResource  = libraryDesc->spirvBindingOffsets.textureOffset;
-    bindingOffsets.sampler         = libraryDesc->spirvBindingOffsets.samplerOffset;
-    bindingOffsets.constantBuffer  = libraryDesc->spirvBindingOffsets.constantBufferOffset;
-    bindingOffsets.unorderedAccess = libraryDesc->spirvBindingOffsets.storageTextureAndBufferOffset;
-
-    // -------------------------------------------------------------------------
     // Shared binding layout 0: constant buffer + samplers
     // -------------------------------------------------------------------------
     {
         nvrhi::BindingLayoutDesc layoutDesc;
         layoutDesc.visibility     = nvrhi::ShaderType::Compute;
-        layoutDesc.bindingOffsets = bindingOffsets;
         layoutDesc.registerSpace  = instanceDesc->constantBufferAndSamplersSpaceIndex;
 
         layoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::VolatileConstantBuffer(instanceDesc->constantBufferRegisterIndex));
@@ -309,7 +299,6 @@ bool NrdIntegration::Initialize()
         // Per-pipeline binding layout 1: texture SRV/UAV resources
         nvrhi::BindingLayoutDesc layoutDesc;
         layoutDesc.visibility     = nvrhi::ShaderType::Compute;
-        layoutDesc.bindingOffsets = bindingOffsets;
         layoutDesc.registerSpace  = instanceDesc->resourcesSpaceIndex;
 
         for (uint32_t rangeIdx = 0; rangeIdx < nrdPipeline.resourceRangesNum; ++rangeIdx)

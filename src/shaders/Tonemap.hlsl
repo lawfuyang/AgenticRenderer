@@ -1,6 +1,6 @@
 #include "ShaderShared.h"
 
-PUSH_CONSTANT TonemapConstants TonemapCB;
+TonemapConstants TonemapCB;
 
 Texture2D<float3> HDRColorInput : register(t0);
 Buffer<float> ExposureInput : register(t1);

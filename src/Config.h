@@ -5,7 +5,6 @@
 struct Config
 {
     // Graphics settings
-    nvrhi::GraphicsAPI m_GraphicsAPI = nvrhi::GraphicsAPI::D3D12;
     bool m_EnableValidation = false;
     bool m_EnableGPUAssistedValidation = false;
     // Path to a scene to load (empty = none)

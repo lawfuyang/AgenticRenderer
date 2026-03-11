@@ -79,16 +79,21 @@ struct MeshPayload
 
 groupshared MeshPayload s_Payload;
 
+// DrawID is bound to b255 in space0 for D3D12 when useDrawIndex is enabled in the pipeline.
+cbuffer DrawIDCB : register(b255)
+{
+  uint g_DrawID;
+};
+
 [numthreads(kThreadsPerGroup, 1, 1)]
 void ASMain(
     uint3 dispatchThreadID : SV_DispatchThreadID,
     uint3 groupThreadID : SV_GroupThreadID,
     uint3 groupId : SV_GroupID,
     uint groupIndex : SV_GroupIndex
-    DRAW_INDEX_ARG_COMMA
 )
 {
-    MeshletJob job = g_MeshletJobs[GET_DRAW_INDEX()];
+    MeshletJob job = g_MeshletJobs[g_DrawID];
     uint instanceIndex = job.m_InstanceIndex;
     uint lodIndex = job.m_LODIndex;
     uint meshletOffset = groupId.x * kThreadsPerGroup;

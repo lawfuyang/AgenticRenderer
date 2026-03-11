@@ -68,12 +68,6 @@ enum class RenderingMode : uint32_t
 
 struct Renderer
 {
-    // Constants
-    static constexpr uint32_t SPIRV_SAMPLER_SHIFT   = 100;  // sRegShift (s#)
-    static constexpr uint32_t SPIRV_TEXTURE_SHIFT   = 200;  // tRegShift (t#)
-    static constexpr uint32_t SPIRV_CBUFFER_SHIFT   = 300;  // bRegShift (b#)
-    static constexpr uint32_t SPIRV_UAV_SHIFT       = 400;  // uRegShift (u#)
-
     static constexpr float DEPTH_NEAR = 1.0f;
     static constexpr float DEPTH_FAR = 0.0f;
     static constexpr nvrhi::Format DEPTH_FORMAT = nvrhi::Format::D24S8;

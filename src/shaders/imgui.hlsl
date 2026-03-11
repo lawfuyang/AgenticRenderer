@@ -1,15 +1,7 @@
-// ImGui Shaders
-// Converted from GLSL (imgui_impl_vulkan.cpp) to HLSL for DXC compilation
-
-//-----------------------------------------------------------------------------
-// VERTEX SHADER
-//-----------------------------------------------------------------------------
-
 // Include shared types
 #include "ShaderShared.h"
 
 // Instantiate the push-constant variable used by the ImGui shaders
-PUSH_CONSTANT
 ImGuiPushConstants pushConstants;
 
 struct VSInput
@@ -34,10 +26,6 @@ VSOutput VSMain(VSInput input)
     output.Position = float4(input.aPos * pushConstants.uScale + pushConstants.uTranslate, 0.0f, 1.0f);
     return output;
 }
-
-//-----------------------------------------------------------------------------
-// PIXEL SHADER
-//-----------------------------------------------------------------------------
 
 Texture2D sTexture : register(t0);
 

@@ -19,11 +19,6 @@ void Config::ParseCommandLine(int argc, char* argv[])
             s_Instance.m_EnableGPUAssistedValidation = true;
             SDL_Log("[Config] GPU-assisted validation enabled via command line");
         }
-        else if (std::strcmp(arg, "--vulkan") == 0)
-        {
-            s_Instance.m_GraphicsAPI = nvrhi::GraphicsAPI::VULKAN;
-            SDL_Log("[Config] Vulkan graphics API selected via command line");
-        }
         else if (std::strcmp(arg, "--scene") == 0)
         {
             if (i + 1 < argc)
@@ -132,7 +127,6 @@ void Config::ParseCommandLine(int argc, char* argv[])
             SDL_Log("Agentic Renderer - Command Line Options:");
             SDL_Log("  --rhidebug                       Enable graphics API validation layers");
             SDL_Log("  --rhidebug-gpu                   Enable GPU-assisted validation (requires --rhidebug)");
-            SDL_Log("  --vulkan                         Use Vulkan graphics API");
             SDL_Log("  --execute-per-pass               Execute command lists per pass");
             SDL_Log("  --execute-per-pass-and-wait      Wait for idle after each pass execution");
             SDL_Log("  --disable-rendergraph-aliasing   Disable render graph aliasing");

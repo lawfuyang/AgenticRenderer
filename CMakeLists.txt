@@ -116,7 +116,7 @@ set(DXC_URL "https://github.com/microsoft/DirectXShaderCompiler/releases/downloa
 download_library("dxc" "${DXC_VERSION}" "${DXC_URL}" "dxc_*")
 set(DXC_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/dxc")
 set(DXC_EXE "${DXC_INSTALL_DIR}/bin/x64/dxc.exe")
-set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
+set(NVRHI_WITH_VULKAN OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
 set(NVRHI_WITH_DX12 ON CACHE BOOL "" FORCE)
 
@@ -221,9 +221,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ShaderMakeBlob)
 
 # Link NVRHI
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi)
-target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_vk)
 target_link_libraries(${PROJECT_NAME} PRIVATE nvrhi_d3d12)
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers)
 
 # Link meshoptimizer
 target_link_libraries(${PROJECT_NAME} PRIVATE meshoptimizer)
@@ -247,7 +245,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE NRD)
 target_include_directories(${PROJECT_NAME} PRIVATE "${NRD_SRC_DIR}/Include")
 
 # ============================================================================
-# ShaderMake Integration (offline HLSL -> SPIRV compilation)
+# ShaderMake Integration (offline HLSL compilation)
 # ============================================================================
 
 # Add NVIDIA ShaderMake tool as a subdirectory.
@@ -259,9 +257,7 @@ set(SHADERMAKE_FIND_DXC OFF)
 
 set(SHADER_CONFIG ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
 set(NRD_SHADER_CONFIG ${NRD_SRC_DIR}/Shaders/shaders.cfg)
-set(SHADER_OUTPUT_DIR_SPIRV ${CMAKE_SOURCE_DIR}/bin/shaders/spirv)
 set(SHADER_OUTPUT_DIR_DXIL  ${CMAKE_SOURCE_DIR}/bin/shaders/dxil)
-file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR_SPIRV})
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR_DXIL})
 
 # Resolve ShaderMake executable path per configuration when possible
@@ -307,7 +303,7 @@ add_custom_target(build_shaders
             -D NRD_INTERNAL
 
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Compiling HLSL shaders to SPIR-V (Vulkan) and DXIL (D3D12) via ShaderMake"
+    COMMENT "Compiling HLSL shaders to DXIL (D3D12) via ShaderMake"
 )
 
 # Ensure ShaderMake is built before running the shader compilation target
@@ -319,4 +315,4 @@ endif()
 add_dependencies(${PROJECT_NAME} build_shaders)
 
 # Convenience: show where ShaderMake.exe is located in the build logs
-message(STATUS "ShaderMake executable: ${SHADERMAKE_PATH}")
+message(STATUS "ShaderMake executable: ${SHADERMAKE_PATH_GENEX}")

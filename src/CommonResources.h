@@ -48,7 +48,7 @@ public:
     nvrhi::BlendState::RenderTarget BlendTargetPremultipliedAlpha;  // Premultiplied alpha (One, InvSrcAlpha)
     nvrhi::BlendState::RenderTarget BlendTargetAdditive;            // Additive (One, One)
     nvrhi::BlendState::RenderTarget BlendTargetMultiply;            // Multiply (DstColor, Zero)
-    nvrhi::BlendState::RenderTarget BlendTargetImGui;               // ImGui-specific (matches imgui_impl_vulkan)
+    nvrhi::BlendState::RenderTarget BlendTargetImGui;               // ImGui-specific
 
     // Common depth-stencil states
     nvrhi::DepthStencilState DepthDisabled;          // No depth test/write

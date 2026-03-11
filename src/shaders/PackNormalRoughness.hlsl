@@ -20,13 +20,11 @@ struct PackNormalRoughnessConsts
     Vector2U m_OutputResolution;
 };
 
-PUSH_CONSTANT
 PackNormalRoughnessConsts g_Consts;
 
 Texture2D<float2>   g_NormalsTexture        : register(t0);  // octahedron RG16_FLOAT
 Texture2D<float2>   g_ORMTexture            : register(t1);  // RG8_UNORM: .x=roughness
 
-VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4> g_PackedNormalRoughness : register(u0);  // R10G10B10A2_UNORM output
 
 // ============================================================================

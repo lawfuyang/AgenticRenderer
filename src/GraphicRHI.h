@@ -62,15 +62,9 @@ public:
     virtual void SetCommandListDebugName(const nvrhi::CommandListHandle& /*commandList*/, std::string_view /*name*/) { }
 };
 
-inline std::unique_ptr<GraphicRHI> CreateGraphicRHI(nvrhi::GraphicsAPI api)
+inline std::unique_ptr<GraphicRHI> CreateGraphicRHI()
 {
     // Forward declarations of factory functions
-    extern std::unique_ptr<GraphicRHI> CreateVulkanGraphicRHI();
     extern std::unique_ptr<GraphicRHI> CreateD3D12GraphicRHI();
-
-    if (api == nvrhi::GraphicsAPI::D3D12)
-    {
-        return CreateD3D12GraphicRHI();
-    }
-    return CreateVulkanGraphicRHI();
+    return CreateD3D12GraphicRHI();
 }

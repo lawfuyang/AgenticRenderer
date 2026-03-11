@@ -56,7 +56,6 @@ void ImGuiRenderer::Render(nvrhi::CommandListHandle commandList, const RenderGra
     Renderer* renderer = Renderer::GetInstance();
     ImDrawData* draw_data = ImGui::GetDrawData();
 
-    // Replicate ImGui_ImplVulkan_RenderDrawData behavior using nvrhi
     int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
     int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
 
@@ -280,7 +279,7 @@ void ImGuiRenderer::CreateDeviceObjects()
         	{ "COLOR",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
         };
 
-        // Note: vertexShader parameter is only used by DX11 backend, unused in Vulkan
+        // Note: vertexShader parameter is only used by DX11 backend
         m_InputLayout = renderer->m_RHI->m_NvrhiDevice->createInputLayout(attributes, 3, nullptr);
         
         if (!m_InputLayout)

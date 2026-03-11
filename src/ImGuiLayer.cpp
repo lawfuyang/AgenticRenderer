@@ -21,9 +21,9 @@ void ImGuiLayer::Initialize()
 
     ImGui::StyleColorsDark();
 
-    if (!ImGui_ImplSDL3_InitForVulkan(window))
+    if (!ImGui_ImplSDL3_InitForD3D(window))
     {
-        SDL_LOG_ASSERT_FAIL("ImGui_ImplSDL3_InitForVulkan failed", "[Init] Failed to initialize ImGui SDL3 backend");
+        SDL_LOG_ASSERT_FAIL("ImGui_ImplSDL3_InitForD3D failed", "[Init] Failed to initialize ImGui SDL3 backend");
         return;
     }
 

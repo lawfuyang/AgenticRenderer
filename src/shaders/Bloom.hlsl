@@ -1,6 +1,6 @@
 #include "ShaderShared.h"
 
-PUSH_CONSTANT BloomConstants BloomCB;
+BloomConstants BloomCB;
 
 Texture2D<float3> InputTexture : register(t0);
 

@@ -96,9 +96,7 @@ void CommonResources::Initialize()
     renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX, LinearClampBorderWhite);
 
     // Initialize common raster states
-    // glTF spec says counter-clockwise is front face, but Vulkan viewport flip reverses winding
-    // With X negation in projection for Vulkan, winding is flipped again
-    bool frontCCW = true;
+    bool frontCCW = true; // glTF spec says counter-clockwise is front face
 
     // Solid, no cull
     RasterCullNone.fillMode = nvrhi::RasterFillMode::Solid;

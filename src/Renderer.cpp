@@ -294,7 +294,7 @@ namespace
         ChooseWindowSize(&windowW, &windowH);
 
         SDL_Log("[Init] Creating window");
-        SDL_Window* window = SDL_CreateWindow("Agentic Renderer", windowW, windowH, SDL_WINDOW_VULKAN);
+        SDL_Window* window = SDL_CreateWindow("Agentic Renderer", windowW, windowH, 0);
         if (!window)
         {
             SDL_LOG_ASSERT_FAIL("SDL_CreateWindow failed", "SDL_CreateWindow failed: %s", SDL_GetError());
@@ -630,7 +630,7 @@ void Renderer::Initialize()
         return;
     }
 
-    m_RHI = CreateGraphicRHI(Config::Get().m_GraphicsAPI);
+    m_RHI = CreateGraphicRHI();
     m_RHI->Initialize(m_Window);
 
     SDL_assert(m_RHI->m_NvrhiDevice && "NVRHI device is null after RHI initialization");
@@ -745,21 +745,8 @@ void Renderer::Run()
             ReloadShaders();
         }
 
-        bool bSwapChainImageAcquireSuccess = true;
-
-        // Vulkan's implementation can be particularly heavy...
-        if (m_RHI->GetGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
-        {
-            m_TaskScheduler->ScheduleTask([this, &bSwapChainImageAcquireSuccess]()
-            {
-                bSwapChainImageAcquireSuccess = m_RHI->AcquireNextSwapchainImage(&m_AcquiredSwapchainImageIdx);
-            });
-        }
-        else
-        {
-            bSwapChainImageAcquireSuccess = m_RHI->AcquireNextSwapchainImage(&m_AcquiredSwapchainImageIdx);
-        }
-
+        const bool bSwapChainImageAcquireSuccess = m_RHI->AcquireNextSwapchainImage(&m_AcquiredSwapchainImageIdx);
+        
         m_TaskScheduler->ScheduleTask([this]() {
             PROFILE_SCOPED("Garbage Collection");
             m_RHI->m_NvrhiDevice->runGarbageCollection();
@@ -1109,10 +1096,6 @@ nvrhi::BindingLayoutHandle Renderer::GetOrCreateBindingLayoutFromBindingSetDesc(
     layoutDesc.visibility = nvrhi::ShaderType::All;
     layoutDesc.registerSpace = registerSpace;
     layoutDesc.registerSpaceIsDescriptorSet = true;
-    layoutDesc.bindingOffsets.shaderResource = SPIRV_TEXTURE_SHIFT;
-    layoutDesc.bindingOffsets.sampler = SPIRV_SAMPLER_SHIFT;
-    layoutDesc.bindingOffsets.constantBuffer = SPIRV_CBUFFER_SHIFT;
-    layoutDesc.bindingOffsets.unorderedAccess = SPIRV_UAV_SHIFT;
 
     for (const nvrhi::BindingSetItem& item : setDesc.bindings)
     {

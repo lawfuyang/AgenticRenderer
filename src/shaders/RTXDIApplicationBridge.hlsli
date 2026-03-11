@@ -69,7 +69,6 @@ StructuredBuffer<uint>                          g_RTXDI_Indices             : re
 RWStructuredBuffer<uint2>                       g_RTXDI_RISBuffer           : register(u0);
 RWStructuredBuffer<RTXDI_PackedDIReservoir>     g_RTXDI_LightReservoirBuffer: register(u1);
 
-VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4>                             g_RTXDIDIOutput             : register(u2);
 
 // Compact light data buffer: 3 × uint4 per RIS tile entry.
@@ -80,11 +79,9 @@ RWStructuredBuffer<uint4>                       g_RTXDI_RISLightDataBuffer  : re
 
 // ---- DI illumination outputs / RELAX IO (u5/u6/u7) ---------
 // u4 is reserved for g_PDFMip0 (BuildLocalLightPDF pass) so we start at u5.
-VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4> g_RTXDISpecularOutput : register(u6); // non-denoised: demodulated specular, denoised: RELAX IN_SPEC_RADIANCE_HITDIST
 
 #if RTXDI_ENABLE_RELAX_DENOISING
-VK_IMAGE_FORMAT_UNKNOWN
 RWTexture2D<float4> g_RTXDIDiffuseOutput  : register(u5); // RELAX IN/OUT_DIFF_RADIANCE_HITDIST
 RWTexture2D<float>  g_RTXDILinearDepth    : register(u7); // RELAX IN_VIEWZ (written by GenerateViewZ pass)
 #endif

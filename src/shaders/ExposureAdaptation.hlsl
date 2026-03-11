@@ -3,7 +3,7 @@
 RWBuffer<float> Exposure : register(u0);
 StructuredBuffer<uint> HistogramInput : register(t0);
 
-PUSH_CONSTANT ConstantBuffer<AdaptationConstants> AdaptationCB : register(b0);
+ConstantBuffer<AdaptationConstants> AdaptationCB : register(b0);
 
 groupshared float SharedWeights[256];
 

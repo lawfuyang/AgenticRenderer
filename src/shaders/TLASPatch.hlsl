@@ -35,7 +35,6 @@ RWStructuredBuffer<PerInstanceData> g_InstanceData : register(u1);
 // ---- Push constant ---------------------------------------------------------
 
 // Total number of instances to process.
-PUSH_CONSTANT
 struct
 {
     uint m_InstanceCount;
