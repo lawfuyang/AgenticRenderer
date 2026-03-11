@@ -758,10 +758,16 @@ void Renderer::Run()
         // Update animations
         if (m_EnableAnimations)
         {
-            nvrhi::CommandListHandle cmd = AcquireCommandList();
+            nvrhi::CommandListHandle cmd;
+            if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
+            {
+                cmd = AcquireCommandList();
+            }
+
             m_TaskScheduler->ScheduleTask([this, cmd]() {
                 m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
-                if (m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second)
+
+                if (cmd)
                 {
                     ScopedCommandList scopedCmd{ cmd, "Upload Animated Instances" };
                     uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
@@ -1342,7 +1348,7 @@ nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi:
     h = h * 1099511628211u + std::hash<int>()(static_cast<int>(pipelineDesc.primType));
     h = h * 1099511628211u + std::hash<uint32_t>()(pipelineDesc.patchControlPoints);
     h = h * 1099511628211u + std::hash<bool>()(pipelineDesc.useDrawIndex);
-
+    
     // Hash common state: RenderState, FramebufferInfo, BindingLayouts
     HashPipelineCommonState(h, pipelineDesc.renderState, fbInfo, pipelineDesc.bindingLayouts);
 
