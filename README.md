@@ -1,6 +1,6 @@
 # HobbyRenderer
 
-A 3D rendering engine built in C++, featuring modern graphics techniques and supporting both Vulkan and Direct3D 12 APIs.
+A 3D rendering engine built in C++, featuring modern graphics techniques and supporting Direct3D 12 API.
 
 ## Features
 
@@ -8,36 +8,45 @@ A 3D rendering engine built in C++, featuring modern graphics techniques and sup
 - **Deferred Rendering**: Multi-pass architecture with G-Buffer containing albedo, normals, ORM (occlusion/roughness/metallic), emissive, and motion vector channels
 - **Reference Path Tracer**: Unbiased Monte Carlo path tracing with next event estimation, Russian roulette termination, and BRDF importance sampling
 - **Physically-Based Rendering (PBR)**: Full PBR material support with metallic/roughness workflow, including transmission, thickness, and Fresnel-Schlick approximation
-- **Transparency**: Forward rendering for transparent objects with transmission, IOR, and spectral attenuation
+- **Transparency**: Forward rendering for transparent objects with transmission, IOR, spectral attenuation, and volumetric absorption
 - **HDR Rendering**: High dynamic range pipeline with histogram-based automatic exposure adaptation (EV100) and physically-based tone mapping
 - **Ray-Traced Shadows**: Hardware-accelerated ray tracing for directional light shadows with inline ray queries
+- **ReSTIR DI (Direct Illumination)**: Advanced stochastic light sampling with initial sampling modes (uniform, Power-RIS, ReGIR-RIS), temporal and spatial resampling, and boiling filter for variance reduction
 - **Bloom**: Multi-stage bloom post-processing with configurable intensity and knee parameters
 - **Atmosphere Rendering**: Physically-based sky and sun atmosphere lighting across all rendering modes
 
 ### Rendering Techniques
 - **GPU-Driven Rendering**: Meshlet-based geometry processing using mesh shaders with indirect dispatch
-- **Meshlet Rendering**: Efficient GPU-driven rendering with automatic meshlet generation and caching
-- **Bindless Textures**: Descriptor indexing for unlimited texture access without binding changes
-- **Hierarchical Z-Buffer (HZB)**: Multi-level depth buffer for efficient occlusion culling using AMD Single Pass Downsampler (SPD) with min/max/average reductions
+- **Meshlet Rendering**: Efficient GPU-driven rendering with automatic meshlet generation and caching (64 vertices, 96 triangles per meshlet)
+- **Ray Tracing Acceleration**:
+  - **Multi-LOD BLAS/TLAS**: Bottom and top-level acceleration structures with per-LOD geometry support
+  - **TLASPatch Synchronization**: Compute shader for updating BLAS addresses across LOD levels
+  - **LOD-Aware Ray Tracing**: Automatic or manual LOD selection for ray tracing operations
+- **Bindless Textures & Samplers**: Descriptor indexing for unlimited texture and sampler access without binding changes
+- **Hierarchical Z-Buffer (HZB)**: Multi-level depth buffer for efficient occlusion culling using AMD Single Pass Downsampler (SPD) with min reduction
 - **Advanced GPU Culling**: 
   - **Phase 1**: Frustum culling combined with occlusion culling using HZB
   - **Phase 2**: Occlusion culling on occluded primitives with meshlet job generation
-  - **Cone Culling**: Back-face and silhouette culling for opaque geometry
-  - **Hierarchical LOD (Level of Detail)**: Automatic LOD generation with progressive mesh simplification using meshoptimizer
+  - **Cone Culling**: Conservative back-face and silhouette culling for opaque geometry
+  - **Hierarchical LOD (Level of Detail)**: Up to 8 distance-based LOD levels with progressive mesh simplification using meshoptimizer
 - **Multi-threaded Rendering**: Parallel command list recording and asynchronous task scheduling
-- **Image-Based Lighting (IBL)**: Environment lighting with irradiance and radiance cubemaps, including BRDF lookup table
+- **Image-Based Lighting (IBL)**: Environment lighting with irradiance and radiance cubemaps, including BRDF lookup table and Bruneton atmosphere textures
 
 ### Performance & Profiling
 - **Microprofile Integration**: Detailed CPU and GPU performance profiling with real-time visualization
-- **Pipeline State Caching**: Automatic caching of graphics and compute pipeline states
-- **GPU Profiling**: Integrated timer queries and GPU metrics collection
-- **Memory Efficiency**: Render graph resource aliasing for minimal VRAM usage
+- **Pipeline State Caching**: Automatic caching of graphics, meshlet, and compute pipeline states
+- **GPU Profiling**: Per-renderer GPU timing, integrated timer queries, and pipeline statistics collection
+- **Memory Efficiency**: Render graph resource aliasing for minimal VRAM usage with transient resource pooling
 
 ### Developer Experience
 - **ImGui UI**: Real-time debugging interface with rendering mode selection, pass toggles, and performance metrics
-- **Debug Visualization**: Multiple visualization modes including G-Buffer inspection, lighting components, occlusion visualization
-- **Flexible Configuration**: Runtime adjustable parameters for culling, rendering, and post-processing
-- **Cross-Platform Validation**: Graphics API validation layers (NVIDIA NVRHI) for robust error detection
+- **Debug Visualization Modes**:
+  - Depth, normals, albedo, roughness/metallic, emissive, and motion vector visualization
+  - Meshlet visualization with per-meshlet coloring
+  - LOD level visualization
+  - Isolated bloom visualization
+  - RTXDIVisualization for ReSTIR DI debugging
+- **Flexible Configuration**: Runtime adjustable parameters for culling, rendering, post-processing, and ReSTIR DI tuning (noise mix, clamping, denoising)
 - **Modern C++**: C++20 features with clean, maintainable architecture
 - **Shader Hot Reloading**: Runtime shader recompilation and seamless reloading without engine restart
 
@@ -59,16 +68,17 @@ The engine is built around several key architectural components:
 
 ### Multi-Pass Pipeline
 The rendering pipeline consists of specialized rendering passes:
-- **BasePassRenderer (Opaque)**: Geometry rendering with meshlet-based GPU-driven rendering
-- **BasePassRenderer (Masked)**: Alpha-tested geometry
-- **TransparentPassRenderer**: Forward rendering for transparent objects
-- **DeferredRenderer**: Deferred lighting computation
-- **SkyRenderer**: Atmosphere and sky rendering
-- **TLASRenderer**: Ray tracing acceleration structure building
-- **BloomRenderer**: Multi-stage bloom post-processing
-- **HDRRenderer**: Exposure adaptation and tone mapping
-- **PathTracerRenderer**: Reference unbiased path tracing
-- **ImGuiRenderer**: Debug UI rendering
+- **BasePassRenderer (Opaque)**: Meshlet-based GPU-driven geometry rendering with G-Buffer output
+- **BasePassRenderer (Masked)**: Alpha-tested transparency with coverage-based rendering
+- **TransparentPassRenderer**: Forward rendering for refractive and transparent objects
+- **DeferredRenderer**: Deferred lighting computation with ReSTIR DI integration
+- **RTXDIRenderer**: ReSTIR DI initial sampling, temporal, and spatial resampling passes
+- **SkyRenderer**: Atmosphere and sky rendering with Bruneton atmosphere integration
+- **TLASRenderer**: Ray tracing acceleration structure updates for multi-LOD geometry
+- **BloomRenderer**: Multi-stage pyramid-based bloom with prefilter and upsample passes
+- **HDRRenderer**: Exposure adaptation and physically-based tone mapping
+- **PathTracerRenderer**: Reference unbiased path tracing with progressive accumulation
+- **ImGuiRenderer**: Debug UI and visualization rendering
 
 ### Graphics Abstraction Layer
 Built on top of NVRHI (NVIDIA Rendering Hardware Interface) providing:
@@ -97,33 +107,10 @@ The project automatically downloads and builds the following dependencies:
 - **[meshoptimizer](https://github.com/zeux/meshoptimizer)**: Mesh optimization and quantization
 - **[microprofile](https://github.com/jonasmr/microprofile)**: Performance profiling
 - **[stb_image](https://github.com/nothings/stb)**: Image loading
-
-## Usage
-
-### Command Line Options
-- `--scene <path>`: Load a scene file
-- `--vulkan`: Select Vulkan graphics API (default: D3D12)
-- `--rhidebug`: Enable graphics API validation layers
-- `--rhidebug-gpu`: Enable GPU-assisted validation (requires --rhidebug)
-- `--skip-textures`: Skip loading textures from scene
-- `--skip-cache`: Skip loading/saving scene cache
-- `--irradiance <path>`: Path to irradiance cubemap texture (DDS)
-- `--radiance <path>`: Path to radiance cubemap texture (DDS)
-- `--envmap <path>`: Path to environment map (auto-infers irradiance/radiance DDS files)
-- `--brdflut <path>`: Path to BRDF LUT texture (DDS)
-- `--execute-per-pass`: Execute command lists per rendering pass
-- `--execute-per-pass-and-wait`: Wait for GPU idle after each pass execution
-- `--disable-rendergraph-aliasing`: Disable render graph resource aliasing
-- `--help, -h`: Show help message
-
-### Example
-```bash
-AgenticRenderer.exe --scene scenes/sponza.gltf --vulkan --rhidebug
-```
-
-### Controls
-- **Mouse**: Camera rotation and movement
-- **WASD**: Camera movement
+- **[RTXDI](https://github.com/NVIDIA-RTX/RTXDI)**: ReSTIR Direct Illumination framework
+- **[NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser)**: NVIDIA ray tracing denoiser (ReBlur/RELAX)
+- **[Agility SDK](https://github.com/microsoft/DirectX-Headers)**: Direct3D 12 core headers and runtime support
+- **[MathLib](https://github.com/NVIDIA-RTX/MathLib)**: Vector/matrix math utilities
 
 ## Rendering Modes
 
@@ -152,30 +139,32 @@ Key shader features:
 - **GPUCulling.hlsl**: Two-phase GPU culling with frustum, occlusion, and cone culling
 - **HZBFromDepth.hlsl**: Hierarchical Z-buffer generation from depth
 - **SPD.hlsl**: AMD Single Pass Downsampler for efficient mip-map generation
-- **DeferredLighting.hlsl**: Deferred lighting and shading with ray-traced shadows
+- **ReSTIR DI Shaders**: Initial sampling (uniform, Power-RIS, ReGIR-RIS), temporal resampling, and spatial resampling passes
+- **DeferredLighting.hlsl**: Deferred lighting and shading with ray-traced shadows and ReSTIR DI integration
+- **NRD Denoiser.hlsl**: RELAX denoiser integration for diffuse/specular noise reduction
 - **PathTracer.hlsl**: Unbiased Monte Carlo path tracer with next event estimation and BRDF importance sampling
-- **Sky.hlsl**: Real-time sky and atmosphere rendering
-- **Bloom.hlsl**: Multi-stage bloom filtering
-- **Tonemap.hlsl**: HDR to SDR tone mapping with bloom integration
-- **LuminanceHistogram.hlsl**: Per-frame luminance histogram for exposure adaptation
-
-## Scene Format Support
-
-This application supports loading scene files in the following formats:
-
-- **glTF (.gltf)**: Standard glTF 2.0 files (text-based only, GLB binary format not supported)
-- **Scene JSON (.scene.json)**: Custom JSON scene format
-
-### Sample Scenes
-
-You can download sample scenes from the following NVIDIA repositories:
-- **[RTXPT-Assets](https://github.com/NVIDIA-RTX/RTXPT-Assets)**: Path tracing sample assets
-- **[RTXDI-Assets](https://github.com/NVIDIA-RTX/RTXDI-Assets)**: RTX Direct Illumination sample assets
+- **Sky.hlsl**: Real-time sky and atmosphere rendering with Bruneton precomputed atmosphere
+- **Bloom.hlsl**: Multi-stage pyramid-based bloom with prefilter and upsample passes
+- **Tonemap.hlsl**: HDR to SDR tone mapping with bloom integration and exposure adaptation
+- **LuminanceHistogram.hlsl**: Per-frame luminance histogram for auto-exposure adaptation
+- **TLASPatch.hlsl**: Compute shader for multi-LOD TLAS synchronization and BLAS address updates
 
 ### Supported Features
-- **Meshes**: Triangle meshes with automatic vertex quantization, mesh optimization, and hierarchical LOD generation
-- **Materials**: PBR materials with albedo, normal, ORM (occlusion/roughness/metallic), and emissive textures; includes transmission, IOR, and thickness properties
-- **Animations**: Skeletal animations with step, linear, and cubic spline interpolation modes
-- **Lights**: Directional lights with ray-traced shadow support and atmosphere-aware intensity
-- **Cameras**: Perspective cameras with configurable field-of-view, near/far planes, and EV100 exposure values
-- **Texture Formats**: Supports DDS cubemaps for IBL (irradiance and radiance maps) and BRDF LUT
+- **Meshes**: Triangle meshes with automatic vertex quantization, mesh optimization, and up to 8-level hierarchical LOD generation
+- **Materials**: 
+  - Core PBR with albedo, normal, ORM (occlusion/roughness/metallic), and emissive textures
+  - KHR Extensions: Index of Refraction (IOR), transmission factor, volumetric properties
+  - Volume Properties: Thickness factor, attenuation distance/color, absorption (Sigma_A) and scattering (Sigma_S) coefficients, thin-surface flag
+  - Material Animations: Emissive intensity animation via JSON
+- **Animations**:
+  - Skeletal and transform animations with multiple interpolation modes
+  - Interpolation Types: Linear, step (discrete), cubic spline, spherical linear interpolation (SLERP) for quaternions, and Catmull-Rom spline
+  - Dynamic Node Tracking: Automatic identification of animated nodes
+  - Material Animation: Emissive intensity animation support
+- **Lights**:
+  - Directional/infinite lights with ray-traced shadow support and atmosphere-aware intensity
+  - Point/local lights with per-light PDF sampling
+  - Environment lights with PDF-based sampling in ReSTIR DI
+  - Configurable per-light sampling (128 RIS tiles × 1024 samples)
+- **Cameras**: Perspective cameras with configurable field-of-view, near/far planes, manual/auto exposure with EV100 support, and exposure compensation
+- **Texture Formats**: Supports DDS cubemaps for IBL (irradiance and radiance maps), BRDF LUT, and Bruneton atmosphere precomputed textures
