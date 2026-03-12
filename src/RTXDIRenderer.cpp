@@ -197,7 +197,7 @@ void ApplyReSTIRDIPreset(ReSTIRDIQualityPreset preset)
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
         g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8;
         g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
-        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 2;
+        g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 1;
         g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 1u;
         g_ReSTIRDI_BoilingFilterParams.enableBoilingFilter = 1u;
         g_ReSTIRDI_BoilingFilterParams.boilingFilterStrength = 0.2f;
