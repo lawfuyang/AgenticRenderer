@@ -309,11 +309,8 @@ struct DeferredLightingConstants
   //
   uint32_t m_RadianceMipCount;
   uint32_t m_UseReSTIRDI;         // 1 = read ReSTIR DI illumination textures instead of computing direct lighting
-  uint32_t m_UseReSTIRDIDenoised; // 1 = t8/t9 are RELAX-denoised diffuse/specular illumination
-  float m_NoiseMix;               // mirrors FullSample CompositingPass.noiseMix
-  //
-  float m_NoiseClampLow;          // mirrors FullSample CompositingPass.noiseClampLow
-  float m_NoiseClampHigh;         // mirrors FullSample CompositingPass.noiseClampHigh
+  uint32_t m_UseReSTIRDIDenoised; // 1 = t8/t9 are denoised diffuse/specular illumination
+  uint32_t pad0;
 };
 
 struct PathTracerConstants

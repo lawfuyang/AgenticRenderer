@@ -13,8 +13,6 @@ extern RGTextureHandle g_RG_HDRColor;
 extern RGTextureHandle g_RG_RTXDIDIOutput;
 extern RGTextureHandle g_RG_RTXDIDiffuseOutput;  // RELAX-denoised diffuse illumination
 extern RGTextureHandle g_RG_RTXDISpecularOutput; // non-denoised raw specular illumination or RELAX-denoised specular
-extern RGTextureHandle g_RG_RTXDIRawDiffuseOutput;
-extern RGTextureHandle g_RG_RTXDIRawSpecularOutput;
 
 class DeferredRenderer : public IRenderer
 {
@@ -40,8 +38,6 @@ public:
             {
                 renderGraph.ReadTexture(g_RG_RTXDIDiffuseOutput);
                 renderGraph.ReadTexture(g_RG_RTXDISpecularOutput);
-                renderGraph.ReadTexture(g_RG_RTXDIRawDiffuseOutput);
-                renderGraph.ReadTexture(g_RG_RTXDIRawSpecularOutput);
             }
             else
             {
@@ -87,28 +83,16 @@ public:
         dcb.m_DebugMode = renderer->m_DebugMode;
         dcb.m_UseReSTIRDI = renderer->m_EnableReSTIRDI ? 1u : 0u;
         dcb.m_UseReSTIRDIDenoised = bUseRESTIRDIDenoised ? 1u : 0u;
-        dcb.m_NoiseMix = renderer->m_ReSTIRDINoiseMix;
-        dcb.m_NoiseClampLow = renderer->m_ReSTIRDINoiseClampLow;
-        dcb.m_NoiseClampHigh = renderer->m_ReSTIRDINoiseClampHigh;
         commandList->writeBuffer(deferredCB, &dcb, sizeof(dcb), 0);
 
         // t8/t9: DI diffuse/specular illumination (denoised or raw, depending on mode)
-        // t16/t17: raw noisy DI diffuse/specular (for denoiser noise mix-in in denoised mode)
         nvrhi::TextureHandle rtxdiDiffuseOutput = bUseRESTIRDIDenoised
             ? renderGraph.GetTexture(g_RG_RTXDIDiffuseOutput,  RGResourceAccessMode::Read)
             : (renderer->m_EnableReSTIRDI
                 ? renderGraph.GetTexture(g_RG_RTXDIDIOutput, RGResourceAccessMode::Read)
                 : CommonResources::GetInstance().DefaultTextureBlack);
-        nvrhi::TextureHandle rtxdiSpecularOutput = bUseRESTIRDIDenoised
+        nvrhi::TextureHandle rtxdiSpecularOutput = renderer->m_EnableReSTIRDI
             ? renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Read)
-            : (renderer->m_EnableReSTIRDI
-                ? renderGraph.GetTexture(g_RG_RTXDISpecularOutput, RGResourceAccessMode::Read)
-                : CommonResources::GetInstance().DefaultTextureBlack);
-        nvrhi::TextureHandle rtxdiRawDiffuseOutput = bUseRESTIRDIDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDIRawDiffuseOutput, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-        nvrhi::TextureHandle rtxdiRawSpecularOutput = bUseRESTIRDIDenoised
-            ? renderGraph.GetTexture(g_RG_RTXDIRawSpecularOutput, RGResourceAccessMode::Read)
             : CommonResources::GetInstance().DefaultTextureBlack;
 
         nvrhi::BindingSetDesc bset;
@@ -129,8 +113,6 @@ public:
             nvrhi::BindingSetItem::StructuredBuffer_SRV(14, renderer->m_Scene.m_IndexBuffer),
             nvrhi::BindingSetItem::Texture_SRV(8,  rtxdiDiffuseOutput),
             nvrhi::BindingSetItem::Texture_SRV(9,  rtxdiSpecularOutput),
-            nvrhi::BindingSetItem::Texture_SRV(16, rtxdiRawDiffuseOutput),
-            nvrhi::BindingSetItem::Texture_SRV(17, rtxdiRawSpecularOutput),
         };
 
         nvrhi::FramebufferDesc fbDesc;

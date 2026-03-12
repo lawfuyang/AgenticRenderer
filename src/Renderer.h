@@ -226,9 +226,6 @@ struct Renderer
     // ReSTIR DI settings
     bool m_EnableReSTIRDI = true;
     bool m_EnableReSTIRDIRelaxDenoising = true;
-    float m_ReSTIRDINoiseMix = 0.33f;
-    float m_ReSTIRDINoiseClampLow = 0.5f;
-    float m_ReSTIRDINoiseClampHigh = 2.0f;
 
     // bloom
     float m_BloomKnee = 0.1f;

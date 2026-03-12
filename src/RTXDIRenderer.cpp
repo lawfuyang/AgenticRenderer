@@ -247,12 +247,6 @@ void RTXDIIMGUISettings()
     if (renderer->m_EnableReSTIRDIRelaxDenoising)
         ImGui::TextDisabled("  Diffuse + specular denoised separately via RELAX D+S.");
 
-    if (renderer->m_EnableReSTIRDIRelaxDenoising)
-    {
-        ImGui::SliderFloat("Noise Mix-in", &renderer->m_ReSTIRDINoiseMix, 0.f, 1.f);
-        ImGui::SliderFloat("Noise Clamp Low", &renderer->m_ReSTIRDINoiseClampLow, 0.f, 1.f);
-        ImGui::SliderFloat("Noise Clamp High", &renderer->m_ReSTIRDINoiseClampHigh, 1.f, 4.f);
-    }
     ImGui::Separator();
 
     ImGui::Checkbox("Show Advanced Settings", &g_ReSTIRDI_ShowAdvancedSettings);

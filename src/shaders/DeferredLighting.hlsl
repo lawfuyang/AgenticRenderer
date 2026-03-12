@@ -24,8 +24,6 @@ StructuredBuffer<uint> g_Indices : register(t14);
 StructuredBuffer<GPULight> g_Lights : register(t6);
 Texture2D<float4> g_RTXDIDiffuseOutput : register(t8);       // diffuse illumination (raw or denoised)
 Texture2D<float4> g_RTXDISpecularOutput : register(t9);      // specular illumination (raw or denoised)
-Texture2D<float4> g_RTXDIRawDiffuseOutput : register(t16);   // noisy diffuse illumination (denoised mode only)
-Texture2D<float4> g_RTXDIRawSpecularOutput : register(t17);  // noisy specular illumination (denoised mode only)
 
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
@@ -93,26 +91,6 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         {
             float3 diffuseIllumination = g_RTXDIDiffuseOutput.Load(uint3(uvInt, 0)).rgb;
             float3 specularIllumination = g_RTXDISpecularOutput.Load(uint3(uvInt, 0)).rgb;
-
-            if (g_Deferred.m_UseReSTIRDIDenoised != 0)
-            {
-                float3 rawDiffuse = g_RTXDIRawDiffuseOutput.Load(uint3(uvInt, 0)).rgb;
-                float3 rawSpecular = g_RTXDIRawSpecularOutput.Load(uint3(uvInt, 0)).rgb;
-
-                diffuseIllumination = lerp(
-                    diffuseIllumination,
-                    clamp(rawDiffuse,
-                        diffuseIllumination * g_Deferred.m_NoiseClampLow,
-                        diffuseIllumination * g_Deferred.m_NoiseClampHigh),
-                    g_Deferred.m_NoiseMix);
-
-                specularIllumination = lerp(
-                    specularIllumination,
-                    clamp(rawSpecular,
-                        specularIllumination * g_Deferred.m_NoiseClampLow,
-                        specularIllumination * g_Deferred.m_NoiseClampHigh),
-                    g_Deferred.m_NoiseMix);
-            }
 
             float3 diffuseAlbedo;
             float3 F0;
