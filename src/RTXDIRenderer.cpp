@@ -986,6 +986,12 @@ public:
             restirDI.temporalResamplingParams = m_Context->GetTemporalResamplingParameters();
             restirDI.spatialResamplingParams  = m_Context->GetSpatialResamplingParameters();
             restirDI.shadingParams            = m_Context->GetShadingParameters();
+
+            // When RELAX denoising is active and there is no indirect lighting pass,
+            // ShadeSamples is the last pass writing to u_DiffuseLighting / u_SpecularLighting.
+            // TODO: set this to '0' when we have a separate indirect pass, and then only set this back to '1' for the final shading of indirect
+            restirDI.shadingParams.enableDenoiserInputPacking = renderer->m_EnableReSTIRDIRelaxDenoising ? 1u : 0u;
+
             g_Const.restirDI = restirDI;
         }
 
