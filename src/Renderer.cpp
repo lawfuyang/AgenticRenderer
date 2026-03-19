@@ -859,11 +859,7 @@ void Renderer::Run()
             m_ActiveDebugMode = m_DebugMode;
         }
 
-        // Check if reservoir subfield viz mode is active (declared in RTXDIRenderer.cpp)
-        extern uint32_t g_ReservoirSubfieldVizMode;
-        const bool bReservoirVizActive = (g_ReservoirSubfieldVizMode != 0);
-
-        if (m_DebugMode != DEBUG_MODE_NONE || bReservoirVizActive)
+        if (m_DebugMode != DEBUG_MODE_NONE)
         {
             // Lock settings in debug mode for consistent raw output
             m_EnableBloom = false;
@@ -902,7 +898,6 @@ void Renderer::Run()
         extern IRenderer* g_MaskedPassRenderer;
         extern IRenderer* g_HZBGeneratorPhase2;
         extern IRenderer* g_RTXDIRenderer;
-        extern IRenderer* g_RTXDIVisualizationRenderer;
         extern IRenderer* g_DeferredRenderer;
         extern IRenderer* g_SkyRenderer;
         extern IRenderer* g_TransparentPassRenderer;
@@ -928,7 +923,6 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
             m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
             m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
-            m_RenderGraph.ScheduleRenderer(g_RTXDIVisualizationRenderer);
         }
 
         m_RenderGraph.ScheduleRenderer(g_HDRRenderer);

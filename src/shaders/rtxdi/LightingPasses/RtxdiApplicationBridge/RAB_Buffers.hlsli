@@ -111,8 +111,8 @@ StructuredBuffer<VertexQuantized>           t_SceneVertices             : regist
 // u28 = u_PTDuplicationMap
 
 RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs           : register(u0);
-RWBuffer<uint2>                             u_RisBuffer                 : register(u1);
-RWBuffer<uint4>                             u_RisLightDataBuffer        : register(u2);
+RWStructuredBuffer<uint2>                   u_RisBuffer                 : register(u1);
+RWStructuredBuffer<uint4>                   u_RisLightDataBuffer        : register(u2);
 RWTexture2D<int2>                           u_TemporalSamplePositions   : register(u3);
 RWTexture2DArray<float4>                    u_Gradients                 : register(u4);
 RWTexture2D<float2>                         u_RestirLuminance           : register(u5);
