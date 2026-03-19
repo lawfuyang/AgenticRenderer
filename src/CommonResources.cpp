@@ -249,7 +249,7 @@ void CommonResources::Initialize()
         // DummySRVByteAddressBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
+            bufferDesc.byteSize = 16;
             bufferDesc.canHaveRawViews = true;
             bufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
             bufferDesc.debugName = "DummySRVByteAddressBuffer";
@@ -259,7 +259,7 @@ void CommonResources::Initialize()
         // DummyUAVByteAddressBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
+            bufferDesc.byteSize = 16;
             bufferDesc.canHaveRawViews = true;
             bufferDesc.canHaveUAVs = true;
             bufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
@@ -270,8 +270,8 @@ void CommonResources::Initialize()
         // DummySRVStructuredBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
-            bufferDesc.structStride = 4;
+            bufferDesc.byteSize = 16;
+            bufferDesc.structStride = 16;
             bufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
             bufferDesc.debugName = "DummySRVStructuredBuffer";
             DummySRVStructuredBuffer = device->createBuffer(bufferDesc);
@@ -280,8 +280,8 @@ void CommonResources::Initialize()
         // DummyUAVStructuredBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
-            bufferDesc.structStride = 4;
+            bufferDesc.byteSize = 16;
+            bufferDesc.structStride = 16;
             bufferDesc.canHaveUAVs = true;
             bufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             bufferDesc.debugName = "DummyUAVStructuredBuffer";
@@ -291,7 +291,7 @@ void CommonResources::Initialize()
         // DummySRVTypedBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
+            bufferDesc.byteSize = 16;
             bufferDesc.canHaveTypedViews = true;
             bufferDesc.format = nvrhi::Format::R32_UINT; // Example format
             bufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
@@ -302,7 +302,7 @@ void CommonResources::Initialize()
         // DummyUAVTypedBuffer
         {
             nvrhi::BufferDesc bufferDesc;
-            bufferDesc.byteSize = 4;
+            bufferDesc.byteSize = 16;
             bufferDesc.canHaveUAVs = true;
             bufferDesc.canHaveTypedViews = true;
             bufferDesc.format = nvrhi::Format::R32_UINT; // Example format
