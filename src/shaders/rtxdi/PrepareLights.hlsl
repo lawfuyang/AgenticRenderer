@@ -15,7 +15,6 @@
 ConstantBuffer<PrepareLightsConstants>      g_Const             : register(b0);
 RWStructuredBuffer<PolymorphicLightInfo>    u_LightDataBuffer   : register(u0);
 RWBuffer<uint>                              u_LightIndexMappingBuffer : register(u1);
-RWBuffer<uint>                              u_GeometryInstanceToLight : register(u2);
 RWTexture2D<float>                          u_LocalLightPdfTexture : register(u4);
 
 // t0 = task buffer: one entry per task.  TASK_PRIMITIVE_LIGHT_BIT set → analytical light;
@@ -153,9 +152,11 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
     else
     {
         // Primitive (analytical) light — read directly from the primitive light buffer.
-        // instanceAndGeometryIndex with TASK_PRIMITIVE_LIGHT_BIT set; the actual
-        // primitive light index is stored in task.lightBufferOffset.
-        lightInfo = t_PrimitiveLightBuffer[task.lightBufferOffset];
+        // Match FullSample semantics: primitive source index is encoded in
+        // instanceAndGeometryIndex low bits, while lightBufferOffset is the destination
+        // slot in u_LightDataBuffer.
+        uint primitiveLightIndex = task.instanceAndGeometryIndex & ~TASK_PRIMITIVE_LIGHT_BIT;
+        lightInfo = t_PrimitiveLightBuffer[primitiveLightIndex];
     }
 
     uint lightBufferPtr = task.lightBufferOffset + triangleIdx;
@@ -177,13 +178,4 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
     float emissiveFlux = PolymorphicLight::getPower(lightInfo);
     uint2 pdfTexturePosition = RTXDI_LinearIndexToZCurve(lightBufferPtr);
     u_LocalLightPdfTexture[pdfTexturePosition] = emissiveFlux;
-
-    // Write the geometry-instance-to-light mapping for emissive triangle lights.
-    if (!isPrimitiveLight)
-    {
-        uint instanceIndex = (task.instanceAndGeometryIndex >> 12) & 0x7FFFFu;
-        PerInstanceData instance = t_InstanceData[instanceIndex];
-        uint geometryInstanceIndex = instance.m_FirstGeometryInstanceIndex + (task.instanceAndGeometryIndex & 0xFFFu);
-        u_GeometryInstanceToLight[geometryInstanceIndex] = lightBufferPtr;
-    }
 }

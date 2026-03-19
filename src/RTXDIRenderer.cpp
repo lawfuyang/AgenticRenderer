@@ -438,7 +438,7 @@ public:
 
         // Build and cache light buffer params — scene lights are static so this
         // only needs to happen once after the scene is loaded.
-        m_CachedLightBufferParams = BuildLightBufferParams(renderer, m_CachedPrimitiveLights);
+        m_CachedLightBufferParams = BuildLightBufferParams(m_CachedPrimitiveLights);
     }
 
     // ------------------------------------------------------------------
@@ -613,14 +613,13 @@ public:
         // Sized so the Z-curve can address every local light in the scene.
         // Light count is fixed post-load, so this is created once.
         {
-            // Local lights = all lights except index 0 (the sun/directional).
-            const uint32_t localLightCount = (renderer->m_Scene.m_LightCount > 1u)
-                ? renderer->m_Scene.m_LightCount - 1u
-                : 0u;
+            // Match FullSample semantics: PrepareLights writes one flux value per prepared light entry,
+            // including primitive infinite lights. Size mip-0 to cover all prepared lights.
+            const uint32_t preparedLightCount = std::max<uint32_t>(1u, static_cast<uint32_t>(m_CachedPrimitiveLights.size()));
 
-            // Find smallest power-of-2 S such that S*S >= localLightCount.
+            // Find smallest power-of-2 S such that S*S >= preparedLightCount.
             m_PDFTexSize = 1u;
-            while (m_PDFTexSize* m_PDFTexSize < localLightCount)
+            while (m_PDFTexSize * m_PDFTexSize < preparedLightCount)
                 m_PDFTexSize <<= 1u;
 
             // Mip count: from full-res down to 1×1.
@@ -966,10 +965,17 @@ public:
         nvrhi::BufferHandle  lightReservoirBuf   = renderGraph.GetBuffer(g_RG_RTXDILightReservoirBuffer, RGResourceAccessMode::Write);
         nvrhi::BufferHandle  risLightDataBuf     = renderGraph.GetBuffer(m_RG_RISLightDataBuffer,    RGResourceAccessMode::Write);
         nvrhi::TextureHandle localLightPDFTex    = renderGraph.GetTexture(m_RG_LocalLightPDFTexture, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle envLightPDFTex      = renderGraph.GetTexture(m_RG_EnvLightPDFTexture,   RGResourceAccessMode::Write);
+        nvrhi::TextureHandle envLightPDFTex      = renderGraph.GetTexture(m_RG_EnvLightPDFTexture, RGResourceAccessMode::Write);
         nvrhi::BufferHandle  lightDataBuf        = renderGraph.GetBuffer(m_RG_LightDataBuffer,       RGResourceAccessMode::Write);
         nvrhi::BufferHandle  lightIndexMapBuf    = renderGraph.GetBuffer(m_RG_LightIndexMapping,     RGResourceAccessMode::Write);
         nvrhi::BufferHandle  geoInstToLightBuf   = renderGraph.GetBuffer(m_RG_GeometryInstanceToLight, RGResourceAccessMode::Write);
+
+        // Match FullSample: clear temporal light-index mapping and local-light PDF mip0 every frame.
+        commandList->clearBufferUInt(lightIndexMapBuf, 0u);
+        commandList->clearTextureFloat(
+            localLightPDFTex,
+            nvrhi::TextureSubresourceSet(0, 1, 0, 1),
+            nvrhi::Color(0.f));
         nvrhi::BufferHandle  prepareLightsTaskBuf= renderGraph.GetBuffer(m_RG_PrepareLightsTasks,    RGResourceAccessMode::Write);
         nvrhi::BufferHandle  primitiveLightBuf   = renderGraph.GetBuffer(m_RG_PrimitiveLightBuffer,   RGResourceAccessMode::Write);
         // secondaryGBufBuf removed — ReSTIR GI / BrdfRayTracing not dispatched
@@ -1202,27 +1208,28 @@ public:
         // the primitive light buffer, then dispatches PrepareLights.hlsl which
         // copies them into the main light data buffer and writes mip-0 PDF flux.
         // ------------------------------------------------------------------
-        if (renderer->m_Scene.m_LightCount > 0)
+        if (!primitiveLights.empty())
         {
             PROFILE_SCOPED("PrepareLights");
 
+            const uint32_t numPrimitiveLights = static_cast<uint32_t>(primitiveLights.size());
+
             // Upload CPU-converted analytical lights to the primitive light buffer.
-            if (!primitiveLights.empty())
-            {
-                commandList->writeBuffer(primitiveLightBuf,
-                    primitiveLights.data(),
-                    primitiveLights.size() * sizeof(PolymorphicLightInfo));
-            }
+            commandList->writeBuffer(primitiveLightBuf,
+                primitiveLights.data(),
+                primitiveLights.size() * sizeof(PolymorphicLightInfo));
 
             // Build one PrepareLightsTask per analytical light with TASK_PRIMITIVE_LIGHT_BIT set.
-            // instanceAndGeometryIndex is unused for primitive lights; we only need lightBufferOffset.
+            // Match FullSample semantics:
+            //  - primitive source index is encoded in instanceAndGeometryIndex low bits,
+            //  - lightBufferOffset is the destination slot in RTXDILightDataBuffer,
+            //  - triangleCount must be 1 so FindTask() allocates one thread for each primitive.
             {
-                const uint32_t numLights = renderer->m_Scene.m_LightCount;
-                std::vector<PrepareLightsTask> tasks(numLights);
-                for (uint32_t i = 0; i < numLights; ++i)
+                std::vector<PrepareLightsTask> tasks(numPrimitiveLights);
+                for (uint32_t i = 0; i < numPrimitiveLights; ++i)
                 {
-                    tasks[i].instanceAndGeometryIndex = TASK_PRIMITIVE_LIGHT_BIT; // marks this as a primitive (analytical) light
-                    tasks[i].triangleCount            = 0;
+                    tasks[i].instanceAndGeometryIndex = TASK_PRIMITIVE_LIGHT_BIT | i;
+                    tasks[i].triangleCount            = 1; // technically zero, but we need to allocate 1 thread in the grid to process this light
                     tasks[i].lightBufferOffset        = i;
                     tasks[i].previousLightBufferOffset = -1; // no temporal tracking yet
                 }
@@ -1232,7 +1239,7 @@ public:
             }
 
             PrepareLightsConstants plCB{};
-            plCB.numTasks                  = renderer->m_Scene.m_LightCount;
+            plCB.numTasks                  = numPrimitiveLights;
             plCB.currentFrameLightOffset   = 0u;
             plCB.previousFrameLightOffset  = 0u;
 
@@ -1252,7 +1259,6 @@ public:
                 nvrhi::BindingSetItem::StructuredBuffer_SRV(30, renderer->m_Scene.m_VertexBufferQuantized),
                 nvrhi::BindingSetItem::StructuredBuffer_UAV(0,  lightDataBuf),
                 nvrhi::BindingSetItem::TypedBuffer_UAV(1,       lightIndexMapBuf),
-                nvrhi::BindingSetItem::TypedBuffer_UAV(2,       geoInstToLightBuf),
                 nvrhi::BindingSetItem::Texture_UAV(4, localLightPDFTex,
                     nvrhi::Format::UNKNOWN,
                     nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
@@ -1263,7 +1269,7 @@ public:
                 .bindingSetDesc = plBset,
                 .bIncludeBindlessResources = true,
                 .dispatchParams = {
-                    .x = DivideAndRoundUp(renderer->m_Scene.m_LightCount, 256u),
+                    .x = DivideAndRoundUp(numPrimitiveLights, 256u),
                     .y = 1u,
                     .z = 1u
                 }
@@ -1673,50 +1679,50 @@ private:
     }
 
     // Build the CPU-side primitive light array and return RTXDI_LightBufferParameters.
-    // Also fills outPrimitiveLights with the converted PolymorphicLightInfo entries.
-    static RTXDI_LightBufferParameters BuildLightBufferParams(
-        const Renderer* renderer,
-        std::vector<PolymorphicLightInfo>& outPrimitiveLights)
+    // Also fills outPrimitiveLights with converted PolymorphicLightInfo entries,
+    // packed in RTXDI expected order: local finite lights first, infinite lights after.
+    static RTXDI_LightBufferParameters BuildLightBufferParams(std::vector<PolymorphicLightInfo>& outPrimitiveLights)
     {
+        const Renderer* renderer = Renderer::GetInstance();
+
         RTXDI_LightBufferParameters lbp{};
-        const uint32_t totalLights = renderer->m_Scene.m_LightCount;
 
-        // Environment light: present and presampled when sky is enabled.
-        const bool bEnvPresent = renderer->m_EnableSky;
-        lbp.environmentLightParams.lightPresent = bEnvPresent ? 1u : 0u;
-        lbp.environmentLightParams.lightIndex   = bEnvPresent ? totalLights : 0u;
+        std::vector<PolymorphicLightInfo> localLights;
+        std::vector<PolymorphicLightInfo> infiniteLights;
+        localLights.reserve(renderer->m_Scene.m_LightCount);
+        infiniteLights.reserve(renderer->m_Scene.m_LightCount);
 
-        if (totalLights == 0)
-            return lbp;
-
-        outPrimitiveLights.resize(totalLights);
-
-        uint32_t numInfinite = 0;
-        uint32_t numLocal    = 0;
-
-        for (uint32_t i = 0; i < totalLights; ++i)
+        for (uint32_t i = 0; i < renderer->m_Scene.m_LightCount; ++i)
         {
             const Scene::Light& light = renderer->m_Scene.m_Lights[i];
             SDL_assert(light.m_NodeIndex >= 0);
             const Scene::Node& node = renderer->m_Scene.m_Nodes[light.m_NodeIndex];
 
             PolymorphicLightInfo info{};
-            ConvertAnalyticalLight(light, node, info);
-            outPrimitiveLights[i] = info;
+            if (!ConvertAnalyticalLight(light, node, info))
+                continue;
 
             if (light.m_Type == Scene::Light::Directional)
-                ++numInfinite;
+                infiniteLights.push_back(info);
             else
-                ++numLocal;
+                localLights.push_back(info);
         }
 
-        // Infinite lights (directional) come first in the buffer
-        lbp.infiniteLightBufferRegion.firstLightIndex = 0;
-        lbp.infiniteLightBufferRegion.numLights       = numInfinite;
+        outPrimitiveLights.clear();
+        outPrimitiveLights.reserve(localLights.size() + infiniteLights.size());
+        outPrimitiveLights.insert(outPrimitiveLights.end(), localLights.begin(), localLights.end());
+        outPrimitiveLights.insert(outPrimitiveLights.end(), infiniteLights.begin(), infiniteLights.end());
 
-        // Local lights (point/spot) follow
-        lbp.localLightBufferRegion.firstLightIndex = numInfinite;
-        lbp.localLightBufferRegion.numLights       = numLocal;
+        lbp.localLightBufferRegion.firstLightIndex    = 0u;
+        lbp.localLightBufferRegion.numLights          = static_cast<uint32_t>(localLights.size());
+        lbp.infiniteLightBufferRegion.firstLightIndex = lbp.localLightBufferRegion.numLights;
+        lbp.infiniteLightBufferRegion.numLights       = static_cast<uint32_t>(infiniteLights.size());
+
+        // This renderer currently does not append a kEnvironment polymorphic light into
+        // the RTXDI light buffer (sky is evaluated procedurally in RAB_GetEnvironmentRadiance).
+        // Therefore keep RTXDI environment-light entry disabled to avoid invalid light-buffer reads.
+        lbp.environmentLightParams.lightPresent = 0u;
+        lbp.environmentLightParams.lightIndex   = lbp.infiniteLightBufferRegion.firstLightIndex + lbp.infiniteLightBufferRegion.numLights;
 
         return lbp;
     }
