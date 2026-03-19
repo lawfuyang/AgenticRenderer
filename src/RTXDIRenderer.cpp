@@ -327,7 +327,6 @@ public:
     // ------------------------------------------------------------------
     // Per-frame transient RG handles (not needed by other renderers)
     // ------------------------------------------------------------------
-    RGTextureHandle m_RG_PrevRestirLuminance;
     RGTextureHandle m_RG_DenoiserNormalRoughness;
     RGTextureHandle m_RG_LinearDepth;
     RGTextureHandle m_RG_RawDiffuseOutput;
@@ -684,17 +683,6 @@ public:
         // FullSample per-frame resources
         // ------------------------------------------------------------------
 
-        // Previous-frame RestirLuminance (persistent history)
-        {
-            RGTextureDesc desc;
-            desc.m_NvrhiDesc.width  = width;
-            desc.m_NvrhiDesc.height = height;
-            desc.m_NvrhiDesc.format = nvrhi::Format::RG16_FLOAT; // R=luminance, G=unused
-            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
-            desc.m_NvrhiDesc.debugName    = "RTXDIPrevRestirLuminance";
-            renderGraph.DeclarePersistentTexture(desc, m_RG_PrevRestirLuminance);
-        }
-
         // Denoiser normal+roughness (RGBA16F) — PostprocessGBuffer writes, NRD reads
         {
             RGTextureDesc desc;
@@ -968,7 +956,6 @@ public:
         nvrhi::TextureHandle normalsHistoryTex = renderGraph.GetTexture(m_GbufferNormalsHistory, RGResourceAccessMode::Write);
 
         // FullSample per-frame textures (member variables)
-        nvrhi::TextureHandle prevRestirLumTex = renderGraph.GetTexture(m_RG_PrevRestirLuminance, RGResourceAccessMode::Write);
         nvrhi::TextureHandle denoiserNRTex    = renderGraph.GetTexture(m_RG_DenoiserNormalRoughness, RGResourceAccessMode::Write);
         nvrhi::TextureHandle linearDepthTex   = renderGraph.GetTexture(m_RG_LinearDepth,         RGResourceAccessMode::Write);
         nvrhi::TextureHandle compositedTex    = renderGraph.GetTexture(g_RG_RTXDIDIComposited,   RGResourceAccessMode::Write);
@@ -1058,7 +1045,7 @@ public:
         // u2  = u_RisLightDataBuffer
         // u3  = u_TemporalSamplePositions
         // u4  = u_Gradients
-        // u5  = u_RestirLuminance
+        // u5  = u_RestirLuminance (not used)
         // u6  = u_GIReservoirs
         // u7  = u_PTReservoirs
         // u8  = u_DiffuseLighting
@@ -1097,7 +1084,7 @@ public:
             nvrhi::BindingSetItem::Texture_SRV(7,  cr.DummySRVTexture),  // t_PrevGBufferGeoNormals — removed
             nvrhi::BindingSetItem::Texture_SRV(8,  albedoHistoryTex),
             nvrhi::BindingSetItem::Texture_SRV(9,  ormHistoryTex),
-            nvrhi::BindingSetItem::Texture_SRV(10, prevRestirLumTex),
+            nvrhi::BindingSetItem::Texture_SRV(10, cr.DummySRVTexture),  // u_RestirLuminance — not used
             nvrhi::BindingSetItem::Texture_SRV(11, motionTex),
             nvrhi::BindingSetItem::Texture_SRV(12, denoiserNRTex),
             nvrhi::BindingSetItem::Texture_SRV(13, depthHistoryTex),
@@ -1136,7 +1123,7 @@ public:
             nvrhi::BindingSetItem::Texture_UAV(17, cr.DummyUAVTexture),  // u_DirectLightingRaw — not used
             nvrhi::BindingSetItem::Texture_UAV(18, cr.DummyUAVTexture),  // u_IndirectLightingRaw — not used
             nvrhi::BindingSetItem::Texture_UAV(20, cr.DummyUAVTexture),  // u_PSRDepth stub
-            nvrhi::BindingSetItem::Texture_UAV(21, cr.DummyUAVTexture),  // dummy (no LightIndexMapping — lights don't stream in/out)
+            nvrhi::BindingSetItem::Texture_UAV(21, cr.DummyUAVTexture),  // u_PSRNormalRoughness stub
             nvrhi::BindingSetItem::Texture_UAV(22, cr.DummyUAVTexture),  // u_PSRMotionVectors stub
             nvrhi::BindingSetItem::Texture_UAV(23, cr.DummyUAVTexture),  // u_PSRHitT stub
             nvrhi::BindingSetItem::Texture_UAV(24, cr.DummyUAVTexture),  // u_PSRDiffuseAlbedo stub
