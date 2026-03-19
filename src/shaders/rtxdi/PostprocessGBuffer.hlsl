@@ -5,16 +5,18 @@
 
 #pragma pack_matrix(row_major)
 
+#include "NRD.hlsli"
 #include "SharedShaderInclude/ShaderParameters.h"
 #include "../Packing.hlsli"
+#include "../CommonLighting.hlsli"
 
 // Inputs — registers match RTXDIRenderer.cpp PostprocessGBuffer binding set:
 //   t1  = LinearZ (R32_FLOAT linear view-space depth, written by GenerateViewZ)
 //   t4  = ORM (packed R8G8B8A8: R=occlusion, G=roughness, B=metalness)
 //   t5  = normals (packed oct R32_UINT)
 Texture2D<float>  t_ViewDepth      : register(t1);  // LinearZ
-Texture2D<uint>   t_ORM            : register(t4);
-Texture2D<uint>   t_Normals        : register(t5);
+Texture2D<float2> t_ORM            : register(t4);
+Texture2D<float2> t_Normals        : register(t5);
 
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
@@ -42,11 +44,11 @@ float4 main(FullScreenVertexOut input) : SV_Target
     int2 pixelPosition = int2(input.pos.xy);
 
     // Decode shading normal from packed oct-encoded uint
-    float3 currentNormal = octToNdirUnorm32(t_Normals[pixelPosition]);
+    float3 currentNormal = DecodeNormal(t_Normals[pixelPosition]);
 
-    // Unpack ORM: R=occlusion, G=roughness, B=metalness, A=unused
-    float4 orm = Unpack_R8G8B8A8_Gamma_UFLOAT(t_ORM[pixelPosition]);
-    float currentRoughness = orm.g;
+    // Unpack ORM: R=roughness, G=metallic (matches BasePass GBufferOut.ORM = float2(roughness, metallic))
+    float2 orm = t_ORM[pixelPosition];
+    float currentRoughness = orm.r;
 
     float currentLinearZ = t_ViewDepth[pixelPosition];
 
@@ -61,7 +63,7 @@ float4 main(FullScreenVertexOut input) : SV_Target
             if ((i == 0) && (j == 0)) continue;
 
             int2   p       = pixelPosition + int2(i, j);
-            float3 pNormal = octToNdirUnorm32(t_Normals[p]);
+            float3 pNormal = DecodeNormal(t_Normals[p]);
             float  pZ      = t_ViewDepth[p];
 
             float w = GetBilateralWeight(currentLinearZ, pZ);
@@ -78,5 +80,5 @@ float4 main(FullScreenVertexOut input) : SV_Target
         : GetModifiedRoughnessFromNormalVariance(currentRoughness, averageNormal);
 
     // Write denoiser normal+roughness (NRD IN_NORMAL_ROUGHNESS format)
-    return float4(currentNormal * 0.5f + 0.5f, modifiedRoughness);
+    return float4(_NRD_EncodeNormalRoughness101010(currentNormal, modifiedRoughness), 0.0f);
 }

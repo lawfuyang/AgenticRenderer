@@ -54,7 +54,7 @@ void FillNRDCommonSettings(nrd::CommonSettings& settings);
 //   FillNRDCommonSettings(commonSettings);
 //   m_NrdIntegration->RunDenoiserPasses(
 //       commandList, renderGraph,
-//       rawGBufferNormals, rawGBufferORM,
+//       packedNormalRoughnessTex, rawGBufferORM,
 //       rawDiffuse, rawSpecular, linearViewZ, motionVectors,
 //       outDenoisedDiffuse, outDenoisedSpecular,
 //       commonSettings, &relaxSettings);
@@ -80,7 +80,7 @@ public:
     //
     // commandList     — NVRHI command list for GPU work submission.
     // renderGraph     — RenderGraph for retrieving pool textures.
-    // gbufferNormals  — oct-encoded normals (RG16_FLOAT) read from GBuffer.
+    // packedNormalRoughnessTex  — packed normal+roughness texture (R10G10B10A2_UNORM) written by the PackNormalRoughness pre-pass.
     // gbufferORM      — ORM texture (RG8_UNORM); roughness is in the .r channel.
     // diffuseRadiance — packed RELAX diffuse input  (IN_DIFF_RADIANCE_HITDIST).
     // specularRadiance— packed RELAX specular input (IN_SPEC_RADIANCE_HITDIST).
@@ -89,12 +89,11 @@ public:
     // outDiffuse      — denoised diffuse output  (OUT_DIFF_RADIANCE_HITDIST).
     // outSpecular     — denoised specular output (OUT_SPEC_RADIANCE_HITDIST).
     //
-    // gbufferNormals + gbufferORM are packed internally into R10G10B10A2_UNORM
-    // before being forwarded to NRD as IN_NORMAL_ROUGHNESS.
+    // packedNormalRoughnessTex + gbufferORM are forwarded to NRD as IN_NORMAL_ROUGHNESS.
     void RunDenoiserPasses(
         nvrhi::ICommandList*       commandList,
         const RenderGraph&         renderGraph,
-        nvrhi::ITexture*           gbufferNormals,
+        nvrhi::ITexture*           packedNormalRoughnessTex,
         nvrhi::ITexture*           gbufferORM,
         nvrhi::ITexture*           diffuseRadiance,
         nvrhi::ITexture*           specularRadiance,
@@ -133,16 +132,12 @@ private:
     std::vector<RGTextureHandle>     m_PermanentPoolTextures;
     std::vector<RGTextureHandle>     m_TransientPoolTextures;
 
-    // Packed normal+roughness (R10G10B10A2_UNORM) — written each frame by
-    // the PackNormalRoughness pre-pass and read by NRD as IN_NORMAL_ROUGHNESS.
-    RGTextureHandle                  m_RG_PackedNormalRoughnessTex;
-
     // Resolve an NRD ResourceDesc to the physical NVRHI texture it should
     // be bound to for a given dispatch.
     nvrhi::ITexture* ResolveResource(
         nrd::ResourceType type, uint16_t indexInPool,
         const RenderGraph& renderGraph,
-        nvrhi::ITexture* packedNormals,
+        nvrhi::ITexture* packedNormalRoughnessTex,
         nvrhi::ITexture* diffuse,  nvrhi::ITexture* specular,
         nvrhi::ITexture* viewZ,    nvrhi::ITexture* motionVectors,
         nvrhi::ITexture* outDiffuse, nvrhi::ITexture* outSpecular) const;

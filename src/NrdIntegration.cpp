@@ -398,24 +398,6 @@ void NrdIntegration::Setup(RenderGraph& renderGraph)
             renderGraph.DeclareTexture(desc, m_TransientPoolTextures[poolIdx]);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Packed normal+roughness texture (R10G10B10A2_UNORM)
-    // Written each frame by the PackNormalRoughness pre-pass.
-    // -------------------------------------------------------------------------
-    {
-        RGTextureDesc packDesc;
-        packDesc.m_NvrhiDesc.width            = width;
-        packDesc.m_NvrhiDesc.height           = height;
-        packDesc.m_NvrhiDesc.format           = nvrhi::Format::R10G10B10A2_UNORM;
-        packDesc.m_NvrhiDesc.dimension        = nvrhi::TextureDimension::Texture2D;
-        packDesc.m_NvrhiDesc.initialState     = nvrhi::ResourceStates::ShaderResource;
-        packDesc.m_NvrhiDesc.keepInitialState = true;
-        packDesc.m_NvrhiDesc.isUAV            = true;
-        packDesc.m_NvrhiDesc.debugName        = "NRD PackedNormalRoughness";
-
-        renderGraph.DeclareTexture(packDesc, m_RG_PackedNormalRoughnessTex);
-    }
 }
 
 // ============================================================================
@@ -425,7 +407,7 @@ void NrdIntegration::Setup(RenderGraph& renderGraph)
 nvrhi::ITexture* NrdIntegration::ResolveResource(
     nrd::ResourceType type, uint16_t indexInPool,
     const RenderGraph& renderGraph,
-    nvrhi::ITexture* packedNormals,
+    nvrhi::ITexture* packedNormalRoughnessTex,
     nvrhi::ITexture* diffuse,  nvrhi::ITexture* specular,
     nvrhi::ITexture* viewZ,    nvrhi::ITexture* motionVectors,
     nvrhi::ITexture* outDiffuse, nvrhi::ITexture* outSpecular) const
@@ -440,7 +422,7 @@ nvrhi::ITexture* NrdIntegration::ResolveResource(
         SDL_assert(indexInPool < static_cast<uint16_t>(m_PermanentPoolTextures.size()));
         return renderGraph.GetTexture(m_PermanentPoolTextures[indexInPool], RGResourceAccessMode::Write);
 
-    case nrd::ResourceType::IN_NORMAL_ROUGHNESS:        return packedNormals;
+    case nrd::ResourceType::IN_NORMAL_ROUGHNESS:        return packedNormalRoughnessTex;
     case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:   return diffuse;
     case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:   return specular;
     case nrd::ResourceType::IN_VIEWZ:                   return viewZ;
@@ -463,7 +445,7 @@ nvrhi::ITexture* NrdIntegration::ResolveResource(
 void NrdIntegration::RunDenoiserPasses(
     nvrhi::ICommandList*       commandList,
     const RenderGraph&         renderGraph,
-    nvrhi::ITexture*           gbufferNormals,
+    nvrhi::ITexture*           packedNormalRoughnessTex,
     nvrhi::ITexture*           gbufferORM,
     nvrhi::ITexture*           diffuseRadiance,
     nvrhi::ITexture*           specularRadiance,
@@ -480,39 +462,6 @@ void NrdIntegration::RunDenoiserPasses(
     nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
     const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
     const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
-
-    nvrhi::TextureHandle packedNormalRoughnessTex = renderGraph.GetTexture(m_RG_PackedNormalRoughnessTex, RGResourceAccessMode::Write);
-
-    // -------------------------------------------------------------------------
-    // PackNormalRoughness pre-pass
-    // Converts GBuffer oct-encoded normals (RG16_FLOAT) + roughness (from ORM .r)
-    // into R10G10B10A2_UNORM as expected by NRD's IN_NORMAL_ROUGHNESS slot.
-    // -------------------------------------------------------------------------
-    {
-        nvrhi::utils::ScopedMarker packMarker{ commandList, "NRD: Pack Normal+Roughness" };
-
-        const Vector2U resolution{ width, height };
-
-        nvrhi::BindingSetDesc bindingSetDesc;
-        bindingSetDesc.bindings = {
-            nvrhi::BindingSetItem::PushConstants(0, sizeof(resolution)),
-            nvrhi::BindingSetItem::Texture_SRV(0, gbufferNormals),
-            nvrhi::BindingSetItem::Texture_SRV(1, gbufferORM),
-            nvrhi::BindingSetItem::Texture_UAV(0, packedNormalRoughnessTex),
-        };
-
-        Renderer::RenderPassParams passParams{};
-        passParams.commandList       = commandList;
-        passParams.shaderName        = "PackNormalRoughness_CSMain";
-        passParams.bindingSetDesc    = bindingSetDesc;
-        passParams.pushConstants     = &resolution;
-        passParams.pushConstantsSize = sizeof(resolution);
-        passParams.dispatchParams.x  = DivideAndRoundUp(width,  8u);
-        passParams.dispatchParams.y  = DivideAndRoundUp(height, 8u);
-        passParams.dispatchParams.z  = 1u;
-
-        renderer->AddComputePass(passParams);
-    }
 
     // -------------------------------------------------------------------------
     // Configure NRD denoiser settings

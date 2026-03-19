@@ -112,8 +112,8 @@ RAB_Surface GetGBufferSurface(
     bool previousFrame,
     PlanarViewConstants view, 
     Texture2D<float> depthTexture, 
-    Texture2D<uint> normalsTexture, 
-    Texture2D<uint> geoNormalsTexture)
+    Texture2D<float2> normalsTexture, 
+    Texture2D<float2> geoNormalsTexture)
 {
     RAB_Surface surface = RAB_EmptySurface();
 
@@ -127,8 +127,8 @@ RAB_Surface GetGBufferSurface(
 
     surface.material = RAB_GetGBufferMaterial(pixelPosition, previousFrame);
 
-    surface.geoNormal = octToNdirUnorm32(geoNormalsTexture[pixelPosition]);
-    surface.normal = octToNdirUnorm32(normalsTexture[pixelPosition]);
+    surface.geoNormal = DecodeNormal(geoNormalsTexture[pixelPosition]);
+    surface.normal = DecodeNormal(normalsTexture[pixelPosition]);
 
     // Reconstruct world position from clip-space depth using HobbyRenderer's view constants
     {

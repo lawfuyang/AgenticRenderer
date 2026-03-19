@@ -765,7 +765,7 @@ public:
             RGTextureDesc desc;
             desc.m_NvrhiDesc.width  = width;
             desc.m_NvrhiDesc.height = height;
-            desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
+            desc.m_NvrhiDesc.format = nvrhi::Format::R10G10B10A2_UNORM;
             desc.m_NvrhiDesc.isUAV  = true;
             desc.m_NvrhiDesc.isRenderTarget = true;  // needed for fullscreen pixel shader output
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
@@ -791,8 +791,8 @@ public:
             desc.m_NvrhiDesc.width  = width;
             desc.m_NvrhiDesc.height = height;
             desc.m_NvrhiDesc.format = nvrhi::Format::RGBA16_FLOAT;
-            desc.m_NvrhiDesc.isUAV  = true;
-            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.isRenderTarget = true;
             desc.m_NvrhiDesc.debugName    = "RTXDIDIComposited";
             renderGraph.DeclareTexture(desc, g_RG_RTXDIDIComposited);
         }
@@ -1495,9 +1495,8 @@ public:
 
             renderer->AddComputePass({
                 .commandList    = commandList,
-                .shaderName     = bDenoise
-                    ? "rtxdi/LightingPasses/DI/ShadeSamples_main_WITH_NRD=1"
-                    : "rtxdi/LightingPasses/DI/ShadeSamples_main_WITH_NRD=0",
+                // TODO: change to 'ShadeSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION' when ReGIR is implemented
+                .shaderName     = "rtxdi/LightingPasses/DI/ShadeSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_DISABLED",
                 .bindingSetDesc = bset,
                 .bIncludeBindlessResources = true,
                 .dispatchParams = {
@@ -1543,28 +1542,24 @@ public:
             nvrhi::BindingSetDesc compBset;
             compBset.bindings = {
                 nvrhi::BindingSetItem::ConstantBuffer(0, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-                nvrhi::BindingSetItem::Texture_SRV(5,  normalsTex),
-                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
-                nvrhi::BindingSetItem::Texture_SRV(11, motionTex),
-                nvrhi::BindingSetItem::Texture_UAV(21, denoiserNRTex),
-                nvrhi::BindingSetItem::RayTracingAccelStruct(18, renderer->m_Scene.m_TLAS),
+                nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),   // t_GBufferAlbedo  (RGBA8_UNORM)
+                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),      // t_GBufferORM     (RG8_UNORM: roughness=.r, metallic=.g)
+                nvrhi::BindingSetItem::Texture_SRV(22, emissiveTex), // t_GBufferEmissive
                 // DI illumination inputs (denoised or raw)
                 nvrhi::BindingSetItem::Texture_SRV(23, bDenoise ? denoisedDiffuseTex  : diOutputTex),
                 nvrhi::BindingSetItem::Texture_SRV(24, bDenoise ? denoisedSpecularTex : specularOutTex),
-                // Output
-                nvrhi::BindingSetItem::Texture_UAV(0,  compositedTex),
             };
-            renderer->AddComputePass({
+
+            nvrhi::FramebufferDesc ppFbDesc;
+            ppFbDesc.addColorAttachment(compositedTex);
+            nvrhi::FramebufferHandle ppFb = device->createFramebuffer(ppFbDesc);
+
+            renderer->AddFullScreenPass({
                 .commandList    = commandList,
                 .shaderName     = "rtxdi/CompositingPass_CompositingPass_PSMain",
                 .bindingSetDesc = compBset,
                 .bIncludeBindlessResources = false,
-                .dispatchParams = {
-                    .x = DivideAndRoundUp(width,  RTXDI_SCREEN_SPACE_GROUP_SIZE),
-                    .y = DivideAndRoundUp(height, RTXDI_SCREEN_SPACE_GROUP_SIZE),
-                    .z = 1u
-                }
+                .framebuffer    = ppFb,
             });
         }
 

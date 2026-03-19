@@ -13,6 +13,7 @@
 #ifndef RAB_LIGHT_SAMPLING_HLSLI
 #define RAB_LIGHT_SAMPLING_HLSLI
 
+#include "NRD.hlsli"
 #include "RAB_RayPayload.hlsli"
 #include "../../Atmosphere.hlsli"
 
@@ -160,7 +161,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     // based on the surface curvature around the current pixel. If the surface is curved, roughness increases.
     // Detect that increase here and disable permutation sampling based on a threshold.
     // Other classification methods can be employed for better quality.
-    float originalRoughness = t_DenoiserNormalRoughness[pixelPosition].a;
+    float originalRoughness = _NRD_DecodeNormalRoughness101010(t_DenoiserNormalRoughness[pixelPosition]).a;
     return originalRoughness < (surface.material.roughness * g_Const.restirDI.temporalResamplingParams.permutationSamplingThreshold);
 }
 

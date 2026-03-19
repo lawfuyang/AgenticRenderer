@@ -25,13 +25,13 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 // t0  = t_NeighborOffsets
 // t1  = t_GBufferDepth
 // t2  = (dummy — GeoNormals removed, use shading normals directly)
-// t3  = t_GBufferDiffuseAlbedo
-// t4  = t_GBufferSpecularRough  (ORM)
-// t5  = t_GBufferNormals
-// t6  = t_PrevGBufferNormals    (= m_GbufferNormalsHistory)
+// t3  = t_GBufferAlbedo          (RGBA8_UNORM: baseColor.rgb + alpha)
+// t4  = t_GBufferORM             (RG8_UNORM: roughness=.r, metallic=.g)
+// t5  = t_GBufferNormals         (RG16_FLOAT: encoded, decoded via DecodeNormal)
+// t6  = t_PrevGBufferNormals     (= m_GbufferNormalsHistory)
 // t7  = (dummy — PrevGeoNormals removed)
-// t8  = t_PrevGBufferDiffuseAlbedo  (= m_GBufferAlbedoHistory)
-// t9  = t_PrevGBufferSpecularRough  (= m_GBufferORMHistory)
+// t8  = t_PrevGBufferAlbedo      (= m_GBufferAlbedoHistory)
+// t9  = t_PrevGBufferORM         (= m_GBufferORMHistory)
 // t10 = (dummy — was PrevRestirLuminance, no Gradient pass)
 // t11 = t_MotionVectors
 // t12 = t_DenoiserNormalRoughness
@@ -53,16 +53,16 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 Buffer<float2>                              t_NeighborOffsets           : register(t0);
 Texture2D<float>                            t_GBufferDepth              : register(t1);
 // t2: dummy (GeoNormals removed)
-Texture2D<uint>                             t_GBufferDiffuseAlbedo      : register(t3);
-Texture2D<uint>                             t_GBufferSpecularRough      : register(t4);
-Texture2D<uint>                             t_GBufferNormals            : register(t5);
-Texture2D<uint>                             t_PrevGBufferNormals        : register(t6);  // = m_GbufferNormalsHistory
+Texture2D<float4>                           t_GBufferAlbedo             : register(t3);  // RGBA8_UNORM: baseColor.rgb + alpha
+Texture2D<float2>                           t_GBufferORM                : register(t4);  // RG8_UNORM: roughness=.r, metallic=.g
+Texture2D<float2>                           t_GBufferNormals            : register(t5);  // RG16_FLOAT: encoded, use DecodeNormal
+Texture2D<float2>                           t_PrevGBufferNormals        : register(t6);  // = m_GbufferNormalsHistory
 // t7: dummy (PrevGeoNormals removed)
-Texture2D<uint>                             t_PrevGBufferDiffuseAlbedo  : register(t8);  // = m_GBufferAlbedoHistory
-Texture2D<uint>                             t_PrevGBufferSpecularRough  : register(t9);  // = m_GBufferORMHistory
+Texture2D<float4>                           t_PrevGBufferAlbedo         : register(t8);  // = m_GBufferAlbedoHistory
+Texture2D<float2>                           t_PrevGBufferORM            : register(t9);  // = m_GBufferORMHistory
 // t10: dummy (no Gradient pass — PrevRestirLuminance removed)
 Texture2D<float4>                           t_MotionVectors             : register(t11);
-Texture2D<float4>                           t_DenoiserNormalRoughness   : register(t12);
+Texture2D<float3>                           t_DenoiserNormalRoughness   : register(t12);
 Texture2D<float>                            t_PrevGBufferDepth          : register(t13);
 Texture2D                                   t_LocalLightPdfTexture      : register(t14);    
 Texture2D                                   t_EnvironmentPdfTexture     : register(t15);

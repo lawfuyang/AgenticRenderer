@@ -73,18 +73,25 @@ float3 RAB_GetEmissiveColor(RAB_Material material)
 RAB_Material GetGBufferMaterial(
     int2 pixelPosition,
     PlanarViewConstants view,
-    Texture2D<uint> diffuseAlbedoTexture, 
-    Texture2D<uint> specularRoughTexture)
+    Texture2D<float4> albedoTexture,
+    Texture2D<float2> ormTexture)
 {
     RAB_Material material = RAB_EmptyMaterial();
 
     if (any(pixelPosition >= view.m_ViewportSize))
         return material;
 
-    material.diffuseAlbedo = Unpack_R11G11B10_UFLOAT(diffuseAlbedoTexture[pixelPosition]).rgb;
-    float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(specularRoughTexture[pixelPosition]);
-    material.roughness = specularRough.a;
-    material.specularF0 = specularRough.rgb;
+    // Albedo is RGBA8_UNORM — read directly, no unpacking needed.
+    float3 baseColor = albedoTexture[pixelPosition].rgb;
+
+    // ORM is RG8_UNORM — .r = roughness, .g = metallic.  No unpacking needed.
+    float2 orm     = ormTexture[pixelPosition];
+    float roughness = orm.r;
+    float metallic  = orm.g;
+
+    // Derive diffuseAlbedo and specularF0 from the metallic workflow.
+    GetReflectivityFromMetallic(metallic, baseColor, material.diffuseAlbedo, material.specularF0);
+    material.roughness = roughness;
 
     return material;
 }
@@ -98,16 +105,16 @@ RAB_Material RAB_GetGBufferMaterial(
         return GetGBufferMaterial(
             pixelPosition,
             g_Const.prevView,
-            t_PrevGBufferDiffuseAlbedo,
-            t_PrevGBufferSpecularRough);
+            t_PrevGBufferAlbedo,
+            t_PrevGBufferORM);
     }
     else
     {
         return GetGBufferMaterial(
             pixelPosition,
             g_Const.view,
-            t_GBufferDiffuseAlbedo,
-            t_GBufferSpecularRough);
+            t_GBufferAlbedo,
+            t_GBufferORM);
     }
 }
 
