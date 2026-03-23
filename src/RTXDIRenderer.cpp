@@ -385,11 +385,13 @@ public:
 
         // "medium" preset from FullSample as base, with my own changes
         g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
-        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS; // TODO: change to ReGIR_RIS once it's working
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
-        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8;
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::Uniform ? g_ReSTIRDI_NumLocalLightUniformSamples : 
+            (g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::Power_RIS ? g_ReSTIRDI_NumLocalLightPowerRISSamples : 
+            g_ReSTIRDI_NumLocalLightReGIRRISSamples);
         g_ReSTIRDI_InitialSamplingParams.numBrdfSamples = 1;
         g_ReSTIRDI_InitialSamplingParams.numInfiniteLightSamples = 1;
         g_ReSTIRDI_TemporalResamplingParams.enableVisibilityShortcut = 1u;
