@@ -225,6 +225,7 @@ struct GBufferOut
     float2 ORM           : SV_TARGET2;
     float4 Emissive      : SV_TARGET3;
     float4 MotionVectors : SV_TARGET4;
+    float2 GeoNormal     : SV_TARGET5;  // World-space geometric normal (no normal map), oct-encoded
 };
 
 float3 GetDebugColor(uint debugMode, uint instanceID, uint meshletID, uint lodIndex)
@@ -494,6 +495,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     output.Normal = EncodeNormal(N);
     output.ORM = float2(roughness, metallic);
     output.Emissive = float4(emissive, 1.0f);
+    output.GeoNormal = EncodeNormal(normalize(input.normal));
 
     output.MotionVectors.xyz = ComputeMotionVectors(input.worldPos, input.prevWorldPos, g_PerFrame.m_View, g_PerFrame.m_PrevView);
     output.MotionVectors.w = 0; // Unused

@@ -159,7 +159,7 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
             g_Const.prevView,
             t_PrevGBufferDepth, 
             t_PrevGBufferNormals, 
-            t_PrevGBufferNormals);  // geo normals removed — use shading normals
+            t_PrevGBufferGeoNormals);
     }
     else
     {
@@ -169,7 +169,7 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
             g_Const.view, 
             t_GBufferDepth, 
             t_GBufferNormals, 
-            t_GBufferNormals);  // geo normals removed — use shading normals
+            t_GBufferGeoNormals);
     }
 }
 

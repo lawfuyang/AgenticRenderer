@@ -10,6 +10,7 @@ extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_HZBTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
 extern RGTextureHandle g_RG_GBufferNormals;
+extern RGTextureHandle g_RG_GBufferGeoNormals;
 extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferEmissive;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
@@ -128,6 +129,7 @@ public:
         nvrhi::TextureHandle hzb;
         nvrhi::TextureHandle albedo;
         nvrhi::TextureHandle normals;
+        nvrhi::TextureHandle geoNormals;
         nvrhi::TextureHandle orm;
         nvrhi::TextureHandle emissive;
         nvrhi::TextureHandle motion;
@@ -290,6 +292,7 @@ protected:
         nvrhi::BufferHandle meshletJobCount = handles.meshletJobCount;
         nvrhi::TextureHandle gbufferAlbedo = handles.albedo;
         nvrhi::TextureHandle gbufferNormals = handles.normals;
+        nvrhi::TextureHandle gbufferGeoNormals = handles.geoNormals;
         nvrhi::TextureHandle gbufferORM = handles.orm;
         nvrhi::TextureHandle gbufferEmissive = handles.emissive;
         nvrhi::TextureHandle gbufferMotionVectors = handles.motion;
@@ -313,6 +316,7 @@ protected:
             .addColorAttachment(gbufferORM)
             .addColorAttachment(gbufferEmissive)
             .addColorAttachment(gbufferMotionVectors)
+            .addColorAttachment(gbufferGeoNormals)
             .setDepthAttachment(depthTexture));
 
         nvrhi::FramebufferInfoEx fbInfo;
@@ -327,7 +331,8 @@ protected:
                 Renderer::GBUFFER_NORMALS_FORMAT,
                 Renderer::GBUFFER_ORM_FORMAT,
                 Renderer::GBUFFER_EMISSIVE_FORMAT,
-                Renderer::GBUFFER_MOTION_FORMAT
+                Renderer::GBUFFER_MOTION_FORMAT,
+                Renderer::GBUFFER_NORMALS_FORMAT  // GeoNormals: same format as Normals
             };
         }
         fbInfo.setDepthFormat(Renderer::DEPTH_FORMAT);
@@ -543,6 +548,7 @@ public:
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
         renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferGeoNormals);
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
@@ -581,6 +587,7 @@ public:
         handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write) : nullptr;
         handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
         handles.normals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+        handles.geoNormals = renderGraph.GetTexture(g_RG_GBufferGeoNormals, RGResourceAccessMode::Write);
         handles.orm = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
         handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
         handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
@@ -643,6 +650,7 @@ public:
         renderGraph.WriteTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_GBufferAlbedo);
         renderGraph.WriteTexture(g_RG_GBufferNormals);
+        renderGraph.WriteTexture(g_RG_GBufferGeoNormals);
         renderGraph.WriteTexture(g_RG_GBufferORM);
         renderGraph.WriteTexture(g_RG_GBufferEmissive);
         renderGraph.WriteTexture(g_RG_GBufferMotionVectors);
@@ -676,6 +684,7 @@ public:
         handles.hzb = renderer->m_EnableOcclusionCulling ? renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Read) : nullptr;
         handles.albedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
         handles.normals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+        handles.geoNormals = renderGraph.GetTexture(g_RG_GBufferGeoNormals, RGResourceAccessMode::Write);
         handles.orm = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
         handles.emissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
         handles.motion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);

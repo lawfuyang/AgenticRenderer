@@ -34,6 +34,7 @@ RGTextureHandle g_RG_RTXDIDIComposited;       // CompositingPass output — read
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferAlbedo;
 extern RGTextureHandle g_RG_GBufferNormals;
+extern RGTextureHandle g_RG_GBufferGeoNormals;
 extern RGTextureHandle g_RG_GBufferORM;
 extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_GBufferEmissive;
@@ -317,12 +318,14 @@ public:
     RGTextureHandle m_GBufferAlbedoHistory;
     RGTextureHandle m_GbufferNormalsHistory;
     RGTextureHandle m_GBufferORMHistory;
+    RGTextureHandle m_GeoNormalsHistory;   // previous-frame geo normals
 
     // Track if history textures are newly created in current frame
     bool m_AlbedoHistoryIsNew = false;
     bool m_ORMHistoryIsNew    = false;
     bool m_DepthHistoryIsNew  = false;
     bool m_NormalsHistoryIsNew = false;
+    bool m_GeoNormalsHistoryIsNew = false;
 
     // ------------------------------------------------------------------
     // Per-frame transient RG handles (not needed by other renderers)
@@ -385,7 +388,7 @@ public:
 
         // "medium" preset from FullSample as base, with my own changes
         g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
-        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS; // TODO: change to ReGIR_RIS once it's working
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS;
         g_ReSTIRDI_NumLocalLightUniformSamples = 8;
         g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
         g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
@@ -404,6 +407,10 @@ public:
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
 
         g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = 0u; // disabling this somehow increases image quality?
+        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::None; // TODO: delete this when basic restir di shading is working
+        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;  // TODO: delete this when ReGIR_RIS once it's working
+        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8; // TODO: delete this when ReGIR_RIS once it's working
+        renderer->m_EnableReSTIRDIRelaxDenoising = false; // TODO: delete this when resampling is working
 
         CreateRTXDIContext();
 
@@ -558,6 +565,17 @@ public:
             m_NormalsHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GbufferNormalsHistory);
         }
 
+        // Previous-frame geo normals history.
+        {
+            RGTextureDesc desc;
+            desc.m_NvrhiDesc.width       = width;
+            desc.m_NvrhiDesc.height      = height;
+            desc.m_NvrhiDesc.format      = nvrhi::Format::RG16_FLOAT;
+            desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+            desc.m_NvrhiDesc.debugName   = "GeoNormalsHistory";
+            m_GeoNormalsHistoryIsNew = renderGraph.DeclarePersistentTexture(desc, m_GeoNormalsHistory);
+        }
+
         {
             RGBufferDesc bd;
             bd.m_NvrhiDesc.byteSize = m_Context->GetStaticParameters().NeighborOffsetCount * 2;
@@ -676,6 +694,7 @@ public:
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);
         renderGraph.ReadTexture(g_RG_GBufferNormals);
+        renderGraph.ReadTexture(g_RG_GBufferGeoNormals);
         renderGraph.ReadTexture(g_RG_GBufferORM);
         renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
         renderGraph.ReadTexture(g_RG_GBufferEmissive);
@@ -946,6 +965,7 @@ public:
         nvrhi::TextureHandle depthTex        = renderGraph.GetTexture(g_RG_DepthTexture,         RGResourceAccessMode::Read);
         nvrhi::TextureHandle albedoTex       = renderGraph.GetTexture(g_RG_GBufferAlbedo,        RGResourceAccessMode::Read);
         nvrhi::TextureHandle normalsTex      = renderGraph.GetTexture(g_RG_GBufferNormals,       RGResourceAccessMode::Read);
+        nvrhi::TextureHandle geoNormalsTex    = renderGraph.GetTexture(g_RG_GBufferGeoNormals,    RGResourceAccessMode::Read);
         nvrhi::TextureHandle ormTex          = renderGraph.GetTexture(g_RG_GBufferORM,           RGResourceAccessMode::Read);
         nvrhi::TextureHandle motionTex       = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Read);
         nvrhi::TextureHandle emissiveTex     = renderGraph.GetTexture(g_RG_GBufferEmissive,      RGResourceAccessMode::Read);
@@ -958,6 +978,7 @@ public:
 
         // FullSample per-frame textures (member variables)
         nvrhi::TextureHandle denoiserNRTex    = renderGraph.GetTexture(m_RG_DenoiserNormalRoughness, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle geoNormalsHistTex= renderGraph.GetTexture(m_GeoNormalsHistory,        RGResourceAccessMode::Write);
         nvrhi::TextureHandle linearDepthTex   = renderGraph.GetTexture(m_RG_LinearDepth,         RGResourceAccessMode::Write);
         nvrhi::TextureHandle compositedTex    = renderGraph.GetTexture(g_RG_RTXDIDIComposited,   RGResourceAccessMode::Write);
 
@@ -1011,6 +1032,8 @@ public:
             commandList->copyTexture(depthHistoryTex,  nvrhi::TextureSlice{}, depthTex,    nvrhi::TextureSlice{});
         if (m_NormalsHistoryIsNew)
             commandList->copyTexture(normalsHistoryTex,nvrhi::TextureSlice{}, normalsTex,  nvrhi::TextureSlice{});
+        if (m_GeoNormalsHistoryIsNew)
+            commandList->copyTexture(geoNormalsHistTex, nvrhi::TextureSlice{}, geoNormalsTex, nvrhi::TextureSlice{});
 
         // ------------------------------------------------------------------
         // Initialize neighbor offsets buffer on first allocation
@@ -1092,12 +1115,12 @@ public:
             // SRVs
             nvrhi::BindingSetItem::TypedBuffer_SRV(0,  neighborOffsetsBuf),
             nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-            nvrhi::BindingSetItem::Texture_SRV(2,  cr.DummySRVTexture),  // t_GBufferGeoNormals — removed, use normals directly
+            nvrhi::BindingSetItem::Texture_SRV(2,  geoNormalsTex),  // t_GBufferGeoNormals — direct GBuffer geo normals
             nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
             nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
             nvrhi::BindingSetItem::Texture_SRV(5,  normalsTex),
             nvrhi::BindingSetItem::Texture_SRV(6,  normalsHistoryTex),  // prev shading normals
-            nvrhi::BindingSetItem::Texture_SRV(7,  cr.DummySRVTexture),  // t_PrevGBufferGeoNormals — removed
+            nvrhi::BindingSetItem::Texture_SRV(7,  geoNormalsHistTex),  // prev geo normals
             nvrhi::BindingSetItem::Texture_SRV(8,  albedoHistoryTex),
             nvrhi::BindingSetItem::Texture_SRV(9,  ormHistoryTex),
             nvrhi::BindingSetItem::Texture_SRV(10, cr.DummySRVTexture),  // u_RestirLuminance — not used
@@ -1499,6 +1522,7 @@ public:
         commandList->copyTexture(ormHistoryTex,     nvrhi::TextureSlice{}, ormTex,        nvrhi::TextureSlice{});
         commandList->copyTexture(depthHistoryTex,   nvrhi::TextureSlice{}, depthTex,      nvrhi::TextureSlice{});
         commandList->copyTexture(normalsHistoryTex, nvrhi::TextureSlice{}, normalsTex,    nvrhi::TextureSlice{});
+        commandList->copyTexture(geoNormalsHistTex, nvrhi::TextureSlice{}, geoNormalsTex, nvrhi::TextureSlice{});
 
         // Copy current TLAS to history for next frame
         if (m_TLASHistory && renderer->m_Scene.m_TLAS)

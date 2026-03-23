@@ -6,6 +6,7 @@ RGTextureHandle g_RG_DepthTexture;
 RGTextureHandle g_RG_HZBTexture;
 RGTextureHandle g_RG_GBufferAlbedo;
 RGTextureHandle g_RG_GBufferNormals;
+RGTextureHandle g_RG_GBufferGeoNormals;
 RGTextureHandle g_RG_GBufferORM;
 RGTextureHandle g_RG_GBufferEmissive;
 RGTextureHandle g_RG_GBufferMotionVectors;
@@ -75,7 +76,12 @@ public:
             gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_NORMALS_FORMAT;
             gbufferDesc.m_NvrhiDesc.debugName = "GBufferNormals_RG";
             renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferNormals);
-            
+
+            // Geo Normals: RG16_FLOAT (geometric primitive normal, no normal map)
+            gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_NORMALS_FORMAT;
+            gbufferDesc.m_NvrhiDesc.debugName = "GBufferGeoNormals_RG";
+            renderGraph.DeclareTexture(gbufferDesc, g_RG_GBufferGeoNormals);
+
             // ORM: RGBA8
             gbufferDesc.m_NvrhiDesc.format = Renderer::GBUFFER_ORM_FORMAT;
             gbufferDesc.m_NvrhiDesc.debugName = "GBufferORM_RG";
@@ -136,6 +142,7 @@ public:
             nvrhi::TextureHandle depthTexture = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferAlbedo = renderGraph.GetTexture(g_RG_GBufferAlbedo, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferNormals = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Write);
+            nvrhi::TextureHandle gbufferGeoNormals = renderGraph.GetTexture(g_RG_GBufferGeoNormals, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferORM = renderGraph.GetTexture(g_RG_GBufferORM, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferEmissive = renderGraph.GetTexture(g_RG_GBufferEmissive, RGResourceAccessMode::Write);
             nvrhi::TextureHandle gbufferMotion = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Write);
@@ -146,6 +153,7 @@ public:
             // clear gbuffers
             commandList->clearTextureFloat(gbufferAlbedo, nvrhi::AllSubresources, nvrhi::Color{});
             commandList->clearTextureFloat(gbufferNormals, nvrhi::AllSubresources, nvrhi::Color{});
+            commandList->clearTextureFloat(gbufferGeoNormals, nvrhi::AllSubresources, nvrhi::Color{});
             commandList->clearTextureFloat(gbufferORM, nvrhi::AllSubresources, nvrhi::Color{});
             commandList->clearTextureFloat(gbufferEmissive, nvrhi::AllSubresources, nvrhi::Color{});
             commandList->clearTextureFloat(gbufferMotion, nvrhi::AllSubresources, nvrhi::Color{});

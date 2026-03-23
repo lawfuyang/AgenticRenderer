@@ -24,12 +24,12 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 // ---- G-buffer SRVs (match RTXDIRenderer.cpp binding layout) ----
 // t0  = t_NeighborOffsets
 // t1  = t_GBufferDepth
-// t2  = (dummy — GeoNormals removed, use shading normals directly)
+// t2  = t_GBufferGeoNormals     (RG16_FLOAT: oct-encoded geometric normal, PostprocessGBuffer output)
 // t3  = t_GBufferAlbedo          (RGBA8_UNORM: baseColor.rgb + alpha)
 // t4  = t_GBufferORM             (RG8_UNORM: roughness=.r, metallic=.g)
 // t5  = t_GBufferNormals         (RG16_FLOAT: encoded, decoded via DecodeNormal)
 // t6  = t_PrevGBufferNormals     (= m_GbufferNormalsHistory)
-// t7  = (dummy — PrevGeoNormals removed)
+// t7  = t_PrevGBufferGeoNormals  (= m_GeoNormalsHistory)
 // t8  = t_PrevGBufferAlbedo      (= m_GBufferAlbedoHistory)
 // t9  = t_PrevGBufferORM         (= m_GBufferORMHistory)
 // t10 = (dummy — was PrevRestirLuminance, no Gradient pass)
@@ -52,12 +52,12 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
 Buffer<float2>                              t_NeighborOffsets           : register(t0);
 Texture2D<float>                            t_GBufferDepth              : register(t1);
-// t2: dummy (GeoNormals removed)
+Texture2D<float2>                           t_GBufferGeoNormals         : register(t2);  // PostprocessGBuffer geo normal output
 Texture2D<float4>                           t_GBufferAlbedo             : register(t3);  // RGBA8_UNORM: baseColor.rgb + alpha
 Texture2D<float2>                           t_GBufferORM                : register(t4);  // RG8_UNORM: roughness=.r, metallic=.g
 Texture2D<float2>                           t_GBufferNormals            : register(t5);  // RG16_FLOAT: encoded, use DecodeNormal
 Texture2D<float2>                           t_PrevGBufferNormals        : register(t6);  // = m_GbufferNormalsHistory
-// t7: dummy (PrevGeoNormals removed)
+Texture2D<float2>                           t_PrevGBufferGeoNormals     : register(t7);  // = m_GeoNormalsHistory
 Texture2D<float4>                           t_PrevGBufferAlbedo         : register(t8);  // = m_GBufferAlbedoHistory
 Texture2D<float2>                           t_PrevGBufferORM            : register(t9);  // = m_GBufferORMHistory
 // t10: dummy (no Gradient pass — PrevRestirLuminance removed)
