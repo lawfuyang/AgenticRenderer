@@ -1002,12 +1002,29 @@ public:
             nvrhi::TextureSubresourceSet(0, 1, 0, 1),
             nvrhi::Color(0.f));
 
-        // Bruneton sky path has no BuildEnvLightPDF pass writing mip0, so initialize it explicitly.
-        // Uniform 1.0 mip0 gives uniform environment sampling; SPD then builds the mip chain.
-        commandList->clearTextureFloat(
-            envLightPDFTex,
-            nvrhi::TextureSubresourceSet(0, 1, 0, 1),
-            nvrhi::Color(1.f));
+        // Build Environment-Light PDF mip-0 from Bruneton sky luminance.
+        // This replaces the old uniform clear (1.0) with an importance-sampled PDF
+        // that reflects the actual sky distribution (bright horizon, dark zenith, etc.).
+        // When sky is disabled, the shader writes uniform 1.0 as a fallback.
+        {
+            nvrhi::BindingSetDesc buildEnvPDFBset;
+            buildEnvPDFBset.bindings = {
+                nvrhi::BindingSetItem::ConstantBuffer(0, rtxdiCB),
+                nvrhi::BindingSetItem::Texture_UAV(27, envLightPDFTex,
+                    nvrhi::Format::UNKNOWN,
+                    nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
+            };
+            renderer->AddComputePass({
+                .commandList    = commandList,
+                .shaderName     = "rtxdi/LightingPasses/Presampling/BuildEnvLightPDF_main",
+                .bindingSetDesc = buildEnvPDFBset,
+                .dispatchParams = {
+                    .x = DivideAndRoundUp(k_EnvPDFTexSize, 8u),
+                    .y = DivideAndRoundUp(k_EnvPDFTexSize, 8u),
+                    .z = 1u
+                }
+            });
+        }
 
         nvrhi::BufferHandle  prepareLightsTaskBuf= renderGraph.GetBuffer(m_RG_PrepareLightsTasks,    RGResourceAccessMode::Write);
         nvrhi::BufferHandle  primitiveLightBuf   = renderGraph.GetBuffer(m_RG_PrimitiveLightBuffer,   RGResourceAccessMode::Write);
@@ -1107,7 +1124,7 @@ public:
         // u24 = u_PSRDiffuseAlbedo
         // u25 = u_PSRSpecularF0
         // u26 = u_PSRLightDir
-        // u27 = u_EnvLightPdfMip0 (used only in BuildEnvLightPDF)
+        // u27 = u_EnvLightPdfMip0 (BuildEnvLightPDF writes mip-0 of env PDF texture)
         // ------------------------------------------------------------------
 
         nvrhi::BindingSetDesc bset;
@@ -1312,6 +1329,45 @@ public:
         }
 
         // ------------------------------------------------------------------
+        // Write the kEnvironment light directly to the light data buffer.
+        // This bypasses PrepareLights.hlsl (which would write getPower()=0 to
+        // the local light PDF texture at the env light's index, corrupting it).
+        // The env light entry is at lbp.environmentLightParams.lightIndex.
+        // ------------------------------------------------------------------
+        if (renderer->m_EnableSky)
+        {
+            auto f32tof16 = [](float v) -> uint32_t {
+                uint32_t bits;
+                std::memcpy(&bits, &v, 4);
+                uint32_t sign     = (bits >> 31u) & 1u;
+                uint32_t exponent = (bits >> 23u) & 0xFFu;
+                uint32_t mantissa = bits & 0x7FFFFFu;
+                if (exponent == 0u) return sign << 15u;
+                int32_t  e16 = static_cast<int32_t>(exponent) - 127 + 15;
+                if (e16 <= 0) return sign << 15u;
+                if (e16 >= 31) return (sign << 15u) | (0x1Fu << 10u);
+                return (sign << 15u) | (static_cast<uint32_t>(e16) << 10u) | (mantissa >> 13u);
+            };
+
+            PolymorphicLightInfo envInfo{};
+            // Type = kEnvironment
+            envInfo.colorTypeAndFlags = static_cast<uint32_t>(PolymorphicLightType::kEnvironment)
+                                      << kPolymorphicLightTypeShift;
+            // radianceScale = white (1,1,1) — actual radiance is computed procedurally in the shader
+            PackLightColor({ 1.f, 1.f, 1.f }, envInfo);
+            // direction1 = 0xFFFFFFFF → textureIndex = -1 → no texture, use procedural Bruneton sky
+            envInfo.direction1 = static_cast<uint32_t>(-1);
+            // scalars: low 16 bits = rotation (0.0f), high 16 bits = importanceSampled (1)
+            envInfo.scalars = f32tof16(0.0f) | (f32tof16(1.0f) << 16u);
+            // direction2: texture size (width in low 16 bits, height in high 16 bits)
+            envInfo.direction2 = (k_EnvPDFTexSize & 0xFFFFu) | (k_EnvPDFTexSize << 16u);
+
+            const uint64_t byteOffset = static_cast<uint64_t>(lbp.environmentLightParams.lightIndex)
+                                      * sizeof(PolymorphicLightInfo);
+            commandList->writeBuffer(lightDataBuf, &envInfo, sizeof(envInfo), byteOffset);
+        }
+
+        // ------------------------------------------------------------------
         // Build Local-Light PDF mip chain + presample
         // Mip-0 is now written directly by PrepareLights.hlsl (u4).
         // We only need to generate the remaining mips via SPD and presample.
@@ -1340,10 +1396,9 @@ public:
 
         // ------------------------------------------------------------------
         // Build Environment-Light PDF mip chain + presample
-        // The env PDF texture is initialized to uniform (1.0) by the GPU clear
-        // on first use; we only need to generate mips and presample.
-        // (Bruneton sky has no texture to sample from, so uniform env sampling
-        //  is used — no custom BuildEnvironmentLightPDF pass needed.)
+        // Mip-0 is now written every frame by BuildEnvLightPDF_main (above),
+        // which samples the Bruneton sky to produce an importance-sampled PDF.
+        // We generate the remaining mips via SPD and then presample.
         // ------------------------------------------------------------------
         if (renderer->m_EnableSky)
         {
@@ -1766,11 +1821,14 @@ private:
         lbp.infiniteLightBufferRegion.firstLightIndex = lbp.localLightBufferRegion.numLights;
         lbp.infiniteLightBufferRegion.numLights       = static_cast<uint32_t>(infiniteLights.size());
 
-        // This renderer currently does not append a kEnvironment polymorphic light into
-        // the RTXDI light buffer (sky is evaluated procedurally in RAB_GetEnvironmentRadiance).
-        // Therefore keep RTXDI environment-light entry disabled to avoid invalid light-buffer reads.
-        lbp.environmentLightParams.lightPresent = 0u;
-        lbp.environmentLightParams.lightIndex   = lbp.infiniteLightBufferRegion.firstLightIndex + lbp.infiniteLightBufferRegion.numLights;
+        // The kEnvironment light is NOT added to outPrimitiveLights because PrepareLights.hlsl
+        // would write getPower()=0 to the local light PDF texture at the env light's index,
+        // corrupting the PDF. Instead, the env light PolymorphicLightInfo is written directly
+        // to the light data buffer in Execute() via commandList->writeBuffer after PrepareLights.
+        const uint32_t envLightIndex = lbp.infiniteLightBufferRegion.firstLightIndex
+                                     + lbp.infiniteLightBufferRegion.numLights;
+        lbp.environmentLightParams.lightPresent = renderer->m_EnableSky ? 1u : 0u;
+        lbp.environmentLightParams.lightIndex   = envLightIndex;
 
         return lbp;
     }

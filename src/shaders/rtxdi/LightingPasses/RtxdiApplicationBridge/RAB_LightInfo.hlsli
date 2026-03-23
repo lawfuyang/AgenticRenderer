@@ -14,8 +14,10 @@
 #define RAB_LIGHT_INFO_HLSLI
 
 #include "../../PolymorphicLight.hlsli"
+#include "RAB_Buffers.hlsli"
 #include "RAB_Surface.hlsli"
 #include "RAB_LightSample.hlsli"
+#include "../../Atmosphere.hlsli"
 
 typedef PolymorphicLightInfo RAB_LightInfo;
 
@@ -79,6 +81,27 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
     lightSample.radiance = pls.radiance;
     lightSample.solidAnglePdf = pls.solidAnglePdf;
     lightSample.lightType = getLightType(lightInfo);
+
+    // For the Bruneton procedural sky (kEnvironment with textureIndex == -1),
+    // PolymorphicLight::calcSample returns radianceScale (a flat constant) as radiance
+    // because there is no texture to sample. Override it here with the actual sky radiance
+    // from the precomputed Bruneton atmosphere tables.
+    //
+    // We exclude the sun disk (bAddSunDisk=false) to avoid double-counting with the
+    // directional sun light which is handled as a separate RTXDI light.
+    if (lightSample.lightType == PolymorphicLightType::kEnvironment
+        && g_Const.sceneConstants.enableEnvironmentMap != 0)
+    {
+        // Recover the sample direction from the position (position = viewerPos + dir * DISTANT_LIGHT_DISTANCE)
+        float3 sampleDir = normalize(pls.position - surface.worldPos);
+        lightSample.radiance = GetAtmosphereSkyRadiance(
+            float3(0.0f, 0.0f, 0.0f),
+            sampleDir,
+            g_Const.sceneConstants.sunDirection,
+            g_Const.sceneConstants.sunIntensity,
+            false); // exclude sun disk — handled as a separate directional light
+    }
+
     return lightSample;
 }
 
