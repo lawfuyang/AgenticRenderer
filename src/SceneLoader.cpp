@@ -1221,6 +1221,14 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 		scene.m_Materials.back().m_EmissiveFactor.x = data->materials[i].emissive_factor[0];
 		scene.m_Materials.back().m_EmissiveFactor.y = data->materials[i].emissive_factor[1];
 		scene.m_Materials.back().m_EmissiveFactor.z = data->materials[i].emissive_factor[2];
+		
+		if (data->materials[i].has_emissive_strength)
+		{
+			float strength = data->materials[i].emissive_strength.emissive_strength;
+			scene.m_Materials.back().m_EmissiveFactor.x *= strength;
+			scene.m_Materials.back().m_EmissiveFactor.y *= strength;
+			scene.m_Materials.back().m_EmissiveFactor.z *= strength;
+		}
 
 		if (data->materials[i].alpha_mode == cgltf_alpha_mode_mask)
 		{
