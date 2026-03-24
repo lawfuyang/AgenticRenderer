@@ -120,20 +120,31 @@ RAB_Surface GetGBufferSurface(
     if (any(pixelPosition >= int2(view.m_ViewportSize)))
         return surface;
 
-    surface.viewDepth = depthTexture[pixelPosition];
+    float rawDepth = depthTexture[pixelPosition];
 
-    if(surface.viewDepth == BACKGROUND_DEPTH)
-        return surface;
+    // Reversed-Z: far plane maps to rawDepth == 0 (background/sky).
+    if (rawDepth == 0.0f)
+        return surface; // surface.viewDepth == BACKGROUND_DEPTH from RAB_EmptySurface()
+
+    // Convert raw NDC depth to linear view-space depth using the clip-to-view matrix.
+    // mul(float4(0,0,rawDepth,1), m_MatClipToView) gives the view-space position;
+    // dividing .z by .w yields the linear view-space Z (positive = in front of camera).
+    {
+        float4 clipPos  = float4(0.0f, 0.0f, rawDepth, 1.0f);
+        float4 viewPos  = MatrixMultiply(clipPos, view.m_MatClipToView);
+        surface.viewDepth = viewPos.z / viewPos.w;
+    }
 
     surface.material = RAB_GetGBufferMaterial(pixelPosition, previousFrame);
 
     surface.geoNormal = DecodeNormal(geoNormalsTexture[pixelPosition]);
     surface.normal = DecodeNormal(normalsTexture[pixelPosition]);
 
-    // Reconstruct world position from clip-space depth using HobbyRenderer's view constants
+    // Reconstruct world position from clip-space depth using HobbyRenderer's view constants.
+    // Use the raw NDC depth here (correct clip-space Z for the world-pos reconstruction).
     {
         float2 uv = (float2(pixelPosition) + 0.5f) / float2(view.m_ViewportSize);
-        float4 clipPos = float4(uv * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), surface.viewDepth, 1.0f);
+        float4 clipPos = float4(uv * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), rawDepth, 1.0f);
         float4 worldPosFour = MatrixMultiply(clipPos, view.m_MatClipToWorldNoOffset);
         surface.worldPos = worldPosFour.xyz / worldPosFour.w;
     }

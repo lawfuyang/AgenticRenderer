@@ -158,17 +158,6 @@ RWTexture2D<uint>                           u_PTDuplicationMap          : regist
 #define RTXDI_PT_RESERVOIR_BUFFER       u_PTReservoirs
 #define IES_SAMPLER                     SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
 
-// Converts a motion vector from NDC-space XY to pixel-space XY offset.
-float3 convertMotionVectorToPixelSpace(
-    PlanarViewConstants view,
-    PlanarViewConstants prevView,
-    int2 pixelPosition,
-    float3 motionVector)
-{
-    float2 pixelMotion = motionVector.xy * view.m_ClipToWindowScale;
-    return float3(pixelMotion, motionVector.z);
-}
-
 // Translates a light index between frames.
 // Since lights don't stream in/out, the index is always stable — return it unchanged.
 int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)

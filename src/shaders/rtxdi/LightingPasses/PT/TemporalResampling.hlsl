@@ -32,7 +32,7 @@ float3 LoadMotionVector(uint2 pixelPosition)
 	float3 motionVector = g_Const.usePSRMvecForResampling
 		? u_PSRMotionVectors[pixelPosition].xyz
 		: t_MotionVectors[pixelPosition].xyz;
-    motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+    motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 	return motionVector;
 }
 

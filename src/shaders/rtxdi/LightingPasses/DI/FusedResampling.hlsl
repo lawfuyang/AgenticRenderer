@@ -66,7 +66,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
     int2 temporalSamplePixelPos = -1;
 
     float3 motionVector = t_MotionVectors[pixelPosition].xyz;
-    motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+    motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
     bool usePermutationSampling = false;
     if (g_Const.restirDI.temporalResamplingParams.enablePermutationSampling)

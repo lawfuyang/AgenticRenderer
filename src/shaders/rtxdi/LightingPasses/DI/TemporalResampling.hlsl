@@ -51,7 +51,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
             GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
-        motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+        motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
 		uint sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
 

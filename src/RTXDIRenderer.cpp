@@ -407,7 +407,6 @@ public:
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
 
         g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = 0u; // disabling this somehow increases image quality?
-        g_ReSTIRDI_ResamplingMode = rtxdi::ReSTIRDI_ResamplingMode::None; // TODO: delete this when basic restir di shading is working
         g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;  // TODO: delete this when ReGIR_RIS once it's working
         g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8; // TODO: delete this when ReGIR_RIS once it's working
         renderer->m_EnableReSTIRDIRelaxDenoising = false; // TODO: delete this when resampling is working
