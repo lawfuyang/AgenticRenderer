@@ -1818,14 +1818,14 @@ private:
     {
         out = {};
 
-        // Direction from node rotation quaternion (same as SceneLoader)
+        // Direction from node rotation quaternion (same convention as glTF spot lights)
         auto QuatToDir = [](const DirectX::XMFLOAT4& q) -> DirectX::XMFLOAT3 {
-            // Forward = (0,0,-1) rotated by q
+            // Forward = local -Z rotated by q
             float x = q.x, y = q.y, z = q.z, w = q.w;
             return {
-                2.f*(x*z + w*y),
-                2.f*(y*z - w*x),
-                1.f - 2.f*(x*x + y*y)
+                -2.f*(x*z + w*y),
+                -2.f*(y*z - w*x),
+                -1.f + 2.f*(x*x + y*y)
             };
         };
 
@@ -1886,22 +1886,39 @@ private:
         }
         case Scene::Light::Spot:
         {
-            float projArea = DirectX::XM_PI * light.m_Radius * light.m_Radius;
-            float radiance = (projArea > 0.f) ? light.m_Intensity / projArea : light.m_Intensity;
-            DirectX::XMFLOAT3 col = { light.m_Color.x * radiance,
-                                      light.m_Color.y * radiance,
-                                      light.m_Color.z * radiance };
             float softness = (light.m_SpotOuterConeAngle > 0.f)
                 ? std::max(0.f, std::min(1.f, 1.f - light.m_SpotInnerConeAngle / light.m_SpotOuterConeAngle))
                 : 0.f;
 
-            out.colorTypeAndFlags = (static_cast<uint32_t>(PolymorphicLightType::kSphere)
-                                     << kPolymorphicLightTypeShift)
-                                  | kPolymorphicLightShapingEnableBit;
-            PackLightColor(col, out);
-            out.center  = { node.m_Translation.x, node.m_Translation.y, node.m_Translation.z };
-            out.scalars = PackFloat2ToUint(light.m_Radius, 0.f);
-            DirectX::XMFLOAT3 dir = Normalize3(QuatToDir(node.m_Rotation));
+            out.center = { node.m_Translation.x, node.m_Translation.y, node.m_Translation.z };
+
+            if (light.m_Radius > 0.f)
+            {
+                float projArea = DirectX::XM_PI * light.m_Radius * light.m_Radius;
+                float radiance = (projArea > 0.f) ? light.m_Intensity / projArea : 0.f;
+                Vector3 col = { light.m_Color.x * radiance,
+                                          light.m_Color.y * radiance,
+                                          light.m_Color.z * radiance };
+
+                out.colorTypeAndFlags = (static_cast<uint32_t>(PolymorphicLightType::kSphere)
+                                         << kPolymorphicLightTypeShift)
+                                      | kPolymorphicLightShapingEnableBit;
+                PackLightColor(col, out);
+                out.scalars = PackFloat2ToUint(light.m_Radius, 0.f);
+            }
+            else
+            {
+                Vector3 flux = { light.m_Color.x * light.m_Intensity,
+                                           light.m_Color.y * light.m_Intensity,
+                                           light.m_Color.z * light.m_Intensity };
+
+                out.colorTypeAndFlags = (static_cast<uint32_t>(PolymorphicLightType::kPoint)
+                                         << kPolymorphicLightTypeShift)
+                                      | kPolymorphicLightShapingEnableBit;
+                PackLightColor(flux, out);
+            }
+
+            Vector3 dir = Normalize3(QuatToDir(node.m_Rotation));
             out.primaryAxis = PackNormalizedVector(dir);
             out.cosConeAngleAndSoftness = PackFloat2ToUint(
                 std::cos(light.m_SpotOuterConeAngle), softness);

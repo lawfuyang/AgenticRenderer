@@ -550,9 +550,9 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light)
 
     // Spot falloff culling
     float3 lightDir = normalize(light.m_Direction);
-    float cosTheta = dot(L, lightDir);
+    float cosTheta = dot(-L, lightDir);
     float cosOuter = cos(light.m_SpotOuterConeAngle);
-    if (cosTheta > cosOuter) return result;
+    if (cosTheta < cosOuter) return result;
 
     // Spot falloff math
     float cosInner = cos(light.m_SpotInnerConeAngle);
@@ -832,9 +832,9 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light, in
 
     // Spot cone attenuation — use centre direction only (not jittered sample)
     float3 lightDir        = normalize(light.m_Direction);
-    float  cosTheta_center = dot(L_center, lightDir);
+    float  cosTheta_center = dot(-L_center, lightDir);
     float  cosOuter        = cos(light.m_SpotOuterConeAngle);
-    if (cosTheta_center > cosOuter) return result;
+    if (cosTheta_center < cosOuter) return result;
 
     float cosInner        = cos(light.m_SpotInnerConeAngle);
     float spotAttenuation = saturate((cosTheta_center - cosOuter) / (cosInner - cosOuter));

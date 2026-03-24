@@ -443,8 +443,8 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 						for (int ki = 0; ki < nKeys; ++ki)
 						{
 							if (json_strcmp(ctx, ct, "intensity")) light.m_Intensity = json_get_float(ctx, ct + 1);
-							else if (json_strcmp(ctx, ct, "innerAngle")) light.m_SpotInnerConeAngle = json_get_float(ctx, ct + 1);
-							else if (json_strcmp(ctx, ct, "outerAngle")) light.m_SpotOuterConeAngle = json_get_float(ctx, ct + 1);
+							else if (json_strcmp(ctx, ct, "innerAngle")) light.m_SpotInnerConeAngle = DirectX::XMConvertToRadians(json_get_float(ctx, ct + 1));
+							else if (json_strcmp(ctx, ct, "outerAngle")) light.m_SpotOuterConeAngle = DirectX::XMConvertToRadians(json_get_float(ctx, ct + 1));
 							else if (json_strcmp(ctx, ct, "radius")) light.m_Radius = json_get_float(ctx, ct + 1);
 							else if (json_strcmp(ctx, ct, "range")) light.m_Range = json_get_float(ctx, ct + 1);
 							else if (json_strcmp(ctx, ct, "color")) light.m_Color = json_get_vec3(ctx, ct + 1);
