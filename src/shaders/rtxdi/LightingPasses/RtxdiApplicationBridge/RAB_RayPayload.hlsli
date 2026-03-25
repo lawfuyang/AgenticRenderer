@@ -13,6 +13,8 @@
 #ifndef RAB_RAY_PAYLOAD_HLSLI
 #define RAB_RAY_PAYLOAD_HLSLI
 
+#include "../../RaytracingCommon.hlsli"
+
 struct RAB_RayPayload
 {
     float3 throughput;
@@ -50,8 +52,24 @@ float3 RAB_RayPayloadGetEmittedRadiance(RAB_RayPayload rayPayload)
     PerInstanceData instance = t_InstanceData[rayPayload.instanceID];
     MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
 
-    // Return emissive color directly from material constants
-    return mat.m_EmissiveFactor.rgb;
+    float3 emissive = mat.m_EmissiveFactor.rgb;
+
+    // Sample emissive texture if present (matching FullSample's sampleGeometryMaterial behavior)
+    if ((mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
+    {
+        MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
+        float2 uv = GetInterpolatedUV(
+            rayPayload.primitiveIndex,
+            instance.m_LODIndex,
+            rayPayload.barycentrics,
+            geometry,
+            t_SceneIndices,
+            t_SceneVertices);
+
+        emissive *= SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, uv, 0).rgb;
+    }
+
+    return emissive;
 }
 
 #endif // RAB_RAY_PAYLOAD_HLSLI
