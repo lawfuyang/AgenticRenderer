@@ -18,7 +18,7 @@
  *
  * Binding layout:
  *   b0 = ResamplingConstants (g_Const)  — provides sunDirection, sunIntensity, enableEnvironmentMap
- *   u27 = u_EnvLightPdfMip0            — RWTexture2D<float>, mip-0 of the env PDF texture
+ *   u0 = u_EnvLightPdfMip0            — RWTexture2D<float>, mip-0 of the env PDF texture
  */
 
 #pragma pack_matrix(row_major)
@@ -32,7 +32,7 @@
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
 // Mip-0 of the env PDF texture, bound as a UAV so we can write it.
-RWTexture2D<float> u_EnvLightPdfMip0 : register(u27);
+RWTexture2D<float> u_EnvLightPdfMip0 : register(u0);
 
 [numthreads(8, 8, 1)]
 void main(uint2 GlobalIndex : SV_DispatchThreadID)

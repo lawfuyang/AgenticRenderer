@@ -34,11 +34,6 @@ between the bridge functions.
 #include "SharedShaderInclude/ShaderParameters.h"
 #include "RAB_Buffers.hlsli"
 
-// Debug includes
-#include "../../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
-#include "../../ShaderDebug/PTPathViz/PTPathVizRecording.hlsli"
-
-#include "PathTracer/RAB_PathTracerUserData.hlsli"
 #include "RAB_LightInfo.hlsli"
 #include "RAB_LightSample.hlsli"
 #include "RAB_LightSampling.hlsli"
@@ -47,8 +42,6 @@ between the bridge functions.
 #include "RAB_RTShaders.hlsli"
 #include "RAB_SpatialHelpers.hlsli"
 #include "RAB_Surface.hlsli"
-#include "PathTracer/RAB_DenoiserCallbacks.hlsli"
-#include "PathTracer/RAB_MISCallbacks.hlsli"
 #include "RAB_VisibilityTest.hlsli"
 #include "../ShadingHelpers.hlsli"
 

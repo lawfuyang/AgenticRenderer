@@ -78,9 +78,4 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
 
     StoreShadingOutput(GlobalIndex, pixelPosition,
         surface.viewDepth, surface.material.roughness, diffuse, specular, lightDistance, true, g_Const.restirDI.shadingParams.enableDenoiserInputPacking);
-
-    if (g_Const.debug.outputDebugDirectLighting)
-    {
-        u_DirectLightingRaw[pixelPosition] = float4(diffuse + specular, 1.0);
-    }
 }

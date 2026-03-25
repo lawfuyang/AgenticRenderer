@@ -47,12 +47,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
     trrParams.prevCameraPos = g_Const.prevView.m_CameraDirectionOrPosition.xyz;
     trrParams.prevPrevCameraPos = g_Const.prevPrevView.m_CameraDirectionOrPosition.xyz;
 
-	ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(trrParams.pixelPosition);
-    if (all(trrParams.pixelPosition == g_Const.debug.mouseSelectedPixel))
-    {
-        Debug_EnablePTPathRecording();
-    }
-
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(trrParams.pixelPosition, g_Const.runtimeParams.frameIndex, RTXDI_PT_TEMPORAL_RESAMPLING_RANDOM_SEED);
     RAB_PathTracerUserData ptud = RAB_EmptyPathTracerUserData();
     ptud.psr.primarySurfaceWorldPos = float3(0, 0, 0);

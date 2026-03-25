@@ -96,8 +96,6 @@ void main(uint2 globalIndex : SV_DispatchThreadID)
 		return;
 	}
 
-	ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
-
 	RTXDI_PTReservoir ptReservoir = RTXDI_LoadPTReservoir(g_Const.restirPT.reservoirBuffer, reservoirPosition, g_Const.restirPT.bufferIndices.finalShadingInputBufferIndex);
 
 

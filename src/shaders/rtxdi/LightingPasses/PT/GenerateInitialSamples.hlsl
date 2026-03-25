@@ -26,19 +26,11 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     const uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
     const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
 
-    ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
-
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
     if (!RAB_IsSurfaceValid(surface))
     {
     	return;
-    }
-
-	if(all(pixelPosition == g_Const.debug.mouseSelectedPixel))
-    {
-        Debug_EnablePTPathRecording();
-        Debug_CleanPTPathRecord();
     }
 
     RTXDI_PathTracerRandomContext ptRandContext = RTXDI_InitializePathTracerRandomContext(pixelPosition, g_Const.runtimeParams.frameIndex, RTXDI_PT_GENERATE_INITIAL_SAMPLES_RANDOM_SEED, RTXDI_PT_GENERATE_INITIAL_SAMPLES_REPLAY_RANDOM_SEED);

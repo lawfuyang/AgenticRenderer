@@ -78,8 +78,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
     reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, surface, reservoir,
             rng, motionVector, g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex, params, g_Const.restirDI.reservoirBufferParams, g_Const.restirDI.spatioTemporalResamplingParams, temporalSamplePixelPos, lightSample);
 
-    u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
-
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.restirDI.boilingFilterParams.enableBoilingFilter)
     {

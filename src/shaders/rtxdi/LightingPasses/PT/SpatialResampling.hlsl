@@ -25,12 +25,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     const uint2 PixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
     const uint2 ReservoirPosition = RTXDI_PixelPosToReservoirPos(PixelPosition, g_Const.runtimeParams.activeCheckerboardField);
 
-    ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(PixelPosition);
-    if (all(PixelPosition == g_Const.debug.mouseSelectedPixel))
-    {
-        Debug_EnablePTPathRecording();
-    }
-
     RTXDI_PTSpatialResamplingRuntimeParameters srrParams = RTXDI_EmptyPTSpatialResamplingRuntimeParameters();
     srrParams.PixelPosition = PixelPosition;
     srrParams.ReservoirPosition = ReservoirPosition;

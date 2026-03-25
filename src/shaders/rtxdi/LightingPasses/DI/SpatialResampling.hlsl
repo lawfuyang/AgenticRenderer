@@ -13,7 +13,6 @@
 #pragma pack_matrix(row_major)
 
 #include "../RtxdiApplicationBridge/RtxdiApplicationBridge.hlsli"
-#include "../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
 
 #include <Rtxdi/DI/SpatialResampling.hlsli>
 

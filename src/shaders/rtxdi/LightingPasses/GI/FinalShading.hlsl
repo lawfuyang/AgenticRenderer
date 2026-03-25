@@ -13,7 +13,6 @@
 #pragma pack_matrix(row_major)
 
 #include "../RtxdiApplicationBridge/RtxdiApplicationBridge.hlsli"
-#include "../../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
 #include "../ShadingHelpers.hlsli"
 
 #include <Rtxdi/GI/Reservoir.hlsli>
@@ -61,8 +60,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     if (any(pixelPosition > int2(g_Const.view.m_ViewportSize)))
         return;
-
-    ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
 
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -118,9 +115,4 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     StoreShadingOutput(GlobalIndex, pixelPosition,
         primarySurface.viewDepth, primarySurface.material.roughness, diffuse, specular, 0, false, true);
-
-    if (g_Const.debug.outputDebugIndirectLighting)
-    {
-        u_IndirectLightingRaw[pixelPosition] = float4(diffuse + specular, 1.0);
-    }
 }

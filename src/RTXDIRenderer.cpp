@@ -1072,9 +1072,6 @@ public:
         g_Const.enableAccumulation    = 0u;
         g_Const.directLightingMode    = DirectLightingMode::ReStir;
         g_Const.visualizeRegirCells   = 0u;
-        g_Const.enableDenoiserPSR     = 0u;
-        g_Const.usePSRMvecForResampling = 0u;
-        g_Const.updatePSRwithResampling = 0u;
 
         // Upload constant buffers (volatile — recreated every frame)
         const nvrhi::BufferHandle rtxdiCB = device->createBuffer(
@@ -1131,7 +1128,7 @@ public:
             nvrhi::BindingSetDesc buildEnvPDFBset;
             buildEnvPDFBset.bindings = {
                 nvrhi::BindingSetItem::ConstantBuffer(0, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_UAV(27, envLightPDFTex,
+                nvrhi::BindingSetItem::Texture_UAV(0, envLightPDFTex,
                     nvrhi::Format::UNKNOWN,
                     nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
             };
@@ -1187,65 +1184,41 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // FullSample RAB_Buffers.hlsli binding layout
-        // b0 = ResamplingConstants (g_Const)
-        // b1 = PerPassConstants    (g_PerPassConstants)
+        // RAB_Buffers.hlsli binding layout (all passes that use the shared bset)
+        // b0  = ResamplingConstants (g_Const)
         // t0  = t_NeighborOffsets
         // t1  = t_GBufferDepth
         // t2  = t_GBufferGeoNormals
-        // t3  = t_GBufferDiffuseAlbedo
-        // t4  = t_GBufferSpecularRough
+        // t3  = t_GBufferAlbedo
+        // t4  = t_GBufferORM
         // t5  = t_GBufferNormals
         // t6  = t_PrevGBufferNormals
         // t7  = t_PrevGBufferGeoNormals
-        // t8  = t_PrevGBufferDiffuseAlbedo
-        // t9  = t_PrevGBufferSpecularRough
-        // t10 = t_PrevRestirLuminance
-        // t11 = t_MotionVectors
-        // t12 = t_DenoiserNormalRoughness
-        // t13 = t_PrevDepth
-        // t14 = t_LocalLightPdfTexture
-        // t15 = t_EnvironmentPdfTexture
-        // t16 = t_RisBuffer
-        // t17 = t_RisLightDataBuffer
-        // t18 = t_SceneBVH
-        // t19 = t_PrevSceneBVH
-        // t20 = t_LightDataBuffer
-        // t21 = t_LightIndexMappingBuffer
-        // t22 = t_GBufferEmissive
-        // t25 = t_GeometryInstanceToLight
-        // t26 = t_InstanceData
-        // t27 = t_GeometryData
-        // t28 = t_MaterialConstants
-        // t29 = t_BindlessBuffers (handled by bIncludeBindlessResources)
-        // t30 = t_BindlessTextures (handled by bIncludeBindlessResources)
+        // t8  = t_PrevGBufferAlbedo
+        // t9  = t_PrevGBufferORM
+        // t10 = t_MotionVectors
+        // t11 = t_DenoiserNormalRoughness
+        // t12 = t_PrevGBufferDepth
+        // t13 = t_LocalLightPdfTexture
+        // t14 = t_EnvironmentPdfTexture
+        // t15 = SceneBVH
+        // t16 = PrevSceneBVH
+        // t17 = t_LightDataBuffer
+        // t18 = t_GBufferEmissive
+        // t19 = t_GeometryInstanceToLight
+        // t20 = t_InstanceData
+        // t21 = t_GeometryData
+        // t22 = t_MaterialConstants
+        // t23 = t_SceneIndices
+        // t24 = t_SceneVertices
         // u0  = u_LightReservoirs
         // u1  = u_RisBuffer
         // u2  = u_RisLightDataBuffer
-        // u3  = u_TemporalSamplePositions
-        // u4  = u_Gradients
-        // u5  = u_RestirLuminance (not used)
-        // u6  = u_GIReservoirs
-        // u7  = u_PTReservoirs
-        // u8  = u_DiffuseLighting
-        // u9  = u_SpecularLighting
-        // u10 = u_DiffuseConfidence (unused stub)
-        // u11 = u_SpecularConfidence (unused stub)
-        // u12 = u_RayCountBuffer
-        // u13 = u_SecondaryGBuffer
-        // u14 = u_SecondarySurfaces (unused stub)
-        // u15 = u_DebugColor (unused stub)
-        // u16 = u_DebugPrintBuffer
-        // u17 = u_DirectLightingRaw
-        // u18 = u_IndirectLightingRaw
-        // u20 = u_PSRDepth
-        // u21 = u_PSRNormalRoughness
-        // u22 = u_PSRMotionVectors
-        // u23 = u_PSRHitT
-        // u24 = u_PSRDiffuseAlbedo
-        // u25 = u_PSRSpecularF0
-        // u26 = u_PSRLightDir
-        // u27 = u_EnvLightPdfMip0 (BuildEnvLightPDF writes mip-0 of env PDF texture)
+        // u3  = u_RestirLuminance         (stub)
+        // u4  = u_GIReservoirs            (stub)
+        // u5  = u_SecondaryGBuffer        (stub — future GI)
+        // u6  = u_DiffuseLighting
+        // u7  = u_SpecularLighting
         // ------------------------------------------------------------------
 
         nvrhi::BindingSetDesc bset;
@@ -1255,59 +1228,38 @@ public:
             // SRVs
             nvrhi::BindingSetItem::TypedBuffer_SRV(0,  neighborOffsetsBuf),
             nvrhi::BindingSetItem::Texture_SRV(1,  depthTex),
-            nvrhi::BindingSetItem::Texture_SRV(2,  geoNormalsTex),  // t_GBufferGeoNormals — direct GBuffer geo normals
+            nvrhi::BindingSetItem::Texture_SRV(2,  geoNormalsTex),
             nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),
             nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),
             nvrhi::BindingSetItem::Texture_SRV(5,  normalsTex),
-            nvrhi::BindingSetItem::Texture_SRV(6,  normalsHistoryTex),  // prev shading normals
-            nvrhi::BindingSetItem::Texture_SRV(7,  geoNormalsHistTex),  // prev geo normals
+            nvrhi::BindingSetItem::Texture_SRV(6,  normalsHistoryTex),
+            nvrhi::BindingSetItem::Texture_SRV(7,  geoNormalsHistTex),
             nvrhi::BindingSetItem::Texture_SRV(8,  albedoHistoryTex),
             nvrhi::BindingSetItem::Texture_SRV(9,  ormHistoryTex),
-            nvrhi::BindingSetItem::Texture_SRV(10, cr.DummySRVTexture),  // u_RestirLuminance — not used
-            nvrhi::BindingSetItem::Texture_SRV(11, motionTex),
-            nvrhi::BindingSetItem::Texture_SRV(12, denoiserNRTex),
-            nvrhi::BindingSetItem::Texture_SRV(13, depthHistoryTex),
-            nvrhi::BindingSetItem::Texture_SRV(14, localLightPDFTex),
-            nvrhi::BindingSetItem::Texture_SRV(15, envLightPDFTex),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(16, cr.DummySRVStructuredBuffer), // dummy SRV for t_RisBuffer — actual buffer read via UAV slot (u1) to avoid bindless resource handling
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(17, cr.DummySRVStructuredBuffer), // dummy SRV for t_RisLightDataBuffer — actual buffer read via UAV slot (u2) to avoid bindless resource handling
-            nvrhi::BindingSetItem::RayTracingAccelStruct(18, renderer->m_Scene.m_TLAS),
-            nvrhi::BindingSetItem::RayTracingAccelStruct(19, m_TLASHistory),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(20, lightDataBuf),
-            nvrhi::BindingSetItem::TypedBuffer_SRV(21, lightIndexMapBuf),
-            nvrhi::BindingSetItem::Texture_SRV(22, emissiveTex),
-            nvrhi::BindingSetItem::TypedBuffer_SRV(25, geoInstToLightBuf),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(26, renderer->m_Scene.m_InstanceDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(27, renderer->m_Scene.m_MeshDataBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(28, renderer->m_Scene.m_MaterialConstantsBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(29, renderer->m_Scene.m_IndexBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(30, renderer->m_Scene.m_VertexBufferQuantized),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(0,  lightReservoirBuf),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(1,  risBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(2,  risLightDataBuf),
-            nvrhi::BindingSetItem::Texture_UAV(3,  cr.DummyUAVTexture),  // u_TemporalSamplePositions — not used
-            nvrhi::BindingSetItem::Texture_UAV(4,  cr.DummyUAVTexture),  // u_Gradients — not used
-            nvrhi::BindingSetItem::Texture_UAV(5,  cr.DummyUAVTexture),  // u_RestirLuminance — not used
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(6,  cr.DummyUAVStructuredBuffer),  // u_GIReservoirs stub
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(7,  cr.DummyUAVStructuredBuffer),  // u_PTReservoirs stub
-            nvrhi::BindingSetItem::Texture_UAV(8,  bDenoise ? rawDiffuseTex  : diOutputTex),
-            nvrhi::BindingSetItem::Texture_UAV(9,  bDenoise ? rawSpecularTex : specularOutTex),
-            nvrhi::BindingSetItem::Texture_UAV(10, cr.DummyUAVTexture),  // u_DiffuseConfidence stub
-            nvrhi::BindingSetItem::Texture_UAV(11, cr.DummyUAVTexture),  // u_SpecularConfidence stub
-            nvrhi::BindingSetItem::TypedBuffer_UAV(12, cr.DummyUAVTypedBuffer),  // u_RayCountBuffer — not used
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(13, cr.DummyUAVStructuredBuffer),  // u_SecondaryGBuffer — not used (ReSTIR GI not dispatched)
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(14, cr.DummyUAVStructuredBuffer),  // u_SecondarySurfaces stub
-            nvrhi::BindingSetItem::Texture_UAV(15, cr.DummyUAVTexture),  // u_DebugColor stub
-            nvrhi::BindingSetItem::RawBuffer_UAV(16, cr.DummyUAVByteAddressBuffer),  // u_DebugPrintBuffer — not used
-            nvrhi::BindingSetItem::Texture_UAV(17, cr.DummyUAVTexture),  // u_DirectLightingRaw — not used
-            nvrhi::BindingSetItem::Texture_UAV(18, cr.DummyUAVTexture),  // u_IndirectLightingRaw — not used
-            nvrhi::BindingSetItem::Texture_UAV(20, cr.DummyUAVTexture),  // u_PSRDepth stub
-            nvrhi::BindingSetItem::Texture_UAV(21, cr.DummyUAVTexture),  // u_PSRNormalRoughness stub
-            nvrhi::BindingSetItem::Texture_UAV(22, cr.DummyUAVTexture),  // u_PSRMotionVectors stub
-            nvrhi::BindingSetItem::Texture_UAV(23, cr.DummyUAVTexture),  // u_PSRHitT stub
-            nvrhi::BindingSetItem::Texture_UAV(24, cr.DummyUAVTexture),  // u_PSRDiffuseAlbedo stub
-            nvrhi::BindingSetItem::Texture_UAV(25, cr.DummyUAVTexture),  // u_PSRSpecularF0 stub
-            nvrhi::BindingSetItem::Texture_UAV(26, cr.DummyUAVTexture),  // u_PSRLightDir stub
+            nvrhi::BindingSetItem::Texture_SRV(10, motionTex),
+            nvrhi::BindingSetItem::Texture_SRV(11, denoiserNRTex),
+            nvrhi::BindingSetItem::Texture_SRV(12, depthHistoryTex),
+            nvrhi::BindingSetItem::Texture_SRV(13, localLightPDFTex),
+            nvrhi::BindingSetItem::Texture_SRV(14, envLightPDFTex),
+            nvrhi::BindingSetItem::RayTracingAccelStruct(15, renderer->m_Scene.m_TLAS),
+            nvrhi::BindingSetItem::RayTracingAccelStruct(16, m_TLASHistory),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(17, lightDataBuf),
+            nvrhi::BindingSetItem::Texture_SRV(18, emissiveTex),
+            nvrhi::BindingSetItem::TypedBuffer_SRV(19, geoInstToLightBuf),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(20, renderer->m_Scene.m_InstanceDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(21, renderer->m_Scene.m_MeshDataBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(22, renderer->m_Scene.m_MaterialConstantsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(23, renderer->m_Scene.m_IndexBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(24, renderer->m_Scene.m_VertexBufferQuantized),
+            // UAVs
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(0, lightReservoirBuf),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(1, risBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(2, risLightDataBuf),
+            nvrhi::BindingSetItem::Texture_UAV(3, cr.DummyUAVTexture),                    // u_RestirLuminance stub
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(4, cr.DummyUAVStructuredBuffer),  // u_GIReservoirs stub
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(5, cr.DummyUAVStructuredBuffer),  // u_SecondaryGBuffer stub
+            nvrhi::BindingSetItem::Texture_UAV(6, bDenoise ? rawDiffuseTex  : diOutputTex),
+            nvrhi::BindingSetItem::Texture_UAV(7, bDenoise ? rawSpecularTex : specularOutTex),
         };
 
         // ------------------------------------------------------------------
@@ -1441,19 +1393,19 @@ public:
                 nvrhi::BufferHandle plCBHandle = device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(PrepareLightsConstants), "PrepareLightsCB", 1));
                 commandList->writeBuffer(plCBHandle, &plCB, sizeof(plCB));
 
-                nvrhi::BindingSetDesc plBset;
+            nvrhi::BindingSetDesc plBset;
                 plBset.bindings = {
                     nvrhi::BindingSetItem::ConstantBuffer(0, plCBHandle),
                     nvrhi::BindingSetItem::StructuredBuffer_SRV(0,  prepareLightsTaskBuf),
                     nvrhi::BindingSetItem::StructuredBuffer_SRV(1,  primitiveLightBuf),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(26, renderer->m_Scene.m_InstanceDataBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(27, renderer->m_Scene.m_MeshDataBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(28, renderer->m_Scene.m_MaterialConstantsBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(29, renderer->m_Scene.m_IndexBuffer),
-                    nvrhi::BindingSetItem::StructuredBuffer_SRV(30, renderer->m_Scene.m_VertexBufferQuantized),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(2,  renderer->m_Scene.m_InstanceDataBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(3,  renderer->m_Scene.m_MeshDataBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(4,  renderer->m_Scene.m_MaterialConstantsBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(5,  renderer->m_Scene.m_IndexBuffer),
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(6,  renderer->m_Scene.m_VertexBufferQuantized),
                     nvrhi::BindingSetItem::StructuredBuffer_UAV(0,  lightDataBuf),
                     nvrhi::BindingSetItem::TypedBuffer_UAV(1,       lightIndexMapBuf),
-                    nvrhi::BindingSetItem::Texture_UAV(4, localLightPDFTex,
+                    nvrhi::BindingSetItem::Texture_UAV(2, localLightPDFTex,
                         nvrhi::Format::UNKNOWN,
                         nvrhi::TextureSubresourceSet{0, 1, 0, 1}),
                 };
@@ -1684,12 +1636,12 @@ public:
             nvrhi::BindingSetDesc compBset;
             compBset.bindings = {
                 nvrhi::BindingSetItem::ConstantBuffer(0, rtxdiCB),
-                nvrhi::BindingSetItem::Texture_SRV(3,  albedoTex),   // t_GBufferAlbedo  (RGBA8_UNORM)
-                nvrhi::BindingSetItem::Texture_SRV(4,  ormTex),      // t_GBufferORM     (RG8_UNORM: roughness=.r, metallic=.g)
-                nvrhi::BindingSetItem::Texture_SRV(22, emissiveTex), // t_GBufferEmissive
+                nvrhi::BindingSetItem::Texture_SRV(0,  albedoTex),   // t_GBufferAlbedo  (RGBA8_UNORM)
+                nvrhi::BindingSetItem::Texture_SRV(1,  ormTex),      // t_GBufferORM     (RG8_UNORM: roughness=.r, metallic=.g)
+                nvrhi::BindingSetItem::Texture_SRV(2,  emissiveTex), // t_GBufferEmissive
                 // DI illumination inputs (denoised or raw)
-                nvrhi::BindingSetItem::Texture_SRV(23, bDenoise ? denoisedDiffuseTex  : diOutputTex),
-                nvrhi::BindingSetItem::Texture_SRV(24, bDenoise ? denoisedSpecularTex : specularOutTex),
+                nvrhi::BindingSetItem::Texture_SRV(3,  bDenoise ? denoisedDiffuseTex  : diOutputTex),
+                nvrhi::BindingSetItem::Texture_SRV(4,  bDenoise ? denoisedSpecularTex : specularOutTex),
             };
 
             nvrhi::FramebufferDesc ppFbDesc;

@@ -14,8 +14,6 @@
 
 #include "RtxdiApplicationBridge/RtxdiApplicationBridge.hlsli"
 #include "../../RaytracingCommon.hlsli"
-#include "../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
-#include "../ShaderDebug/PTPathViz/PTPathVizRecording.hlsli"
 
 #include <Rtxdi/DI/Reservoir.hlsli>
 #include <Rtxdi/Utils/ReservoirAddressing.hlsli>
@@ -38,18 +36,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     if (!RAB_IsSurfaceValid(surface))
         return;
-
-	ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
-
-    if(all(pixelPosition == g_Const.debug.mouseSelectedPixel))
-    {
-        Debug_EnablePTPathRecording();
-    }
-    Debug_RecordPTCameraPosition(g_Const.view.m_CameraDirectionOrPosition.xyz);
-    Debug_SetPTVertexIndex(1);
-    Debug_RecordPTIntersectionPosition(RAB_GetSurfaceWorldPos(surface));
-    Debug_RecordPTIntersectionNormal(RAB_GetSurfaceNormal(surface));
-    Debug_RecordPTNEELightPosition(RAB_GetSurfaceWorldPos(surface));
 
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(GlobalIndex, g_Const.runtimeParams.frameIndex, RTXDI_GI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
 
@@ -190,7 +176,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     // Include the emissive component of surfaces seen with BRDF rays if requested (i.e. when Direct Lighting mode
     // is set to BRDF) or on delta reflection rays because those bypass ReSTIR GI and direct specular lighting,
     // and we need to see reflections of lamps and the sky in mirrors.
-    const bool includeEmissiveComponent = g_Const.brdfPT.enableIndirectEmissiveSurfaces || (isSpecularRay && isDeltaSurface);
+    const bool includeEmissiveComponent = isSpecularRay && isDeltaSurface;
 
     if (payload.instanceID != ~0u)
     {
@@ -215,18 +201,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
         // Metallic workflow split
         float3 diffuseAlbedo, specularF0;
         getReflectivity(pbr.metallic, pbr.baseColor, diffuseAlbedo, specularF0);
-
-        // Material overrides
-        if (g_Const.brdfPT.materialOverrideParams.roughnessOverride >= 0)
-            pbr.roughness = g_Const.brdfPT.materialOverrideParams.roughnessOverride;
-
-        if (g_Const.brdfPT.materialOverrideParams.metalnessOverride >= 0)
-        {
-            pbr.metallic = g_Const.brdfPT.materialOverrideParams.metalnessOverride;
-            getReflectivity(pbr.metallic, pbr.baseColor, diffuseAlbedo, specularF0);
-        }
-
-        pbr.roughness = max(pbr.roughness, g_Const.brdfPT.materialOverrideParams.minSecondaryRoughness);
 
         if (includeEmissiveComponent)
             radiance += pbr.emissive;
@@ -266,7 +240,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
         secondaryGBufferData.diffuseAlbedo = Pack_R11G11B10_UFLOAT(secondarySurface.diffuseAlbedo);
         secondaryGBufferData.specularAndRoughness = Pack_R8G8B8A8_Gamma_UFLOAT(float4(secondarySurface.specularF0, secondarySurface.roughness));
 
-        if (g_Const.brdfPT.enableReSTIRGI)
+        if (false) // ReSTIR GI not implemented
         {
             if (isSpecularRay && isDeltaSurface)
             {
@@ -295,11 +269,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
         u_SecondaryGBuffer[gbufferIndex] = secondaryGBufferData;
     }
-
-    Debug_SetPTVertexIndex(2);
-    Debug_RecordPTIntersectionPosition(secondarySurface.position);
-    Debug_RecordPTIntersectionNormal(secondarySurface.normal);
-
+    
     if ((any(radiance > 0) || !g_Const.enableBrdfAdditiveBlend))
     {
         radiance *= payload.throughput;

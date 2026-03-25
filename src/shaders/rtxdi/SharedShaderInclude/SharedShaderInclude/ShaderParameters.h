@@ -18,14 +18,9 @@
 
 #include <Rtxdi/DI/ReSTIRDIParameters.h>
 #include <Rtxdi/GI/ReSTIRGIParameters.h>
-#include <Rtxdi/PT/ReSTIRPTParameters.h>
 #include <Rtxdi/ReGIR/ReGIRParameters.h>
 
-#include "ShaderDebug/ReSTIRShaderDebugParameters.h"
-
-#include "BRDFPTParameters.h"
 #include "DirectLightingMode.h"
-#include "PTParameters.h"
 
 #define TASK_PRIMITIVE_LIGHT_BIT 0x80000000u
 
@@ -56,7 +51,6 @@
 #define INDIRECT_LIGHTING_MODE_NONE 0
 #define INDIRECT_LIGHTING_MODE_BRDF 1
 #define INDIRECT_LIGHTING_MODE_RESTIRGI 2
-#define INDIRECT_LIGHTING_MODE_RESTIRPT 3
 
 #ifdef __cplusplus
 enum class IndirectLightingMode : uint32_t
@@ -64,7 +58,6 @@ enum class IndirectLightingMode : uint32_t
     None = INDIRECT_LIGHTING_MODE_NONE,
     Brdf = INDIRECT_LIGHTING_MODE_BRDF,
     ReStirGI = INDIRECT_LIGHTING_MODE_RESTIRGI,
-    ReStirPT = INDIRECT_LIGHTING_MODE_RESTIRPT
 };
 #else
 #define IndirectLightingMode uint32_t
@@ -233,24 +226,12 @@ struct ResamplingConstants
     RTXDI_Parameters restirDI;
     ReGIR_Parameters regir;
     RTXDI_GIParameters restirGI;
-    RTXDI_PTParameters restirPT;
-    PTParameters pt;
-    BRDFPathTracing_Parameters brdfPT;
 
     uint visualizeRegirCells;
-    uint enableDenoiserPSR;
-    uint usePSRMvecForResampling;
-    uint updatePSRwithResampling;
-    
+    uint pad4;
     uint2 environmentPdfTextureSize;
     uint2 localLightPdfTextureSize;
 
-    ReSTIRShaderDebugParameters debug;
-};
-
-struct PathTracerDebugVisualizationConstants
-{
-    PlanarViewConstants view;
 };
 
 struct PerPassConstants

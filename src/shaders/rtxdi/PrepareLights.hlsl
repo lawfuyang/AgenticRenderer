@@ -15,7 +15,7 @@
 ConstantBuffer<PrepareLightsConstants>      g_Const             : register(b0);
 RWStructuredBuffer<PolymorphicLightInfo>    u_LightDataBuffer   : register(u0);
 RWBuffer<uint>                              u_LightIndexMappingBuffer : register(u1);
-RWTexture2D<float>                          u_LocalLightPdfTexture : register(u4);
+RWTexture2D<float>                          u_LocalLightPdfTexture : register(u2);
 
 // t0 = task buffer: one entry per task.  TASK_PRIMITIVE_LIGHT_BIT set → analytical light;
 //      bit clear → emissive triangle mesh.
@@ -23,13 +23,13 @@ StructuredBuffer<PrepareLightsTask>         t_TaskBuffer        : register(t0);
 // t1 = CPU-converted analytical lights (directional/point/spot)
 StructuredBuffer<PolymorphicLightInfo>      t_PrimitiveLightBuffer : register(t1);
 
-StructuredBuffer<PerInstanceData>           t_InstanceData      : register(t26);
-StructuredBuffer<MeshData>                  t_GeometryData      : register(t27);
-StructuredBuffer<MaterialConstants>         t_MaterialConstants : register(t28);
+StructuredBuffer<PerInstanceData>           t_InstanceData      : register(t2);
+StructuredBuffer<MeshData>                  t_GeometryData      : register(t3);
+StructuredBuffer<MaterialConstants>         t_MaterialConstants : register(t4);
 
 // Bindless scene geometry buffers (bound via bIncludeBindlessResources = true)
-StructuredBuffer<uint>                      t_SceneIndices      : register(t29);
-StructuredBuffer<VertexQuantized>           t_SceneVertices     : register(t30);
+StructuredBuffer<uint>                      t_SceneIndices      : register(t5);
+StructuredBuffer<VertexQuantized>           t_SceneVertices     : register(t6);
 
 #define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
 #define IES_SAMPLER         SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]

@@ -17,8 +17,6 @@
 #define RAB_ENABLE_SPECULAR_MIS 0
 
 #include "RtxdiApplicationBridge/RtxdiApplicationBridge.hlsli"
-#include "../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
-#include "../ShaderDebug/PTPathViz/PTPathVizRecording.hlsli"
 
 #include <Rtxdi/DI/InitialSampling.hlsli>
 #include <Rtxdi/DI/SpatialResampling.hlsli>
@@ -40,14 +38,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     if (any(pixelPosition > int2(g_Const.view.m_ViewportSize)))
         return;
-
-    if(all(pixelPosition == g_Const.debug.mouseSelectedPixel))
-    {
-        Debug_EnablePTPathRecording();
-    }
-    Debug_SetPTVertexIndex(2);
-
-    ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
 
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(GlobalIndex, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
     RTXDI_RandomSamplerState tileRng = RTXDI_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
@@ -85,8 +75,9 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     if (isValidSecondarySurface && !isEnvironmentMap)
     {
         RAB_LightSample lightSample;
+        RTXDI_DISpatialResamplingParameters dummySpatialParams = (RTXDI_DISpatialResamplingParameters)0;
         RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
-            g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams, g_Const.lightBufferParams,
+            g_Const.restirDI.initialSamplingParams, g_Const.lightBufferParams,
 #if RTXDI_ENABLE_PRESAMPLING
         g_Const.localLightsRISBufferSegmentParams, g_Const.environmentLightRISBufferSegmentParams,
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_MODE_DISABLED
@@ -94,27 +85,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 #endif
 #endif
         lightSample);
-
-        if (g_Const.brdfPT.enableSecondaryResampling)
-        {
-            // Try to find this secondary surface in the G-buffer. If found, resample the lights
-            // from that G-buffer surface into the reservoir using the spatial resampling function.
-
-            float4 secondaryClipPos = mul(float4(secondaryGBufferData.worldPos, 1.0), g_Const.view.m_MatWorldToClip);
-            secondaryClipPos.xyz /= secondaryClipPos.w;
-
-            if (all(abs(secondaryClipPos.xy) < 1.0) && secondaryClipPos.w > 0)
-            {
-                int2 secondaryPixelPos = int2(secondaryClipPos.xy * g_Const.view.m_ClipToWindowScale + g_Const.view.m_ClipToWindowBias);
-                secondarySurface.viewDepth = secondaryClipPos.w;
-                uint sourceBufferIndex = g_Const.restirDI.bufferIndices.shadingInputBufferIndex;
-                reservoir = RTXDI_DISpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
-                    rng, params, g_Const.restirDI.reservoirBufferParams, sourceBufferIndex, g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams, lightSample);
-            }
-        }
         bool valid = reservoir.weightSum > 0;
-        Debug_RecordPTNEELightPosition(RAB_LightSamplePosition(lightSample));
-        Debug_RecordPTFinalVertexCount(3);
 
         float3 indirectDiffuse = 0;
         float3 indirectSpecular = 0;
@@ -129,7 +100,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     }
 
     bool outputShadingResult = true;
-    if (g_Const.brdfPT.enableReSTIRGI)
+    if (g_Const.enableBrdfIndirect)
     {
         RTXDI_GIReservoir reservoir = RTXDI_EmptyGIReservoir();
 

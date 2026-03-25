@@ -22,16 +22,16 @@
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
 // G-buffer inputs — slots match RTXDIRenderer.cpp CompositingPass binding set
-// t3  = GBufferAlbedo   (RGBA8_UNORM: baseColor.rgb + alpha)
-// t4  = GBufferORM      (RG8_UNORM:  roughness=.r, metallic=.g)
-// t22 = GBufferEmissive (RGBA8_UNORM)
-// t23 = DI diffuse illumination  (denoised or raw)
-// t24 = DI specular illumination (denoised or raw)
-Texture2D<float4> t_GBufferAlbedo        : register(t3);
-Texture2D<float2> t_GBufferORM           : register(t4);
-Texture2D<float4> t_GBufferEmissive      : register(t22);
-Texture2D<float4> t_DiffuseIllumination  : register(t23);
-Texture2D<float4> t_SpecularIllumination : register(t24);
+// t0  = GBufferAlbedo   (RGBA8_UNORM: baseColor.rgb + alpha)
+// t1  = GBufferORM      (RG8_UNORM:  roughness=.r, metallic=.g)
+// t2  = GBufferEmissive (RGBA8_UNORM)
+// t3  = DI diffuse illumination  (denoised or raw)
+// t4  = DI specular illumination (denoised or raw)
+Texture2D<float4> t_GBufferAlbedo        : register(t0);
+Texture2D<float2> t_GBufferORM           : register(t1);
+Texture2D<float4> t_GBufferEmissive      : register(t2);
+Texture2D<float4> t_DiffuseIllumination  : register(t3);
+Texture2D<float4> t_SpecularIllumination : register(t4);
 
 float4 CompositingPass_PSMain(FullScreenVertexOut input) : SV_Target
 {

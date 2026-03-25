@@ -67,8 +67,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
         RTXDI_BoilingFilter(LocalIndex, g_Const.restirDI.boilingFilterParams.boilingFilterStrength, temporalResult);
     }
 #endif
-
-    u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
     
     RTXDI_StoreDIReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
 }

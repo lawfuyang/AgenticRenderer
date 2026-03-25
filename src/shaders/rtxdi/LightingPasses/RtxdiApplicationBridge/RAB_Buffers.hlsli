@@ -14,45 +14,40 @@
 #define RAB_BUFFER_HLSLI
 
 #include <SharedShaderInclude/ShaderParameters.h>
-#include <SharedShaderInclude/ShaderDebug/ShaderDebugPrintShared.h>
-#include <SharedShaderInclude/ShaderDebug/PTPathViz/PTPathVertexRecord.h>
-#include <SharedShaderInclude/ShaderDebug/PTPathViz/PTPathSetRecord.h>
 
 // ---- Constant buffers ----
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
-// ---- G-buffer SRVs (match RTXDIRenderer.cpp binding layout) ----
+// ---- SRVs (match RTXDIRenderer.cpp binding layout) ----
 // t0  = t_NeighborOffsets
 // t1  = t_GBufferDepth
-// t2  = t_GBufferGeoNormals     (RG16_FLOAT: oct-encoded geometric normal, PostprocessGBuffer output)
-// t3  = t_GBufferAlbedo          (RGBA8_UNORM: baseColor.rgb + alpha)
-// t4  = t_GBufferORM             (RG8_UNORM: roughness=.r, metallic=.g)
-// t5  = t_GBufferNormals         (RG16_FLOAT: encoded, decoded via DecodeNormal)
-// t6  = t_PrevGBufferNormals     (= m_GbufferNormalsHistory)
-// t7  = t_PrevGBufferGeoNormals  (= m_GeoNormalsHistory)
-// t8  = t_PrevGBufferAlbedo      (= m_GBufferAlbedoHistory)
-// t9  = t_PrevGBufferORM         (= m_GBufferORMHistory)
-// t10 = (dummy — was PrevRestirLuminance, no Gradient pass)
-// t11 = t_MotionVectors
-// t12 = t_DenoiserNormalRoughness
-// t13 = t_PrevDepth
-// t14 = t_LocalLightPdfTexture
-// t15 = t_EnvironmentPdfTexture
-// t16 = t_RisBuffer
-// t17 = t_RisLightDataBuffer
-// t18 = SceneBVH
-// t19 = PrevSceneBVH
-// t20 = t_LightDataBuffer
-// t21 = (dummy — was LightIndexMapping, lights don't stream in/out)
-// t22 = t_GBufferEmissive
-// t25 = t_GeometryInstanceToLight
-// t26 = t_InstanceData  (PerInstanceData)
-// t27 = t_GeometryData  (MeshData)
-// t28 = t_MaterialConstants
+// t2  = t_GBufferGeoNormals     (RG16_FLOAT: oct-encoded geometric normal)
+// t3  = t_GBufferAlbedo         (RGBA8_UNORM: baseColor.rgb + alpha)
+// t4  = t_GBufferORM            (RG8_UNORM: roughness=.r, metallic=.g)
+// t5  = t_GBufferNormals        (RG16_FLOAT: encoded, decoded via DecodeNormal)
+// t6  = t_PrevGBufferNormals    (= m_GbufferNormalsHistory)
+// t7  = t_PrevGBufferGeoNormals (= m_GeoNormalsHistory)
+// t8  = t_PrevGBufferAlbedo     (= m_GBufferAlbedoHistory)
+// t9  = t_PrevGBufferORM        (= m_GBufferORMHistory)
+// t10 = t_MotionVectors
+// t11 = t_DenoiserNormalRoughness
+// t12 = t_PrevGBufferDepth
+// t13 = t_LocalLightPdfTexture
+// t14 = t_EnvironmentPdfTexture
+// t15 = SceneBVH
+// t16 = PrevSceneBVH
+// t17 = t_LightDataBuffer
+// t18 = t_GBufferEmissive
+// t19 = t_GeometryInstanceToLight
+// t20 = t_InstanceData  (PerInstanceData)
+// t21 = t_GeometryData  (MeshData)
+// t22 = t_MaterialConstants
+// t23 = t_SceneIndices
+// t24 = t_SceneVertices
 
 Buffer<float2>                              t_NeighborOffsets           : register(t0);
 Texture2D<float>                            t_GBufferDepth              : register(t1);
-Texture2D<float2>                           t_GBufferGeoNormals         : register(t2);  // PostprocessGBuffer geo normal output
+Texture2D<float2>                           t_GBufferGeoNormals         : register(t2);  // RG16_FLOAT: oct-encoded geometric normal
 Texture2D<float4>                           t_GBufferAlbedo             : register(t3);  // RGBA8_UNORM: baseColor.rgb + alpha
 Texture2D<float2>                           t_GBufferORM                : register(t4);  // RG8_UNORM: roughness=.r, metallic=.g
 Texture2D<float2>                           t_GBufferNormals            : register(t5);  // RG16_FLOAT: encoded, use DecodeNormal
@@ -60,102 +55,46 @@ Texture2D<float2>                           t_PrevGBufferNormals        : regist
 Texture2D<float2>                           t_PrevGBufferGeoNormals     : register(t7);  // = m_GeoNormalsHistory
 Texture2D<float4>                           t_PrevGBufferAlbedo         : register(t8);  // = m_GBufferAlbedoHistory
 Texture2D<float2>                           t_PrevGBufferORM            : register(t9);  // = m_GBufferORMHistory
-// t10: dummy (no Gradient pass — PrevRestirLuminance removed)
-Texture2D<float4>                           t_MotionVectors             : register(t11);
-Texture2D<float3>                           t_DenoiserNormalRoughness   : register(t12);
-Texture2D<float>                            t_PrevGBufferDepth          : register(t13);
-Texture2D                                   t_LocalLightPdfTexture      : register(t14);    
-Texture2D                                   t_EnvironmentPdfTexture     : register(t15);
-// t16: dummy (RisBuffer read via UAV slot to avoid bindless resource handling)
-// t17: dummy (RisLightDataBuffer read via UAV slot to avoid bindless resource handling)
-RaytracingAccelerationStructure             SceneBVH                    : register(t18);
-RaytracingAccelerationStructure             PrevSceneBVH                : register(t19);
-StructuredBuffer<PolymorphicLightInfo>      t_LightDataBuffer           : register(t20);
-// t21: dummy (no LightIndexMapping — lights don't stream in/out)
-Texture2D<float4>                           t_GBufferEmissive           : register(t22);
-StructuredBuffer<uint>                      t_GeometryInstanceToLight   : register(t25);
-StructuredBuffer<PerInstanceData>           t_InstanceData              : register(t26);
-StructuredBuffer<MeshData>                  t_GeometryData              : register(t27);
-StructuredBuffer<MaterialConstants>         t_MaterialConstants         : register(t28);
-StructuredBuffer<uint>                      t_SceneIndices              : register(t29);
-StructuredBuffer<VertexQuantized>           t_SceneVertices             : register(t30);
+Texture2D<float4>                           t_MotionVectors             : register(t10);
+Texture2D<float3>                           t_DenoiserNormalRoughness   : register(t11);
+Texture2D<float>                            t_PrevGBufferDepth          : register(t12);
+Texture2D                                   t_LocalLightPdfTexture      : register(t13);
+Texture2D                                   t_EnvironmentPdfTexture     : register(t14);
+RaytracingAccelerationStructure             SceneBVH                    : register(t15);
+RaytracingAccelerationStructure             PrevSceneBVH                : register(t16);
+StructuredBuffer<PolymorphicLightInfo>      t_LightDataBuffer           : register(t17);
+Texture2D<float4>                           t_GBufferEmissive           : register(t18);
+StructuredBuffer<uint>                      t_GeometryInstanceToLight   : register(t19);
+StructuredBuffer<PerInstanceData>           t_InstanceData              : register(t20);
+StructuredBuffer<MeshData>                  t_GeometryData              : register(t21);
+StructuredBuffer<MaterialConstants>         t_MaterialConstants         : register(t22);
+StructuredBuffer<uint>                      t_SceneIndices              : register(t23);
+StructuredBuffer<VertexQuantized>           t_SceneVertices             : register(t24);
 
 // ---- UAVs (match RTXDIRenderer.cpp binding layout) ----
 // u0  = u_LightReservoirs
 // u1  = u_RisBuffer
 // u2  = u_RisLightDataBuffer
-// u3  = u_TemporalSamplePositions (dummy)
-// u4  = u_Gradients (dummy)
-// u5  = u_RestirLuminance (dummy)
-// u6  = u_GIReservoirs (stub)
-// u7  = u_PTReservoirs (stub)
-// u8  = u_DiffuseLighting
-// u9  = u_SpecularLighting
-// u10 = u_DiffuseConfidence (stub)
-// u11 = u_SpecularConfidence (stub)
-// u12 = u_RayCountBuffer
-// u13 = u_SecondaryGBuffer
-// u14 = u_SecondarySurfaces (stub / PT path viz)
-// u15 = u_DebugColor (stub / PT path viz)
-// u16 = u_DebugPrintBuffer
-// u17 = u_DirectLightingRaw
-// u18 = u_IndirectLightingRaw
-// u20 = u_PSRDepth
-// u21 = u_PSRNormalRoughness
-// u22 = u_PSRMotionVectors
-// u23 = u_PSRHitT
-// u24 = u_PSRDiffuseAlbedo
-// u25 = u_PSRSpecularF0
-// u26 = u_PSRLightDir
-// u27 = u_PTSampleIDTexture
-// u28 = u_PTDuplicationMap
+// u3  = u_RestirLuminance         (stub)
+// u4  = u_GIReservoirs            (stub)
+// u5  = u_SecondaryGBuffer        (stub — future GI)
+// u6  = u_DiffuseLighting
+// u7  = u_SpecularLighting
 
 RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs           : register(u0);
 RWStructuredBuffer<uint2>                   u_RisBuffer                 : register(u1);
 RWStructuredBuffer<uint4>                   u_RisLightDataBuffer        : register(u2);
-RWTexture2D<int2>                           u_TemporalSamplePositions   : register(u3);
-RWTexture2DArray<float4>                    u_Gradients                 : register(u4);
-RWTexture2D<float2>                         u_RestirLuminance           : register(u5);
-RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs              : register(u6);
-RWStructuredBuffer<RTXDI_PackedPTReservoir> u_PTReservoirs              : register(u7);
-RWTexture2D<float4>                         u_DiffuseLighting           : register(u8);
-RWTexture2D<float4>                         u_SpecularLighting          : register(u9);
-RWBuffer<uint>                              u_RayCountBuffer            : register(u12);
-RWStructuredBuffer<SecondaryGBufferData>    u_SecondaryGBuffer          : register(u13);
-
-// PT Path Viz
-RWStructuredBuffer<PTPathVertexRecord>      u_debugPathRecord           : register(u14);
-RWStructuredBuffer<PTPathSet>               u_debugPathSet              : register(u15);
-#define DEBUG_PT_VERTEX_RECORD_BUFFER u_debugPathRecord
-#define DEBUG_PT_PATH_SET_BUFFER u_debugPathSet
-
-// Debug Print
-ConstantBuffer<ShaderPrintCBData>           g_debugPrintCB              : register(b2);
-RWByteAddressBuffer                         u_DebugPrintBuffer          : register(u16);
-#define RTXDI_SHADER_DEBUG_PRINT_CB g_debugPrintCB
-#define RTXDI_SHADER_DEBUG_PRINT_OUTPUT_BUFFER u_DebugPrintBuffer
-
-// Debug Lighting Buffers
-RWTexture2D<float4>                         u_DirectLightingRaw         : register(u17);
-RWTexture2D<float4>                         u_IndirectLightingRaw       : register(u18);
-
-// PSR UAVs
-RWTexture2D<float>                          u_PSRDepth                  : register(u20);
-RWTexture2D<float4>                         u_PSRNormalRoughness        : register(u21);
-RWTexture2D<float4>                         u_PSRMotionVectors          : register(u22);
-RWTexture2D<float>                          u_PSRHitT                   : register(u23);
-RWTexture2D<uint>                           u_PSRDiffuseAlbedo          : register(u24);
-RWTexture2D<uint>                           u_PSRSpecularF0             : register(u25);
-RWTexture2D<uint>                           u_PSRLightDir               : register(u26);
-RWTexture2D<uint>                           u_PTSampleIDTexture         : register(u27);
-RWTexture2D<uint>                           u_PTDuplicationMap          : register(u28);
+RWTexture2D<float2>                         u_RestirLuminance           : register(u3);
+RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs              : register(u4);
+RWStructuredBuffer<SecondaryGBufferData>    u_SecondaryGBuffer          : register(u5);
+RWTexture2D<float4>                         u_DiffuseLighting           : register(u6);
+RWTexture2D<float4>                         u_SpecularLighting          : register(u7);
 
 // RTXDI macro aliases
 #define RTXDI_RIS_BUFFER                u_RisBuffer
 #define RTXDI_LIGHT_RESERVOIR_BUFFER    u_LightReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER   t_NeighborOffsets
 #define RTXDI_GI_RESERVOIR_BUFFER       u_GIReservoirs
-#define RTXDI_PT_RESERVOIR_BUFFER       u_PTReservoirs
 #define IES_SAMPLER                     SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
 
 // Translates a light index between frames.
@@ -163,15 +102,6 @@ RWTexture2D<uint>                           u_PTDuplicationMap          : regist
 int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
 {
     return int(lightIndex);
-}
-
-// Duplication map: count of pixels sharing the same sample ID (for MCap).
-uint RAB_GetDuplicationMapCount(int2 prevPixelPos)
-{
-    int2 dim = int2(g_Const.view.m_ViewportSize);
-    if (any(prevPixelPos < 0) || any(prevPixelPos >= dim))
-        return 0u;
-    return u_PTDuplicationMap[prevPixelPos];
 }
 
 #endif // RAB_BUFFER_HLSLI
