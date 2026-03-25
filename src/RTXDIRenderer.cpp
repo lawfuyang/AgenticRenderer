@@ -1768,7 +1768,7 @@ private:
              | ((FloatToUInt(std::max(0.f, std::min(1.f, b)), 255.f) & 0xFFu) << 16u);
     }
 
-    static void PackLightColor(const DirectX::XMFLOAT3& color, PolymorphicLightInfo& info)
+    static void PackLightColor(const Vector3& color, PolymorphicLightInfo& info)
     {
         float maxR = std::max({ color.x, color.y, color.z });
         if (maxR <= 0.f) return;
@@ -1786,7 +1786,7 @@ private:
     }
 
     // Octahedral encoding of a unit vector → two floats in [-1,1]
-    static DirectX::XMFLOAT2 UnitVecToOct(const DirectX::XMFLOAT3& n)
+    static DirectX::XMFLOAT2 UnitVecToOct(const Vector3& n)
     {
         float m = std::abs(n.x) + std::abs(n.y) + std::abs(n.z);
         float ox = n.x / m, oy = n.y / m;
@@ -1794,13 +1794,15 @@ private:
         {
             float sx = ox >= 0.f ? 1.f : -1.f;
             float sy = oy >= 0.f ? 1.f : -1.f;
-            ox = (1.f - std::abs(oy)) * sx;
-            oy = (1.f - std::abs(ox)) * sy; // note: uses updated ox
+            float newOx = (1.f - std::abs(oy)) * sx;
+            float newOy = (1.f - std::abs(ox)) * sy;
+            ox = newOx;
+            oy = newOy;
         }
         return { ox, oy };
     }
 
-    static uint32_t PackNormalizedVector(const DirectX::XMFLOAT3& v)
+    static uint32_t PackNormalizedVector(const Vector3& v)
     {
         auto oct = UnitVecToOct(v);
         oct.x = oct.x * 0.5f + 0.5f;
@@ -1819,7 +1821,7 @@ private:
         out = {};
 
         // Direction from node rotation quaternion (same convention as glTF spot lights)
-        auto QuatToDir = [](const DirectX::XMFLOAT4& q) -> DirectX::XMFLOAT3 {
+        auto QuatToDir = [](const DirectX::XMFLOAT4& q) -> Vector3 {
             // Forward = local -Z rotated by q
             float x = q.x, y = q.y, z = q.z, w = q.w;
             return {
@@ -1829,7 +1831,7 @@ private:
             };
         };
 
-        auto Normalize3 = [](DirectX::XMFLOAT3 v) -> DirectX::XMFLOAT3 {
+        auto Normalize3 = [](Vector3 v) -> Vector3 {
             float len = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
             if (len < 1e-7f) return {0,0,1};
             return { v.x/len, v.y/len, v.z/len };
@@ -1843,15 +1845,16 @@ private:
             float solidAngle  = 2.f * DirectX::XM_PI * (1.f - std::cos(halfAngRad));
             float irradiance  = light.m_Intensity;
             float radiance    = (solidAngle > 0.f) ? irradiance / solidAngle : 0.f;
-            DirectX::XMFLOAT3 col = { light.m_Color.x * radiance,
+            Vector3 col = { light.m_Color.x * radiance,
                                       light.m_Color.y * radiance,
                                       light.m_Color.z * radiance };
 
             out.colorTypeAndFlags = static_cast<uint32_t>(PolymorphicLightType::kDirectional)
                                     << kPolymorphicLightTypeShift;
             PackLightColor(col, out);
-            DirectX::XMFLOAT3 dir = Normalize3(QuatToDir(node.m_Rotation));
-            out.direction1 = PackNormalizedVector(dir);
+            // Use toward-sun convention (+Z forward), consistent with deferred path's GetSunDirection().
+            const Vector3 sunDir = Renderer::GetInstance()->m_Scene.GetSunDirection();
+            out.direction1 = PackNormalizedVector(sunDir);
             out.scalars    = PackFloat2ToUint(halfAngRad, solidAngle);
             return true;
         }
@@ -1862,7 +1865,7 @@ private:
                 // Sphere light
                 float projArea = DirectX::XM_PI * light.m_Radius * light.m_Radius;
                 float radiance = (projArea > 0.f) ? light.m_Intensity / projArea : 0.f;
-                DirectX::XMFLOAT3 col = { light.m_Color.x * radiance,
+                Vector3 col = { light.m_Color.x * radiance,
                                           light.m_Color.y * radiance,
                                           light.m_Color.z * radiance };
                 out.colorTypeAndFlags = static_cast<uint32_t>(PolymorphicLightType::kSphere)
@@ -1874,7 +1877,7 @@ private:
             else
             {
                 // Point light (zero radius)
-                DirectX::XMFLOAT3 flux = { light.m_Color.x * light.m_Intensity,
+                Vector3 flux = { light.m_Color.x * light.m_Intensity,
                                            light.m_Color.y * light.m_Intensity,
                                            light.m_Color.z * light.m_Intensity };
                 out.colorTypeAndFlags = static_cast<uint32_t>(PolymorphicLightType::kPoint)
@@ -1957,7 +1960,7 @@ private:
             {
                 // Node rotation is kept in sync by SetSunPitchYaw, so
                 // ConvertAnalyticalLight already produces the correct direction1
-                // from QuatToDir(node.m_Rotation). No override needed.
+                // from GetSunDirection() (toward-sun convention). No override needed.
                 infiniteLights.push_back(info);
             }
             else

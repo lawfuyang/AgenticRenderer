@@ -600,9 +600,10 @@ struct DirectionalLight
         // Calculate sample position on the distant light
         // Since there is no physical distant light to hit (as it is at infinity), this simply uses a large
         // number far enough away from anything in the world.
+        // Note: 'direction' points toward the sun, so we ADD to place the sample at the sun's position.
 
-        const float3 distantPositionSample = viewerPosition - distantDirectionSample * DISTANT_LIGHT_DISTANCE;
-        const float3 distantNormalSample = direction;
+        const float3 distantPositionSample = viewerPosition + distantDirectionSample * DISTANT_LIGHT_DISTANCE;
+        const float3 distantNormalSample = -direction;
 
         // Create the light sample
 
