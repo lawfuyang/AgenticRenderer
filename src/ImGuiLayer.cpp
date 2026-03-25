@@ -441,7 +441,7 @@ void ImGuiLayer::UpdateFrame()
         }
 
         DirectX::XMVECTOR vScreenCenter = DirectX::XMVector3Project(vCenter, 0.0f, 0.0f, viewportWidth, viewportHeight, 0.0f, 1.0f, proj, view, DirectX::XMMatrixIdentity());
-        DirectX::XMFLOAT3 screenCenter;
+        Vector3 screenCenter;
         DirectX::XMStoreFloat3(&screenCenter, vScreenCenter);
 
         bool isOffScreen = (screenCenter.z < 0.0f || screenCenter.z > 1.0f ||
@@ -459,7 +459,7 @@ void ImGuiLayer::UpdateFrame()
             DirectX::XMVECTOR vRight = invView.r[0]; 
             DirectX::XMVECTOR vPoint = DirectX::XMVectorAdd(vCenter, DirectX::XMVectorScale(vRight, radius));
             DirectX::XMVECTOR vScreenPoint = DirectX::XMVector3Project(vPoint, 0.0f, 0.0f, viewportWidth, viewportHeight, 0.0f, 1.0f, proj, view, DirectX::XMMatrixIdentity());
-            DirectX::XMFLOAT3 screenPoint;
+            Vector3 screenPoint;
             DirectX::XMStoreFloat3(&screenPoint, vScreenPoint);
 
             float radiusPx = sqrtf((screenPoint.x - cx) * (screenPoint.x - cx) + (screenPoint.y - cy) * (screenPoint.y - cy));
@@ -500,7 +500,7 @@ void ImGuiLayer::UpdateFrame()
                     auto ProjectToScreen = [&](DirectX::XMVECTOR vWorld, ImVec2& outScreen) -> bool
                     {
                         DirectX::XMVECTOR vS = DirectX::XMVector3Project(vWorld, 0.0f, 0.0f, viewportWidth, viewportHeight, 0.0f, 1.0f, proj, view, DirectX::XMMatrixIdentity());
-                        DirectX::XMFLOAT3 s;
+                        Vector3 s;
                         DirectX::XMStoreFloat3(&s, vS);
                         outScreen = ImVec2(s.x, s.y);
                         return (s.z >= 0.0f && s.z <= 1.0f);

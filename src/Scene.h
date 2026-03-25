@@ -272,7 +272,7 @@ public:
         DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(&node.m_WorldTransform);
         DirectX::XMVECTOR fwd = DirectX::XMVector3Normalize(
             DirectX::XMVector3TransformNormal(DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), world));
-        DirectX::XMFLOAT3 f; DirectX::XMStoreFloat3(&f, fwd);
+        Vector3 f; DirectX::XMStoreFloat3(&f, fwd);
         return Vector3{ f.x, f.y, f.z };
     }
 
