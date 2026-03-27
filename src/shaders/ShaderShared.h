@@ -475,14 +475,6 @@ struct SpdConstants
   SpdReductionType m_ReductionType;
 };
 
-struct BloomConstants
-{
-    float m_Knee;
-    float m_Strength;
-    uint32_t m_Width;
-    uint32_t m_Height;
-    float m_UpsampleRadius;
-};
 // ============================================================================
 // RTXDIConstants
 // RTXDIConstants — GPU-shared constant buffer for ReSTIR DI passes.

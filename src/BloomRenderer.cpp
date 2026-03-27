@@ -2,7 +2,8 @@
 #include "Config.h"
 #include "Utilities.h"
 #include "CommonResources.h"
-#include "shaders/ShaderShared.h"
+
+#include "shaders/srrhi/cpp/Bloom.h"
 
 extern RGTextureHandle g_RG_HDRColor;
 RGTextureHandle g_RG_BloomDownPyramid;
@@ -51,36 +52,30 @@ public:
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
-        
+
         nvrhi::TextureHandle bloomDownPyramid = renderGraph.GetTexture(g_RG_BloomDownPyramid, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle bloomUpPyramid = renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle bloomUpPyramid   = renderGraph.GetTexture(g_RG_BloomUpPyramid,   RGResourceAccessMode::Write);
+        nvrhi::TextureHandle hdrColor         = renderGraph.GetTexture(g_RG_HDRColor,         RGResourceAccessMode::Read);
 
         // 1. Prefilter (HDR -> Down[0])
         {
-            BloomConstants consts{};
-            consts.m_Knee = renderer->m_BloomKnee;
-            consts.m_Strength = 1.0f;
-            consts.m_Width = width / 2;
-            consts.m_Height = height / 2;
+            srrhi::BloomPrefilterInputs inputs;
+            inputs.m_PrefilterConstants.SetKnee(renderer->m_BloomKnee);
+            inputs.m_PrefilterConstants.SetStrength(1.0f);
+            inputs.SetInputTexture(hdrColor);
 
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, hdrColor)
-            };
-
+            nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
             nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1)));
 
             commandList->clearTextureFloat(bloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
-                .commandList = commandList,
-                .shaderName = "Bloom_Prefilter_PSMain",
-                .bindingSetDesc = bset,
-                .pushConstants = &consts,
-                .pushConstantsSize = sizeof(consts),
-                .framebuffer = fb
+                .commandList       = commandList,
+                .shaderName        = "Bloom_Prefilter_PSMain",
+                .bindingSetDesc    = bset,
+                .pushConstants     = &inputs.m_PrefilterConstants,
+                .pushConstantsSize = srrhi::BloomPrefilterInputs::PushConstantBytes,
+                .framebuffer       = fb
             };
             renderer->AddFullScreenPass(params);
         }
@@ -92,67 +87,59 @@ public:
             uint32_t mipH = (height / 2) >> i;
             if (mipW == 0 || mipH == 0) break;
 
-            BloomConstants consts{};
-            consts.m_Width = mipW;
-            consts.m_Height = mipH;
+            srrhi::BloomDownsampleInputs inputs;
+            inputs.m_DownsampleConstants.SetWidth(mipW);
+            inputs.m_DownsampleConstants.SetHeight(mipH);
+            inputs.SetInputTexture(bloomDownPyramid, static_cast<int32_t>(i - 1), 1);
 
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, bloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i - 1, 1, 0, 1))
-            };
-
+            nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
             nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
 
             commandList->clearTextureFloat(bloomDownPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
-                .commandList = commandList,
-                .shaderName = "Bloom_Downsample_PSMain",
-                .bindingSetDesc = bset,
-                .pushConstants = &consts,
-                .pushConstantsSize = sizeof(consts),
-                .framebuffer = fb
+                .commandList       = commandList,
+                .shaderName        = "Bloom_Downsample_PSMain",
+                .bindingSetDesc    = bset,
+                .pushConstants     = &inputs.m_DownsampleConstants,
+                .pushConstantsSize = srrhi::BloomDownsampleInputs::PushConstantBytes,
+                .framebuffer       = fb
             };
             renderer->AddFullScreenPass(params);
         }
 
         // 3. Upsample chain (Up[i+1] + Down[i] -> Up[i])
         // Seed the up-chain with the smallest down mip
-
-        nvrhi::TextureSlice slice;
-        slice.mipLevel = kBloomMipCount - 1;
-
-        commandList->copyTexture(bloomUpPyramid, slice, bloomDownPyramid, slice);
+        {
+            nvrhi::TextureSlice slice;
+            slice.mipLevel = kBloomMipCount - 1;
+            commandList->copyTexture(bloomUpPyramid, slice, bloomDownPyramid, slice);
+        }
 
         for (int i = kBloomMipCount - 2; i >= 0; --i)
         {
             uint32_t mipW = (width / 2) >> i;
             uint32_t mipH = (height / 2) >> i;
 
-            BloomConstants consts{};
-            consts.m_Width = mipW;
-            consts.m_Height = mipH;
-            consts.m_UpsampleRadius = renderer->m_UpsampleRadius;
+            srrhi::BloomUpsampleInputs inputs;
+            inputs.m_UpsampleConstants.SetWidth(mipW);
+            inputs.m_UpsampleConstants.SetHeight(mipH);
+            inputs.m_UpsampleConstants.SetUpsampleRadius(renderer->m_UpsampleRadius);
+            inputs.SetSourceTexture(bloomUpPyramid,   i + 1, 1);
+            inputs.SetBloomTexture(bloomDownPyramid,  i,     1);
 
-            nvrhi::BindingSetDesc bset;
-            bset.bindings = {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(BloomConstants)),
-                nvrhi::BindingSetItem::Texture_SRV(0, bloomUpPyramid,   nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i + 1, 1, 0, 1)),
-                nvrhi::BindingSetItem::Texture_SRV(1, bloomDownPyramid, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i,     1, 0, 1))
-            };
-
+            nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
             nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1)));
 
             commandList->clearTextureFloat(bloomUpPyramid, nvrhi::TextureSubresourceSet(i, 1, 0, 1), nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 
             Renderer::RenderPassParams params{
-                .commandList = commandList,
-                .shaderName = "Bloom_Upsample_PSMain",
-                .bindingSetDesc = bset,
-                .pushConstants = &consts,
-                .pushConstantsSize = sizeof(consts),
-                .framebuffer = fb
+                .commandList       = commandList,
+                .shaderName        = "Bloom_Upsample_PSMain",
+                .bindingSetDesc    = bset,
+                .pushConstants     = &inputs.m_UpsampleConstants,
+                .pushConstantsSize = srrhi::BloomUpsampleInputs::PushConstantBytes,
+                .framebuffer       = fb
             };
             renderer->AddFullScreenPass(params);
         }

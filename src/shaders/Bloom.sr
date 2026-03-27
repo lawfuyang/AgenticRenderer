@@ -1,0 +1,43 @@
+cbuffer BloomPrefilterConstants
+{
+    float m_Knee;
+    float m_Strength;
+};
+
+cbuffer BloomDownsampleConstants
+{
+    uint m_Width;
+    uint m_Height;
+};
+
+cbuffer BloomUpsampleConstants
+{
+    uint m_Width;
+    uint m_Height;
+    float m_UpsampleRadius;
+};
+
+srinput BloomPrefilterInputs
+{
+    [push_constant]
+    BloomPrefilterConstants m_PrefilterConstants;
+
+    Texture2D<float3> InputTexture;
+};
+
+srinput BloomDownsampleInputs
+{
+    [push_constant]
+    BloomDownsampleConstants m_DownsampleConstants;
+
+    Texture2D<float3> InputTexture;
+};
+
+srinput BloomUpsampleInputs
+{
+    [push_constant]
+    BloomUpsampleConstants m_UpsampleConstants;
+
+    Texture2D<float3> SourceTexture;
+    Texture2D<float3> BloomTexture;
+};
