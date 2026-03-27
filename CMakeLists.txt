@@ -233,7 +233,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE meshoptimizer)
 
 # Link Microprofile
 target_link_libraries(${PROJECT_NAME} PRIVATE microprofile)
-target_compile_definitions(microprofile PUBLIC MICROPROFILE_USE_CONFIG=0)
+target_compile_definitions(microprofile PUBLIC MICROPROFILE_USE_CONFIG=0 MICROPROFILE_GPU_TIMERS_D3D12=1)
 
 # Link RTXDI
 target_link_libraries(${PROJECT_NAME} PRIVATE Rtxdi)

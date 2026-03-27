@@ -214,7 +214,8 @@ void RenderGraph::ScheduleRenderer(IRenderer* pRenderer)
             PROFILE_SCOPED(pRenderer->GetName());
             SimpleTimer cpuTimer;
             ScopedCommandList scopedCmd{ cmd, pRenderer->GetName() };
-            
+            PROFILE_GPU_SCOPED(pRenderer->GetName(), cmd);
+
             renderer->m_RenderGraph.SetActivePass(passIndex);
             
             if (renderer->m_RHI->m_NvrhiDevice->pollTimerQuery(pRenderer->m_GPUQueries[readIndex]))

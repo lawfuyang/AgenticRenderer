@@ -193,7 +193,7 @@ public:
         // GPU culling passes into m_InstanceLODBuffer.
         if (scene.m_BLASAddressBuffer && scene.m_InstanceLODBuffer)
         {
-            nvrhi::utils::ScopedMarker patchMarker(commandList, "TLASPatch");
+            PROFILE_GPU_SCOPED("TLAS Patch", commandList);
 
             nvrhi::BindingSetDesc bset;
             bset.bindings =

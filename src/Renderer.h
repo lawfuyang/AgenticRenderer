@@ -165,6 +165,8 @@ struct Renderer
     double GetFrameTimeMs() const { return m_FrameTime; }
     void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
 
+    static MicroProfileThreadLogGpu*& GetGPULogForCurrentThread();
+
     // Public State & Resources
     SDL_Window* m_Window = nullptr;
     std::unique_ptr<GraphicRHI> m_RHI;
@@ -288,31 +290,8 @@ private:
 class ScopedCommandList
 {
 public:
-    ScopedCommandList(const nvrhi::CommandListHandle& commandList, std::string_view markerName = "")
-        : m_CommandList(commandList)
-        , m_HasMarker(!markerName.empty())
-    {
-        m_CommandList->open();
-
-        if (m_HasMarker)
-        {
-            Renderer::GetInstance()->m_RHI->SetCommandListDebugName(commandList, markerName);
-        }
-
-        if (m_HasMarker)
-        {
-            m_CommandList->beginMarker(markerName.data());
-        }
-    }
-
-    ~ScopedCommandList()
-    {
-        if (m_HasMarker)
-        {
-            m_CommandList->endMarker();
-        }
-        m_CommandList->close();
-    }
+    ScopedCommandList(const nvrhi::CommandListHandle& commandList, std::string_view markerName = "");
+    ~ScopedCommandList();
 
     const nvrhi::CommandListHandle& operator->() const { return m_CommandList; }
     operator nvrhi::ICommandList*() const { return m_CommandList.Get(); }
@@ -320,5 +299,21 @@ public:
 
 private:
     const nvrhi::CommandListHandle& m_CommandList;
+    std::string m_MarkerName;
     bool m_HasMarker;
 };
+
+class ScopedGpuProfile
+{
+public:
+    ScopedGpuProfile(std::string_view name, const nvrhi::CommandListHandle& commandList);
+
+private:
+    static std::string_view BuildMicroProfileName(std::string_view name);
+
+    nvrhi::utils::ScopedMarker m_Marker;
+    MicroProfileToken m_Token = MICROPROFILE_INVALID_TOKEN;
+    MicroProfileScopeGpuHandler m_Scope;
+};
+
+#define PROFILE_GPU_SCOPED(NAME, CMDLIST) ScopedGpuProfile GENERATE_UNIQUE_VARIABLE(scopedGpuProfile){ NAME, CMDLIST };

@@ -455,7 +455,7 @@ void NrdIntegration::RunDenoiserPasses(
     const nrd::CommonSettings& commonSettings,
     const void*                denoiserSettings)
 {
-    nvrhi::utils::ScopedMarker marker{ commandList, "NRD Denoise" };
+    PROFILE_GPU_SCOPED("NRD Denoise", commandList);
 
     Renderer* renderer = Renderer::GetInstance();
     nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
@@ -489,7 +489,7 @@ void NrdIntegration::RunDenoiserPasses(
         const nrd::DispatchDesc& dispatchDesc = dispatchDescs[dispatchIdx];
         const nrd::PipelineDesc& pipelineDesc = instanceDesc->pipelines[dispatchDesc.pipelineIndex];
 
-        nvrhi::utils::ScopedMarker dispatchMarker{ commandList, dispatchDesc.name ? dispatchDesc.name : "NRD Dispatch" };
+        PROFILE_GPU_SCOPED(dispatchDesc.name ? dispatchDesc.name : "NRD Dispatch", commandList);
 
         // Write constant buffer data for this dispatch
         SDL_assert(m_ConstantBuffer);

@@ -58,7 +58,7 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        nvrhi::utils::ScopedMarker marker(commandList, "HDR Post-Processing");
+        PROFILE_GPU_SCOPED("HDR Post-Processing", commandList);
 
         nvrhi::BufferHandle luminanceHistogram = renderer->m_EnableAutoExposure ? renderGraph.GetBuffer(m_RG_LuminanceHistogram, RGResourceAccessMode::Write) : nullptr;
         nvrhi::BufferHandle exposureBuffer = renderGraph.GetBuffer(m_RG_ExposureBuffer, RGResourceAccessMode::Write);
@@ -68,8 +68,8 @@ public:
         // 1. Histogram Pass
         if (renderer->m_EnableAutoExposure)
         {
-            nvrhi::utils::ScopedMarker histMarker(commandList, "Luminance Histogram");
-            
+            PROFILE_GPU_SCOPED("Luminance Histogram", commandList);
+
             // Clear histogram buffer
             commandList->clearBufferUInt(luminanceHistogram, 0);
 
@@ -103,8 +103,8 @@ public:
 
         // 2. Exposure Adaptation Pass
         {
-            nvrhi::utils::ScopedMarker adaptMarker(commandList, "Exposure Adaptation");
-
+            PROFILE_GPU_SCOPED("Exposure Adaptation", commandList);
+            
             if (renderer->m_EnableAutoExposure)
             {
                 AdaptationConstants consts;
@@ -144,7 +144,7 @@ public:
 
         // 3. Tonemapping Pass
         {
-            nvrhi::utils::ScopedMarker tonemapMarker(commandList, "Tonemapping");
+            PROFILE_GPU_SCOPED("Tonemapping", commandList);
 
             TonemapConstants consts;
             consts.m_Width = renderer->m_RHI->m_SwapchainExtent.x;

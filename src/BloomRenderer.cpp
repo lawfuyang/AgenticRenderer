@@ -47,7 +47,7 @@ public:
         Renderer* renderer = Renderer::GetInstance();
         nvrhi::DeviceHandle device = renderer->m_RHI->m_NvrhiDevice;
 
-        nvrhi::utils::ScopedMarker marker(commandList, "Bloom");
+        PROFILE_GPU_SCOPED("Bloom", commandList);
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;

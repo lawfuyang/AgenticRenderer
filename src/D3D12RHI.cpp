@@ -24,9 +24,11 @@ public:
     ComPtr<IDXGIFactory6> m_Factory;
     ComPtr<ID3D12Device> m_Device;
     ComPtr<ID3D12CommandQueue> m_CommandQueue;
+    ComPtr<ID3D12CommandQueue> m_CopyQueue;
     ComPtr<IDXGISwapChain3> m_SwapChain;
     bool m_bTearingSupported = false;
     bool m_bTightAlignmentSupported = false;
+    int m_MicroProfileGfxQueue = -1;
 
     ~D3D12GraphicRHI() override { Shutdown(); }
 
@@ -152,19 +154,29 @@ public:
             }
         }
 
-        D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-        hr = m_Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue));
-        if (FAILED(hr))
+        auto CreateQueue = [&](D3D12_COMMAND_LIST_TYPE queueType, ComPtr<ID3D12CommandQueue>& outQueue)
         {
-            SDL_LOG_ASSERT_FAIL("CreateCommandQueue failed", "CreateCommandQueue failed: 0x%08X", hr);
-            return;
-        }
+            D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+            queueDesc.Type = queueType;
+            queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+            hr = m_Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&outQueue));
+            if (FAILED(hr))
+            {
+                SDL_LOG_ASSERT_FAIL("CreateCommandQueue failed", "CreateCommandQueue failed: 0x%08X", hr);
+                return false;
+            }
+            return true;
+        };
+        
+        CreateQueue(D3D12_COMMAND_LIST_TYPE_DIRECT, m_CommandQueue);
+        CreateQueue(D3D12_COMMAND_LIST_TYPE_COPY, m_CopyQueue);
+
+        MICROPROFILE_CONDITIONAL(m_MicroProfileGfxQueue = MICROPROFILE_GPU_INIT_QUEUE("GPU-Graphics-Queue"));
 
         nvrhi::d3d12::DeviceDesc nvrhiDesc;
         nvrhiDesc.pDevice = m_Device.Get();
         nvrhiDesc.pGraphicsCommandQueue = m_CommandQueue.Get();
+        nvrhiDesc.pCopyCommandQueue = m_CopyQueue.Get();
         nvrhiDesc.errorCB = &ms_NvrhiCallback;
         nvrhiDesc.enableHeapDirectlyIndexed = true;
 
@@ -174,6 +186,11 @@ public:
         {
             m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
         }
+
+        // Initialize microprofile D3D12 GPU timers
+        ID3D12CommandQueue* pGfxQueue = m_CommandQueue.Get();
+        ID3D12CommandQueue* pCopyQueue = m_CopyQueue.Get();
+        MicroProfileGpuInitD3D12(m_Device.Get(), 1, (void**)&pGfxQueue, (void**)&pCopyQueue);
     }
 
     void Shutdown() override

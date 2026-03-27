@@ -59,7 +59,7 @@ static void DownsampleTextureToPow2(nvrhi::CommandListHandle commandList, nvrhi:
 
     Renderer* renderer = Renderer::GetInstance();
 
-    nvrhi::utils::ScopedMarker commandListMarker{ commandList, "DownsampleTextureToPow2" };
+    PROFILE_GPU_SCOPED("DownsampleTextureToPow2", commandList);
 
     ResizeToNextLowestPowerOfTwoConstants consts;
     consts.m_Width = outputTexture->getDesc().width;
@@ -76,7 +76,7 @@ static void DownsampleTextureToPow2(nvrhi::CommandListHandle commandList, nvrhi:
 
     const uint32_t dispatchX = DivideAndRoundUp(consts.m_Width, 8);
     const uint32_t dispatchY = DivideAndRoundUp(consts.m_Height, 8);
-
+    
     std::string shaderName = "ResizeToNextLowestPowerOfTwo_CS_ResizeToNextLowestPowerOfTwo_NUM_CHANNELS=";
     shaderName += nvrhi::getFormatInfo(outputTexture->getDesc().format).hasBlue ? "3" : "1";
 
@@ -186,9 +186,9 @@ protected:
 
         Renderer* renderer = Renderer::GetInstance();
 
-        char marker[256];
+        char marker[256]{};
         sprintf(marker, "Occlusion Culling Phase %d - %s", args.m_CullingPhase + 1, args.m_BucketName);
-        nvrhi::utils::ScopedMarker commandListMarker{ commandList, marker };
+        PROFILE_GPU_SCOPED(marker, commandList);
 
         if (args.m_CullingPhase == 0)
         {
@@ -266,7 +266,7 @@ protected:
             renderer->AddComputePass(params);
         }
 
-        nvrhi::utils::ScopedMarker buildIndirectMarker{ commandList, "Build Indirect Arguments" };
+        PROFILE_GPU_SCOPED("Build Indirect Arguments", commandList);
 
         // Build indirect for Phase 2 culling and/or meshlet rendering
         if (args.m_CullingPhase == 0)
@@ -300,9 +300,9 @@ protected:
         nvrhi::TextureHandle hdrColor = handles.hdr;
         nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? handles.opaque : CommonResources::GetInstance().DefaultTextureBlack;
 
-        char marker[256];
+        char marker[256]{};
         sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
-        nvrhi::utils::ScopedMarker commandListMarker(commandList, marker);
+        PROFILE_GPU_SCOPED(marker, commandList);
 
         const bool bUseAlphaTest = (args.m_AlphaMode == ALPHA_MODE_MASK);
         const bool bUseAlphaBlend = (args.m_AlphaMode == ALPHA_MODE_BLEND);
@@ -500,7 +500,7 @@ protected:
     void ClearAllCounters(nvrhi::CommandListHandle commandList, const ResourceHandles& handles)
     {
         Renderer* renderer = Renderer::GetInstance();
-        nvrhi::utils::ScopedMarker clearMarker{ commandList, "Clear All Counters" };
+        PROFILE_GPU_SCOPED("Clear All Counters", commandList);
         commandList->clearBufferUInt(handles.visibleCount, 0);
         if (renderer->m_EnableOcclusionCulling)
         {

@@ -1441,8 +1441,8 @@ nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderH
 
 void Renderer::AddFullScreenPass(const RenderPassParams& params)
 {
-    PROFILE_SCOPED(params.shaderName.data());
-    nvrhi::utils::ScopedMarker scopedMarker{ params.commandList, params.shaderName.data() };
+    PROFILE_FUNCTION();
+    PROFILE_GPU_SCOPED(params.shaderName, params.commandList);
 
     nvrhi::MeshletPipelineDesc desc;
     desc.MS = GetShaderHandle("FullScreen_MSMain");
@@ -1510,7 +1510,8 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
 
 void Renderer::AddComputePass(const RenderPassParams& params)
 {
-    nvrhi::utils::ScopedMarker scopedMarker{ params.commandList, params.shaderName.data() };
+    PROFILE_FUNCTION();
+    PROFILE_GPU_SCOPED(params.shaderName, params.commandList);
 
     nvrhi::BindingLayoutVector layouts;
     std::vector<nvrhi::BindingSetHandle> bindingSets;
@@ -1571,6 +1572,7 @@ void Renderer::AddComputePass(const RenderPassParams& params)
 void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType)
 {
     PROFILE_FUNCTION();
+    PROFILE_GPU_SCOPED(markerName, commandList);
     nvrhi::utils::ScopedMarker spdMarker{ commandList, markerName };
 
     const nvrhi::FormatInfo& formatInfo = nvrhi::getFormatInfo(texture->getDesc().format);
@@ -1619,8 +1621,8 @@ void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferH
     // Atomic counter always at slot 12
     spdBset.bindings.push_back(nvrhi::BindingSetItem::StructuredBuffer_UAV(12, spdAtomicCounter));
 
-    std::string shaderName = "SPD_SPD_CSMain_SPD_NUM_CHANNELS=";
-    shaderName += numChannels == 3 ? "3" : "1";
+    char shaderName[256]{};
+    std::snprintf(shaderName, sizeof(shaderName), "SPD_SPD_CSMain_SPD_NUM_CHANNELS=%u", numChannels);
 
     Renderer::RenderPassParams params{
         .commandList = commandList,
@@ -1678,6 +1680,18 @@ void Renderer::ExecutePendingCommandLists()
 
     if (!m_PendingCommandLists.empty())
     {
+        // Submit GPU profiling blocks in the same order as command list execution.
+        // MICROPROFILE_GPU_SUBMIT must be called in submission order so microprofile
+        // can correlate GPU timestamps across frames correctly.
+        for (const nvrhi::CommandListHandle& handle : m_PendingCommandLists)
+        {
+            if (handle->m_GPULog != ULLONG_MAX)
+            {
+                MicroProfileGpuSubmit((uint32_t)nvrhi::CommandQueue::Graphics, handle->m_GPULog);
+                handle->m_GPULog = ULLONG_MAX;
+            }
+        }
+
         if (Config::Get().ExecutePerPass || Config::Get().ExecutePerPassAndWait)
         {
             for (const nvrhi::CommandListHandle& handle : m_PendingCommandLists)
@@ -1707,6 +1721,67 @@ void Renderer::ExecutePendingCommandLists()
     }
 }
 
+MicroProfileThreadLogGpu*& Renderer::GetGPULogForCurrentThread()
+{
+    thread_local MicroProfileThreadLogGpu* tl_GPULog = nullptr;
+    return tl_GPULog;
+}
+
+std::string_view ScopedGpuProfile::BuildMicroProfileName(std::string_view name)
+{
+    constexpr size_t kMaxMicroProfileTimerNameLen = MICROPROFILE_NAME_MAX_LEN - 1;
+
+    if (name.size() < kMaxMicroProfileTimerNameLen)
+    {
+        return name;
+    }
+    
+    // Take the final MICROPROFILE_NAME_MAX_LEN - 1 characters
+    return std::string_view{name.data() + (name.size() - kMaxMicroProfileTimerNameLen), kMaxMicroProfileTimerNameLen};
+}
+
+ScopedGpuProfile::ScopedGpuProfile(std::string_view name, const nvrhi::CommandListHandle& commandList)
+    : m_Marker(commandList, name.data())
+    , m_Token(MicroProfileGetToken("GPU", BuildMicroProfileName(name).data(), MP_AUTO, MicroProfileTokenTypeGpu, 0))
+    , m_Scope(m_Token, Renderer::GetGPULogForCurrentThread())
+{
+}
+
+ScopedCommandList::ScopedCommandList(const nvrhi::CommandListHandle& commandList, std::string_view markerName)
+    : m_CommandList(commandList)
+    , m_MarkerName(markerName)
+    , m_HasMarker(!m_MarkerName.empty())
+{
+    m_CommandList->open();
+
+    if (m_HasMarker)
+    {
+        Renderer::GetInstance()->m_RHI->SetCommandListDebugName(commandList, markerName);
+    }
+
+    if (m_HasMarker)
+    {
+        m_CommandList->beginMarker(m_MarkerName.c_str());
+    }
+
+    if (!Renderer::GetGPULogForCurrentThread())
+    {
+        Renderer::GetGPULogForCurrentThread() = MicroProfileThreadLogGpuAlloc();
+    }
+    MicroProfileGpuBegin(m_CommandList->getNativeObject(nvrhi::ObjectTypes::D3D12_GraphicsCommandList).pointer, Renderer::GetGPULogForCurrentThread());
+}
+
+ScopedCommandList::~ScopedCommandList()
+{
+    SDL_assert(Renderer::GetGPULogForCurrentThread());
+    m_CommandList->m_GPULog = MicroProfileGpuEnd(Renderer::GetGPULogForCurrentThread());
+
+    if (m_HasMarker)
+    {
+        m_CommandList->endMarker();
+    }
+    m_CommandList->close();
+}
 
 int main(int argc, char* argv[])
 {

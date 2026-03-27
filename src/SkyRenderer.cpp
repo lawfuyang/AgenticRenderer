@@ -34,7 +34,7 @@ public:
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        nvrhi::utils::ScopedMarker marker(commandList, "Sky Pass");
+        PROFILE_GPU_SCOPED("Sky Pass", commandList);
 
         nvrhi::TextureHandle depthTexture = renderGraph.GetTexture(g_RG_DepthTexture, RGResourceAccessMode::Read);
         nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Write);

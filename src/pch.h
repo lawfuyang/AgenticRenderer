@@ -66,6 +66,10 @@ using AABB = DirectX::BoundingBox;
 using OBB = DirectX::BoundingOrientedBox;
 using Frustum = DirectX::BoundingFrustum;
 
+#define JOIN_MACROS_INTERNAL( Arg1, Arg2 ) Arg1##Arg2
+#define JOIN_MACROS( Arg1, Arg2 )          JOIN_MACROS_INTERNAL( Arg1, Arg2 )
+#define GENERATE_UNIQUE_VARIABLE(basename) JOIN_MACROS(basename, __COUNTER__)
+
 #define SDL_LOG_ASSERT_FAIL(assertMsg, logFmt, ...) do { SDL_Log(logFmt, ##__VA_ARGS__); SDL_assert(false && assertMsg); } while(0)
 
 #define PROFILE_SCOPED(NAME) MICROPROFILE_SCOPE_CSTR(NAME);

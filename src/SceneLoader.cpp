@@ -1324,11 +1324,10 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 
 	const uint32_t threadCount = renderer->m_TaskScheduler->GetThreadCount() + 1;
 	std::vector<nvrhi::CommandListHandle> threadCommandLists(threadCount);
-	std::vector<std::unique_ptr<ScopedCommandList>> threadScopedCommandLists(threadCount);
 	for (uint32_t i = 0; i < threadCount; ++i)
 	{
 		threadCommandLists[i] = renderer->AcquireCommandList();
-		threadScopedCommandLists[i] = std::make_unique<ScopedCommandList>(threadCommandLists[i], "Texture Load");
+		threadCommandLists[i]->open();
 	}
 
 	renderer->m_TaskScheduler->ParallelFor(static_cast<uint32_t>(scene.m_Textures.size()), [&](uint32_t i, uint32_t threadIndex)
@@ -1367,7 +1366,10 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 		UploadTexture(cmd, tex.m_Handle, desc, imgData->GetData(), imgData->GetSize());
 	});
 
-	threadScopedCommandLists.clear();
+	for (uint32_t i = 0; i < threadCount; ++i)
+	{
+		threadCommandLists[i]->close();
+	}
 
 	for (size_t ti = 0; ti < scene.m_Textures.size(); ++ti)
 	{
