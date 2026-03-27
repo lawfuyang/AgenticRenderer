@@ -222,8 +222,10 @@ public:
         }
 
         // ── TLAS Build ────────────────────────────────────────────────────────
-        // Only rebuild TLAS if instance transforms are dirty
-        if (scene.AreInstanceTransformsDirty())
+        // Always rebuild TLAS after TLASPatch_CS because LOD changes swap the
+        // per-instance BLAS addresses every frame, even when transforms are
+        // unchanged.  Without a rebuild the TLAS would keep referencing stale
+        // BLAS pointers, causing primitive-index mismatches in RT shaders.
         {
             commandList->buildTopLevelAccelStructFromBuffer(
                 scene.m_TLAS,

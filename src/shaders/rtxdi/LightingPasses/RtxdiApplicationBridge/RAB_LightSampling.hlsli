@@ -172,7 +172,18 @@ uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
     uint geometryInstanceIndex = hitInstance.m_FirstGeometryInstanceIndex + geometryIndex;
     lightIndex = t_GeometryInstanceToLight[geometryInstanceIndex];
     if (lightIndex != RTXDI_InvalidLightIndex)
-      lightIndex += primitiveIndex;
+    {
+        // The light buffer is built from LOD 0 triangles.  When the TLAS
+        // references a coarser LOD BLAS, the primitiveIndex from the ray
+        // hit is relative to that LOD's index buffer and does NOT map 1:1
+        // to LOD 0 triangles.  Guard against out-of-bounds access by
+        // checking against the LOD 0 triangle count.
+        MeshData geometry = t_GeometryData[hitInstance.m_MeshDataIndex];
+        uint lod0TriangleCount = geometry.m_IndexCounts[0] / 3;
+        if (primitiveIndex >= lod0TriangleCount)
+            return RTXDI_InvalidLightIndex;
+        lightIndex += primitiveIndex;
+    }
     return lightIndex;
 }
 

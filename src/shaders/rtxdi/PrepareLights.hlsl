@@ -82,7 +82,12 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
         MaterialConstants material = t_MaterialConstants[instance.m_MaterialIndex];
 
         // Get triangle vertex positions using the shared helper
-        uint lodIndex = instance.m_LODIndex;
+        // Always use LOD 0 for light preparation: the light buffer is sized
+        // for LOD 0 triangle counts (set on the CPU in PostSceneLoad), so
+        // triangleIdx is a LOD 0 primitive index.  Using the dynamic
+        // instance.m_LODIndex here would read from a different (smaller)
+        // index range, producing wrong geometry and out-of-bounds accesses.
+        uint lodIndex = 0;
         TriangleVertices tv = GetTriangleVertices(triangleIdx, lodIndex, geometry, t_SceneIndices, t_SceneVertices);
 
         float3 positions[3];
