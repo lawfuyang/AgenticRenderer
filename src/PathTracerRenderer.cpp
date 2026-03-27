@@ -97,7 +97,7 @@ public:
 
         Renderer::RenderPassParams params{
             .commandList = commandList,
-            .shaderName = "PathTracer_PathTracer_CSMain",
+            .shaderName = "PathTracer_PathTracer_CSMain_PATH_TRACER_MODE=1",
             .bindingSetDesc = bset,
             .dispatchParams = {
                 .x = DivideAndRoundUp(hdrDesc.width, 8),
