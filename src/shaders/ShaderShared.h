@@ -302,15 +302,6 @@ struct ForwardLightingPerFrameData
   uint32_t pad1;
 };
 
-struct SkyConstants
-{
-  PlanarViewConstants m_View;
-  Vector4 m_CameraPos;
-  Vector3 m_SunDirection;
-  float m_SunIntensity;
-  uint32_t m_RenderingMode;
-};
-
 struct DeferredLightingConstants
 {
   PlanarViewConstants m_View;

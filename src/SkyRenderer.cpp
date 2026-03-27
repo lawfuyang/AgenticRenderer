@@ -44,7 +44,7 @@ public:
         const Vector3 camPos = renderer->m_Scene.m_Camera.GetPosition();
 
         // Sky CB
-        const nvrhi::BufferDesc skyCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(SkyConstants), "SkyCB", 1);
+        const nvrhi::BufferDesc skyCBD = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::SkyCB), "SkyCB", 1);
         const nvrhi::BufferHandle skyCB = renderer->m_RHI->m_NvrhiDevice->createBuffer(skyCBD);
         
         // copy just to test
