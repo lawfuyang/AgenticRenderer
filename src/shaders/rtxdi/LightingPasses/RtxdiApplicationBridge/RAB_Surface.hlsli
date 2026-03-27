@@ -126,12 +126,14 @@ RAB_Surface GetGBufferSurface(
     if (rawDepth == 0.0f)
         return surface; // surface.viewDepth == BACKGROUND_DEPTH from RAB_EmptySurface()
 
-    // Convert raw NDC depth to linear view-space depth using the clip-to-view matrix.
-    // mul(float4(0,0,rawDepth,1), m_MatClipToView) gives the view-space position;
-    // dividing .z by .w yields the linear view-space Z (positive = in front of camera).
+    // Convert raw NDC depth to linear view-space depth using the *non-jittered*
+    // clip-to-view matrix.  The depth buffer is written by the base pass with
+    // m_MatWorldToClipNoOffset, so we must invert with the matching NoOffset
+    // matrix.  Using the jittered m_MatClipToView introduces a per-frame depth
+    // error that breaks temporal depth comparisons at edge pixels.
     {
         float4 clipPos  = float4(0.0f, 0.0f, rawDepth, 1.0f);
-        float4 viewPos  = MatrixMultiply(clipPos, view.m_MatClipToView);
+        float4 viewPos  = MatrixMultiply(clipPos, view.m_MatClipToViewNoOffset);
         surface.viewDepth = viewPos.z / viewPos.w;
     }
 
