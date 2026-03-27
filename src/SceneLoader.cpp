@@ -1780,16 +1780,16 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 			const float cone_weight = 0.25f;
 
 			const uint32_t kIndexLimitForLODGeneration = 1024;
-			const float kIndexReductionPercentageForLODGeneration = 0.5f;
-			const size_t kMinimumIndicesForLODGeneration = 128;
 
-			const float target_error_hq = 0.01f;
-			const float kMaxErrorForLODGeneration = 0.10f;
+			const float kMaxError = 1e-1f;
 			const float kMinReductionRatio = 0.85f;
 
 			const float attribute_weights[3] = { 1.0f, 1.0f, 1.0f };
 
 			const float simplifyScale = meshopt_simplifyScale(&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex));
+
+			std::vector<uint32_t> currentLodIndices = localIndices;
+			float accumulatedError = 0.0f;
 
 			for (uint32_t lod = 0; lod < MAX_LOD_COUNT; ++lod)
 			{
@@ -1798,7 +1798,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 
 				if (lod == 0)
 				{
-					lodIndices = localIndices;
+					lodIndices = currentLodIndices;
 					lodError = 0.0f;
 				}
 				else
@@ -1806,29 +1806,38 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 					if (baseIndexCount < kIndexLimitForLODGeneration)
 						break;
 
-					size_t target_index_count = size_t(baseIndexCount * pow(kIndexReductionPercentageForLODGeneration, (float)lod));
-					target_index_count = std::max(target_index_count, kMinimumIndicesForLODGeneration);
+					const size_t prevIndexCount = res.meshData.m_IndexCounts[lod - 1];
+					size_t target_index_count = (size_t(double(prevIndexCount) * 0.6) / 3) * 3;
 
-					if (target_index_count >= res.meshData.m_IndexCounts[lod - 1])
-						break;
-
-					lodIndices.resize(baseIndexCount);
+					lodIndices.resize(prevIndexCount);
 					size_t new_index_count = meshopt_simplifyWithAttributes(
 						lodIndices.data(),
-						localIndices.data(), baseIndexCount,
+						currentLodIndices.data(), prevIndexCount,
 						&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex),
 						&optimizedVertices[0].m_Normal.x, sizeof(Vertex),
 						attribute_weights, 3,
-						nullptr, target_index_count, target_error_hq,
+						nullptr, target_index_count, kMaxError,
 						meshopt_SimplifySparse,
 						&lodError);
 					lodIndices.resize(new_index_count);
 
+					// We've reached the error bound or got no reduction
+					if (new_index_count == prevIndexCount || new_index_count == 0)
+						break;
+
+					// Too close to the previous LOD (can't go below due to constant error bound)
+					if (new_index_count >= size_t(double(prevIndexCount) * kMinReductionRatio))
+						break;
+
+					// Keep kIndexLimitForLODGeneration: stop if result is too small
 					if (new_index_count < kIndexLimitForLODGeneration)
 						break;
 
-					if (new_index_count >= res.meshData.m_IndexCounts[lod - 1] * kMinReductionRatio || lodError > kMaxErrorForLODGeneration)
-						break;
+					// Accumulate error across LODs
+					accumulatedError = std::max(accumulatedError * 1.5f, lodError);
+					lodError = accumulatedError;
+
+					currentLodIndices = lodIndices;
 
 					meshopt_optimizeVertexCache(lodIndices.data(), lodIndices.data(), lodIndices.size(), uniqueVertices);
 				}

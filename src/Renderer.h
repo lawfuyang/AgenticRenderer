@@ -213,7 +213,7 @@ struct Renderer
 
     // Rendering options
     bool m_UseMeshletRendering = true;
-    int m_ForcedLOD = 0; // force lod to 0, due to alot of RT related shit which i cant be bothered to fix
+    int m_ForcedLOD = -1;
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
     uint32_t m_PathTracerMaxBounces = 8;
