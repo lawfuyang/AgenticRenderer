@@ -25,3 +25,93 @@ struct PlanarViewConstants
     // FullSample accesses view.cameraDirectionOrPosition.xyz for camera position.
     float4      m_CameraDirectionOrPosition;   // xyz = world pos, w = 1.0
 };
+
+srinput CommonConsts
+{
+    // Math constants
+    static const float PI = 3.14159265359f;
+    static const float M_PI = 3.14159265359f;
+
+    // Thread group / meshlet limits
+    static const uint32_t kThreadsPerGroup = 32;
+    static const uint32_t kMaxMeshletVertices = 64;
+    static const uint32_t kMaxMeshletTriangles = 96;
+
+    // Max LOD count
+    static const uint32_t MAX_LOD_COUNT = 8;
+
+    // Bruneton atmosphere precomputed texture dimensions
+    static const int TRANSMITTANCE_TEXTURE_WIDTH = 256;
+    static const int TRANSMITTANCE_TEXTURE_HEIGHT = 64;
+    static const int SCATTERING_TEXTURE_R_SIZE = 32;
+    static const int SCATTERING_TEXTURE_MU_SIZE = 128;
+    static const int SCATTERING_TEXTURE_MU_S_SIZE = 32;
+    static const int SCATTERING_TEXTURE_NU_SIZE = 8;
+    static const int SCATTERING_TEXTURE_WIDTH = 256;
+    static const int SCATTERING_TEXTURE_HEIGHT = 128;
+    static const int SCATTERING_TEXTURE_DEPTH = 32;
+    static const int IRRADIANCE_TEXTURE_WIDTH = 64;
+    static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
+
+    // Debug modes
+    static const int DEBUG_MODE_NONE = 0;
+    static const int DEBUG_MODE_INSTANCES = 1;
+    static const int DEBUG_MODE_MESHLETS = 2;
+    static const int DEBUG_MODE_WORLD_NORMALS = 3;
+    static const int DEBUG_MODE_ALBEDO = 4;
+    static const int DEBUG_MODE_ROUGHNESS = 5;
+    static const int DEBUG_MODE_METALLIC = 6;
+    static const int DEBUG_MODE_EMISSIVE = 7;
+    static const int DEBUG_MODE_LOD = 8;
+    static const int DEBUG_MODE_MOTION_VECTORS = 9;
+
+    // Rendering modes
+    static const int RENDERING_MODE_NORMAL = 0;
+    static const int RENDERING_MODE_IBL = 1;
+    static const int RENDERING_MODE_PATH_TRACER = 2;
+
+    // Texture flags (bit flags)
+    static const uint32_t TEXFLAG_ALBEDO = 1;
+    static const uint32_t TEXFLAG_NORMAL = 2;
+    static const uint32_t TEXFLAG_ROUGHNESS_METALLIC = 4;
+    static const uint32_t TEXFLAG_EMISSIVE = 8;
+
+    // Default texture indices for bindless access
+    static const int DEFAULT_TEXTURE_BLACK = 0;
+    static const int DEFAULT_TEXTURE_WHITE = 1;
+    static const int DEFAULT_TEXTURE_GRAY = 2;
+    static const int DEFAULT_TEXTURE_NORMAL = 3;
+    static const int DEFAULT_TEXTURE_PBR = 4;
+    static const int DEFAULT_TEXTURE_BRDF_LUT = 5;
+    static const int DEFAULT_TEXTURE_IRRADIANCE = 6;
+    static const int DEFAULT_TEXTURE_RADIANCE = 7;
+    static const int BRUNETON_TRANSMITTANCE_TEXTURE = 8;
+    static const int BRUNETON_SCATTERING_TEXTURE = 9;
+    static const int BRUNETON_IRRADIANCE_TEXTURE = 10;
+    static const int DEFAULT_TEXTURE_COUNT = 11;
+
+    // Global sampler indices
+    static const int SAMPLER_ANISOTROPIC_CLAMP_INDEX = 0;
+    static const int SAMPLER_ANISOTROPIC_WRAP_INDEX = 1;
+    static const int SAMPLER_POINT_CLAMP_INDEX = 2;
+    static const int SAMPLER_POINT_WRAP_INDEX = 3;
+    static const int SAMPLER_LINEAR_CLAMP_INDEX = 4;
+    static const int SAMPLER_LINEAR_WRAP_INDEX = 5;
+    static const int SAMPLER_MIN_REDUCTION_INDEX = 6;
+    static const int SAMPLER_MAX_REDUCTION_INDEX = 7;
+    static const int SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX = 8;
+
+    // Alpha modes
+    static const int ALPHA_MODE_OPAQUE = 0;
+    static const int ALPHA_MODE_MASK = 1;
+    static const int ALPHA_MODE_BLEND = 2;
+
+    // SPD reduction types (converted from enum SpdReductionType)
+    static const int SPD_REDUCTION_MIN = 0;
+    static const int SPD_REDUCTION_MAX = 1;
+    static const int SPD_REDUCTION_AVERAGE = 2;
+
+    // Depth values (reversed-Z: near=1, far=0)
+    static const float DEPTH_NEAR = 1.0f;
+    static const float DEPTH_FAR = 0.0f;
+};

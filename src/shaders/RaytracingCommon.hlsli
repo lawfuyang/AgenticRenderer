@@ -1,4 +1,4 @@
-#ifndef RAYTRACING_COMMON_HLSLI
+﻿#ifndef RAYTRACING_COMMON_HLSLI
 #define RAYTRACING_COMMON_HLSLI
 
 #include "ShaderShared.h"
@@ -131,13 +131,13 @@ bool AlphaTest(
     MaterialConstants mat,
     float lod = 0.0f)
 {
-    if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE)
         return true;
     
-    if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
     {
         float alpha = mat.m_BaseColor.w;
-        if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+        if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
         {
             alpha *= SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, lod).w;
         }
@@ -153,13 +153,13 @@ bool AlphaTestGrad(
     float2 ddy_uv,
     MaterialConstants mat)
 {
-    if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE)
         return true;
     
-    if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
     {
         float alpha = mat.m_BaseColor.w;
-        if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+        if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
         {
             alpha *= SampleBindlessTextureGrad(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, ddx_uv, ddy_uv).w;
         }
@@ -184,7 +184,7 @@ PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, fl
     PBRAttributes pbrAttr;
     pbrAttr.baseColor = mat.m_BaseColor.xyz;
     pbrAttr.alpha = mat.m_BaseColor.w;
-    if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
     {
         float4 albedoSample = SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, attr.m_Uv, lod);
         pbrAttr.baseColor *= albedoSample.xyz;
@@ -192,7 +192,7 @@ PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, fl
     }
 
     pbrAttr.roughness = mat.m_RoughnessMetallic.x;
-    if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
         pbrAttr.roughness = SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).g;
     }
@@ -200,19 +200,19 @@ PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, fl
     pbrAttr.roughness = max(pbrAttr.roughness, 0.04f);
     
     pbrAttr.metallic = mat.m_RoughnessMetallic.y;
-    if ((mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ROUGHNESS_METALLIC) != 0)
     {
         pbrAttr.metallic = SampleBindlessTextureLevel(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, attr.m_Uv, lod).b;
     }
 
     pbrAttr.emissive = mat.m_EmissiveFactor.xyz;
-    if ((mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_EMISSIVE) != 0)
     {
         pbrAttr.emissive *= SampleBindlessTextureLevel(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, attr.m_Uv, lod).xyz;
     }
 
     // Normal (from normal map when available)
-    if ((mat.m_TextureFlags & TEXFLAG_NORMAL) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_NORMAL) != 0)
     {
         float2 normalSample = SampleBindlessTextureLevel(mat.m_NormalTextureIndex, mat.m_NormalSamplerIndex, attr.m_Uv, lod).xy;
         pbrAttr.normal = TransformNormalWithTBN(normalSample, attr.m_WorldNormal, attr.m_WorldTangent, attr.m_TangentSign);

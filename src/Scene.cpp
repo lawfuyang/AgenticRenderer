@@ -1,4 +1,4 @@
-#include "Scene.h"
+﻿#include "Scene.h"
 #include "SceneLoader.h"
 #include "Config.h"
 #include "Renderer.h"
@@ -115,7 +115,7 @@ void Scene::BuildAccelerationStructures()
 
 			const MeshData& meshData = m_MeshData[primitive.m_MeshDataIndex];
 			const uint32_t lodCount = meshData.m_LODCount;
-			SDL_assert(lodCount > 0 && lodCount <= MAX_LOD_COUNT);
+			SDL_assert(lodCount > 0 && lodCount <= srrhi::CommonConsts::MAX_LOD_COUNT);
 
 			primitive.m_BLAS.resize(lodCount);
 
@@ -177,7 +177,7 @@ void Scene::BuildAccelerationStructures()
 		instanceDesc.setTransform(transform);
 
         nvrhi::rt::InstanceFlags instanceFlags = nvrhi::rt::InstanceFlags::None;
-        instanceFlags = instanceFlags | ((alphaMode == ALPHA_MODE_OPAQUE) ? nvrhi::rt::InstanceFlags::ForceOpaque : nvrhi::rt::InstanceFlags::ForceNonOpaque);
+        instanceFlags = instanceFlags | ((alphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE) ? nvrhi::rt::InstanceFlags::ForceOpaque : nvrhi::rt::InstanceFlags::ForceNonOpaque);
 
         instanceDesc.instanceID = instanceID;
         instanceDesc.instanceMask = 1;
@@ -206,11 +206,11 @@ void Scene::BuildAccelerationStructures()
         scopedCmd->buildTopLevelAccelStructFromBuffer(m_TLAS, m_RTInstanceDescBuffer, 0, (uint32_t)m_RTInstanceDescs.size());
     }
 
-    // 3. Build the flat BLAS address buffer: blasAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex]
+    // 3. Build the flat BLAS address buffer: blasAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex]
     //    This is uploaded once at scene load and read by TLASPatch_CS each frame.
     {
         const uint32_t numInstances = (uint32_t)m_InstanceData.size();
-        const uint32_t totalEntries = numInstances * MAX_LOD_COUNT;
+        const uint32_t totalEntries = numInstances * srrhi::CommonConsts::MAX_LOD_COUNT;
         std::vector<uint64_t> blasAddresses(totalEntries, 0);
 
         for (uint32_t instanceID = 0; instanceID < numInstances; ++instanceID)
@@ -219,11 +219,11 @@ void Scene::BuildAccelerationStructures()
             Primitive* primitive = meshDataToPrimitive.at(instData.m_MeshDataIndex);
             const uint32_t lodCount = (uint32_t)primitive->m_BLAS.size();
 
-            for (uint32_t lod = 0; lod < MAX_LOD_COUNT; ++lod)
+            for (uint32_t lod = 0; lod < srrhi::CommonConsts::MAX_LOD_COUNT; ++lod)
             {
                 // Clamp to highest available LOD to avoid null/invalid addresses (Req 2 AC3)
                 const uint32_t clampedLod = (lod < lodCount) ? lod : (lodCount - 1);
-                blasAddresses[instanceID * MAX_LOD_COUNT + lod] = primitive->m_BLAS[clampedLod]->getDeviceAddress();
+                blasAddresses[instanceID * srrhi::CommonConsts::MAX_LOD_COUNT + lod] = primitive->m_BLAS[clampedLod]->getDeviceAddress();
             }
         }
 
@@ -320,11 +320,11 @@ void Scene::FinalizeLoadedScene()
             uint32_t alphaMode = m_Materials[prim.m_MaterialIndex].m_AlphaMode;
             bool isDynamic = node.m_IsDynamic;
 
-            if (alphaMode == ALPHA_MODE_OPAQUE) {
+            if (alphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE) {
                 if (isDynamic) opaqueDynamic.push_back({ inst, ni });
                 else opaqueStatic.push_back({ inst, ni });
             }
-            else if (alphaMode == ALPHA_MODE_MASK) {
+            else if (alphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK) {
                 if (isDynamic) maskedDynamic.push_back({ inst, ni });
                 else maskedStatic.push_back({ inst, ni });
             }

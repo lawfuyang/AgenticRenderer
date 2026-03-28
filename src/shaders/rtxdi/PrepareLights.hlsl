@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  */
@@ -31,8 +31,8 @@ StructuredBuffer<MaterialConstants>         t_MaterialConstants : register(t4);
 StructuredBuffer<uint>                      t_SceneIndices      : register(t5);
 StructuredBuffer<VertexQuantized>           t_SceneVertices     : register(t6);
 
-#define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
-#define IES_SAMPLER         SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
+#define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
+#define IES_SAMPLER         SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
 #include "PolymorphicLight.hlsli"
 
 bool FindTask(uint dispatchThreadId, out PrepareLightsTask task)
@@ -99,7 +99,7 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
         float3 radiance = material.m_EmissiveFactor.rgb;
 
         // Apply emissive texture if present
-        if ((material.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
+        if ((material.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_EMISSIVE) != 0)
         {
             // Interpolate UVs for the triangle centroid
             float2 uv0 = tv.v0.m_Uv;

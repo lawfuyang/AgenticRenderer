@@ -1,4 +1,4 @@
-#define DEFERRED_PASS
+﻿#define DEFERRED_PASS
 #include "Bindless.hlsli"
 #include "Atmosphere.hlsli"
 
@@ -25,10 +25,10 @@ float4 Sky_PSMain(FullScreenVertexOut input) : SV_Target
     float3 viewRay = -V;
     float3 skyRadiance = 0;
 
-    if (g_Sky.m_RenderingMode == RENDERING_MODE_IBL)
+    if (g_Sky.m_RenderingMode == srrhi::CommonConsts::RENDERING_MODE_IBL)
     {
-        TextureCube radianceMap = ResourceDescriptorHeap[DEFAULT_TEXTURE_RADIANCE];
-        SamplerState linearClamp = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+        TextureCube radianceMap = ResourceDescriptorHeap[srrhi::CommonConsts::DEFAULT_TEXTURE_RADIANCE];
+        SamplerState linearClamp = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
         skyRadiance = radianceMap.SampleLevel(linearClamp, viewRay, 0).rgb;
     }
     else

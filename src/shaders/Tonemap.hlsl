@@ -1,4 +1,4 @@
-#include "ShaderShared.h"
+﻿#include "ShaderShared.h"
 #include "srrhi/hlsl/HDR.hlsli"
 
 static const srrhi::TonemapConstants TonemapCB = srrhi::TonemappingInputs::GetTonemapConstants();
@@ -41,7 +41,7 @@ float3 sRGB_OETF(float3 x)
 
 float4 Tonemap_PSMain(FullScreenVertexOut input) : SV_Target
 {
-    SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     uint2 pixelPos = uint2(input.uv * float2(TonemapCB.m_Width, TonemapCB.m_Height));
     float3 color = HDRColorInput[pixelPos];
     float exposure = ExposureInput[0];

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "pch.h"
 #include "Camera.h"
@@ -113,11 +113,11 @@ public:
         int m_EmissiveTexture = -1;
         float m_RoughnessFactor = 1.0f;
         float m_MetallicFactor = 0.0f;
-        uint32_t m_AlbedoTextureIndex = DEFAULT_TEXTURE_WHITE;
-        uint32_t m_NormalTextureIndex = DEFAULT_TEXTURE_NORMAL;
-        uint32_t m_RoughnessMetallicTextureIndex = DEFAULT_TEXTURE_PBR;
-        uint32_t m_EmissiveTextureIndex = DEFAULT_TEXTURE_BLACK;
-        uint32_t m_AlphaMode = ALPHA_MODE_OPAQUE;
+        uint32_t m_AlbedoTextureIndex = srrhi::CommonConsts::DEFAULT_TEXTURE_WHITE;
+        uint32_t m_NormalTextureIndex = srrhi::CommonConsts::DEFAULT_TEXTURE_NORMAL;
+        uint32_t m_RoughnessMetallicTextureIndex = srrhi::CommonConsts::DEFAULT_TEXTURE_PBR;
+        uint32_t m_EmissiveTextureIndex = srrhi::CommonConsts::DEFAULT_TEXTURE_BLACK;
+        uint32_t m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_OPAQUE;
         float m_AlphaCutoff = 0.5f;
 
         // KHR_materials_ior
@@ -236,7 +236,7 @@ public:
     std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
     nvrhi::BufferHandle m_RTInstanceDescBuffer;
-    // Flat GPU buffer: blasAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex]
+    // Flat GPU buffer: blasAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex]
     // Uploaded once at scene load; read by TLASPatch_CS to look up per-LOD device addresses.
     nvrhi::BufferHandle m_BLASAddressBuffer;
     // Per-instance LOD index buffer: instanceLOD[instanceIndex] = lodIndex.
@@ -278,7 +278,7 @@ public:
         return Vector3{ f.x, f.y, f.z };
     }
 
-    // Sun pitch (elevation angle in radians, 0 = horizon, PI/2 = zenith)
+    // Sun pitch (elevation angle in radians, 0 = horizon, srrhi::CommonConsts::PI/2 = zenith)
     float GetSunPitch() const
     {
         Vector3 d = GetSunDirection();

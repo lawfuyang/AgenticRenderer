@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -296,7 +296,7 @@ bool RAB_SurfaceImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_RandomSamp
 float RAB_SurfaceEvaluateBrdfPdf(RAB_Surface surface, float3 dir)
 {
     float cosTheta = saturate(dot(surface.normal, dir));
-    float diffusePdf = cosTheta / M_PI;
+    float diffusePdf = cosTheta / srrhi::CommonConsts::M_PI;
     float specularPdf = SampleGGX_VNDF_PDF(max(surface.material.roughness, kMinRoughness), surface.normal, surface.viewDir, dir);
     float pdf = cosTheta > 0.f ? lerp(specularPdf, diffusePdf, surface.diffuseProbability) : 0.f;
     return pdf;
@@ -410,7 +410,7 @@ bool RAB_SurfaceImportanceSampleBsdf(RAB_Surface surface, inout RTXDI_RandomSamp
 float RAB_SurfaceEvaluateBsdfPdf(RAB_Surface surface, float3 dir, RTXDI_BrdfRaySampleProperties brsp)
 {
     float cosTheta = saturate(dot(surface.normal, dir));
-    float diffusePdf = cosTheta / M_PI;
+    float diffusePdf = cosTheta / srrhi::CommonConsts::M_PI;
     float specularPdf = 0.0;
     if(surface.material.roughness >= kMinRoughness)
     {

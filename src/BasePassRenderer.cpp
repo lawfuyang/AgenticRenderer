@@ -1,4 +1,4 @@
-#include "Renderer.h"
+﻿#include "Renderer.h"
 #include "CommonResources.h"
 #include "BasePassCommon.h"
 #include "Camera.h"
@@ -105,10 +105,10 @@ static void GenerateHZBMips(nvrhi::CommandListHandle commandList, const RenderGr
     nvrhi::TextureHandle hzb = renderGraph.GetTexture(g_RG_HZBTexture, RGResourceAccessMode::Write);
 
     // First, build HZB mip 0 from depth texture
-    DownsampleTextureToPow2(commandList, depth, hzb, SAMPLER_MIN_REDUCTION_INDEX);
+    DownsampleTextureToPow2(commandList, depth, hzb, srrhi::CommonConsts::SAMPLER_MIN_REDUCTION_INDEX);
 
     // Then generate the rest of the mip chain using SPD
-    renderer->GenerateMipsUsingSPD(hzb, spdAtomicCounter, commandList, "Generate HZB Mips", SPD_REDUCTION_MIN);
+    renderer->GenerateMipsUsingSPD(hzb, spdAtomicCounter, commandList, "Generate HZB Mips", srrhi::CommonConsts::SPD_REDUCTION_MIN);
 }
 
 class BasePassRendererBase : public IRenderer
@@ -248,7 +248,7 @@ protected:
 
         if (args.m_CullingPhase == 0)
         {
-            const uint32_t dispatchX = DivideAndRoundUp(args.m_NumInstances, kThreadsPerGroup);
+            const uint32_t dispatchX = DivideAndRoundUp(args.m_NumInstances, srrhi::CommonConsts::kThreadsPerGroup);
             Renderer::RenderPassParams params;
             params.commandList = commandList;
             params.shaderName = "GPUCulling_Culling_CSMain";
@@ -298,14 +298,14 @@ protected:
         nvrhi::TextureHandle gbufferMotionVectors = handles.motion;
         nvrhi::TextureHandle depthTexture = handles.depth;
         nvrhi::TextureHandle hdrColor = handles.hdr;
-        nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == ALPHA_MODE_BLEND ? handles.opaque : CommonResources::GetInstance().DefaultTextureBlack;
+        nvrhi::TextureHandle opaqueColor = args.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND ? handles.opaque : CommonResources::GetInstance().DefaultTextureBlack;
 
         char marker[256]{};
         sprintf(marker, "Base Pass Render (Phase %d) - %s", args.m_CullingPhase + 1, args.m_BucketName);
         PROFILE_GPU_SCOPED(marker, commandList);
 
-        const bool bUseAlphaTest = (args.m_AlphaMode == ALPHA_MODE_MASK);
-        const bool bUseAlphaBlend = (args.m_AlphaMode == ALPHA_MODE_BLEND);
+        const bool bUseAlphaTest = (args.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK);
+        const bool bUseAlphaBlend = (args.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND);
 
         const nvrhi::FramebufferHandle framebuffer = bUseAlphaBlend ? 
             renderer->m_RHI->m_NvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(hdrColor).setDepthAttachment(depthTexture)) :
@@ -393,7 +393,7 @@ protected:
         cb.m_EnableRTShadows = renderer->m_EnableRTShadows ? 1 : 0;
         cb.m_DebugMode = (uint32_t)renderer->m_DebugMode;
         cb.m_EnableFrustumCulling = renderer->m_EnableFrustumCulling ? 1 : 0;
-        cb.m_EnableConeCulling = (renderer->m_EnableConeCulling && args.m_AlphaMode == ALPHA_MODE_OPAQUE) ? 1 : 0;
+        cb.m_EnableConeCulling = (renderer->m_EnableConeCulling && args.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE) ? 1 : 0;
         cb.m_EnableOcclusionCulling = (renderer->m_EnableOcclusionCulling && handles.hzb) ? 1 : 0;
         cb.m_HZBWidth = handles.hzb ? (uint32_t)handles.hzb->getDesc().width : 0;
         cb.m_HZBHeight = handles.hzb ? (uint32_t)handles.hzb->getDesc().height : 0;
@@ -412,7 +412,7 @@ protected:
         nvrhi::RenderState renderState;
         renderState.rasterState = args.m_BackFaceCull ? CommonResources::GetInstance().RasterCullBack : CommonResources::GetInstance().RasterCullNone;
         
-        if (args.m_AlphaMode == ALPHA_MODE_BLEND)
+        if (args.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND)
         {
             renderState.blendState.targets[0] = CommonResources::GetInstance().BlendTargetAlpha;
             renderState.depthStencilState = CommonResources::GetInstance().DepthRead;
@@ -602,7 +602,7 @@ public:
         args.m_InstanceBaseIndex = renderer->m_Scene.m_OpaqueBucket.m_BaseIndex;
         args.m_BucketName = "Opaque";
         args.m_CullingPhase = 0;
-        args.m_AlphaMode = ALPHA_MODE_OPAQUE;
+        args.m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_OPAQUE;
 
         PerformOcclusionCulling(commandList, args, handles);
         RenderInstances(commandList, args, handles);
@@ -699,7 +699,7 @@ public:
         args.m_InstanceBaseIndex = renderer->m_Scene.m_MaskedBucket.m_BaseIndex;
         args.m_BucketName = renderer->m_EnableOcclusionCulling ? "Masked" : "Masked (No Occlusion)";
         args.m_CullingPhase = 0;
-        args.m_AlphaMode = ALPHA_MODE_MASK;
+        args.m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_MASK;
 
         PerformOcclusionCulling(commandList, args, handles);
         RenderInstances(commandList, args, handles);
@@ -798,11 +798,11 @@ public:
         handles.opaque = renderGraph.GetTexture(g_RG_OpaqueColor, RGResourceAccessMode::Write);
 
         // Downsample HDR to pow2 opaque texture via linear interpolation shader
-        DownsampleTextureToPow2(commandList, handles.hdr, handles.opaque, SAMPLER_LINEAR_CLAMP_INDEX);
+        DownsampleTextureToPow2(commandList, handles.hdr, handles.opaque, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX);
 
         // Generate mips for opaque color using SPD
         nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
-        renderer->GenerateMipsUsingSPD(handles.opaque, spdAtomicCounter, commandList, "Generate Mips for Opaque Color", SPD_REDUCTION_AVERAGE);
+        renderer->GenerateMipsUsingSPD(handles.opaque, spdAtomicCounter, commandList, "Generate Mips for Opaque Color", srrhi::CommonConsts::SPD_REDUCTION_AVERAGE);
 
         Matrix view, viewProjForCulling;
         Vector4 frustumPlanes[5];
@@ -817,7 +817,7 @@ public:
         args.m_NumInstances = numTransparent;
         args.m_InstanceBaseIndex = renderer->m_Scene.m_TransparentBucket.m_BaseIndex;
         args.m_BucketName = "Transparent";
-        args.m_AlphaMode = ALPHA_MODE_BLEND;
+        args.m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_BLEND;
         args.m_CullingPhase = 0;
         args.m_BackFaceCull = true;
 

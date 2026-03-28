@@ -1,4 +1,4 @@
-////////////////////////////////////////////////////////////////////////////////
+﻿////////////////////////////////////////////////////////////////////////////////
 // This file is shared between C++ and HLSL. It uses #ifdef __cplusplus
 // to conditionally include C++ headers and define types. When modifying, ensure compatibility
 // for both languages. Structs are defined with the same layout for CPU/GPU data sharing.
@@ -103,9 +103,6 @@
       return normalize(MatrixMultiply(normalMap, TBN));
   }
 
-#define DEPTH_NEAR 1.0f
-#define DEPTH_FAR 0.0f
-
 static const float3 kEarthCenter = float3(0.0f, -6360000.0f, 0.0f);
 
 #include "srrhi/hlsl/Common.hlsli" // TODO: remove this when everything gets converted to srrhi
@@ -122,6 +119,7 @@ typedef DirectX::XMFLOAT3 float3;
 typedef DirectX::XMFLOAT4 float4;
 
 #include "srrhi/cpp/Common.h" // TODO: remove this when everything gets converted to srrhi
+
 #endif // __cplusplus
 
 struct ImGuiPushConstants
@@ -129,72 +127,6 @@ struct ImGuiPushConstants
 	Vector2 uScale;
 	Vector2 uTranslate;
 };
-
-static const float PI = 3.14159265359f;
-static const float M_PI = PI;
-static const uint32_t kThreadsPerGroup = 32;
-static const uint32_t kMaxMeshletVertices = 64;
-static const uint32_t kMaxMeshletTriangles = 96;
-
-// Bruneton / atmosphere precomputed texture dimensions
-static const int TRANSMITTANCE_TEXTURE_WIDTH = 256;
-static const int TRANSMITTANCE_TEXTURE_HEIGHT = 64;
-static const int SCATTERING_TEXTURE_R_SIZE = 32;
-static const int SCATTERING_TEXTURE_MU_SIZE = 128;
-static const int SCATTERING_TEXTURE_MU_S_SIZE = 32;
-static const int SCATTERING_TEXTURE_NU_SIZE = 8;
-static const int SCATTERING_TEXTURE_WIDTH = SCATTERING_TEXTURE_NU_SIZE * SCATTERING_TEXTURE_MU_S_SIZE;
-static const int SCATTERING_TEXTURE_HEIGHT = SCATTERING_TEXTURE_MU_SIZE;
-static const int SCATTERING_TEXTURE_DEPTH = SCATTERING_TEXTURE_R_SIZE;
-static const int IRRADIANCE_TEXTURE_WIDTH = 64;
-static const int IRRADIANCE_TEXTURE_HEIGHT = 16;
-
-#define DEBUG_MODE_NONE 0
-#define DEBUG_MODE_INSTANCES 1
-#define DEBUG_MODE_MESHLETS 2
-#define DEBUG_MODE_WORLD_NORMALS 3
-#define DEBUG_MODE_ALBEDO 4
-#define DEBUG_MODE_ROUGHNESS 5
-#define DEBUG_MODE_METALLIC 6
-#define DEBUG_MODE_EMISSIVE 7
-#define DEBUG_MODE_LOD 8
-#define DEBUG_MODE_MOTION_VECTORS 9
-
-#define RENDERING_MODE_NORMAL 0
-#define RENDERING_MODE_IBL 1
-#define RENDERING_MODE_PATH_TRACER 2
-
-#define TEXFLAG_ALBEDO (1u << 0)
-#define TEXFLAG_NORMAL (1u << 1)
-#define TEXFLAG_ROUGHNESS_METALLIC (1u << 2)
-#define TEXFLAG_EMISSIVE (1u << 3)
-
-// Default texture indices for bindless access
-#define DEFAULT_TEXTURE_BLACK 0
-#define DEFAULT_TEXTURE_WHITE 1
-#define DEFAULT_TEXTURE_GRAY 2
-#define DEFAULT_TEXTURE_NORMAL 3
-#define DEFAULT_TEXTURE_PBR 4
-#define DEFAULT_TEXTURE_BRDF_LUT 5
-#define DEFAULT_TEXTURE_IRRADIANCE 6
-#define DEFAULT_TEXTURE_RADIANCE 7
-#define BRUNETON_TRANSMITTANCE_TEXTURE 8
-#define BRUNETON_SCATTERING_TEXTURE 9
-#define BRUNETON_IRRADIANCE_TEXTURE 10
-#define DEFAULT_TEXTURE_COUNT 11
-
-// Global Sampler Indices
-#define SAMPLER_ANISOTROPIC_CLAMP_INDEX 0
-#define SAMPLER_ANISOTROPIC_WRAP_INDEX 1
-#define SAMPLER_POINT_CLAMP_INDEX 2
-#define SAMPLER_POINT_WRAP_INDEX 3
-#define SAMPLER_LINEAR_CLAMP_INDEX 4
-#define SAMPLER_LINEAR_WRAP_INDEX 5
-#define SAMPLER_MIN_REDUCTION_INDEX 6
-#define SAMPLER_MAX_REDUCTION_INDEX 7
-#define SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX 8
-
-#define MAX_LOD_COUNT 8
 
 // Forward-lighting specific shared types.
 // Vertex input: provide simple C++ and HLSL variants
@@ -315,10 +247,6 @@ struct PathTracerConstants
 };
 
 // Material constants (persistent, per-material data)
-#define ALPHA_MODE_OPAQUE 0
-#define ALPHA_MODE_MASK 1
-#define ALPHA_MODE_BLEND 2
-
 struct MaterialConstants
 {
   Vector4 m_BaseColor;
@@ -353,11 +281,11 @@ struct MeshData
 {
   uint32_t m_LODCount;
   uint32_t pad0[3];
-  uint32_t m_IndexOffsets[MAX_LOD_COUNT];
-  uint32_t m_IndexCounts[MAX_LOD_COUNT];
-  uint32_t m_MeshletOffsets[MAX_LOD_COUNT];
-  uint32_t m_MeshletCounts[MAX_LOD_COUNT];
-  float m_LODErrors[MAX_LOD_COUNT];
+  uint32_t m_IndexOffsets[srrhi::CommonConsts::MAX_LOD_COUNT];
+  uint32_t m_IndexCounts[srrhi::CommonConsts::MAX_LOD_COUNT];
+  uint32_t m_MeshletOffsets[srrhi::CommonConsts::MAX_LOD_COUNT];
+  uint32_t m_MeshletCounts[srrhi::CommonConsts::MAX_LOD_COUNT];
+  float m_LODErrors[srrhi::CommonConsts::MAX_LOD_COUNT];
 };
 
 struct Meshlet
@@ -437,19 +365,12 @@ struct ResizeToNextLowestPowerOfTwoConstants
   uint32_t m_SamplerIdx;
 };
 
-enum SpdReductionType
-{
-    SPD_REDUCTION_MIN = 0,
-    SPD_REDUCTION_MAX = 1,
-    SPD_REDUCTION_AVERAGE = 2
-};
-
 struct SpdConstants
 {
   uint32_t m_Mips;
   uint32_t m_NumWorkGroups;
   Vector2U m_WorkGroupOffset;
-  SpdReductionType m_ReductionType;
+  uint32_t m_ReductionType;
 };
 
 // ============================================================================
@@ -460,11 +381,6 @@ struct SpdConstants
 // directly from the ReSTIRDIContext accessors. The #ifdef guards let the same
 // source file compile as both a C++ header and an HLSL include.
 // ============================================================================
-#ifdef __cplusplus
-// Pull in the RTXDI C++ types so we can embed them below.
-#include <Rtxdi/RtxdiParameters.h>
-#include <Rtxdi/DI/ReSTIRDIParameters.h>
-#endif
 
 struct RTXDIConstants
 {

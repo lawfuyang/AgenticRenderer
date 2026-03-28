@@ -1,4 +1,4 @@
-#define GPU_CULLING_DEFINE
+﻿#define GPU_CULLING_DEFINE
 #include "ShaderShared.h"
 #include "Culling.h"
 
@@ -36,7 +36,7 @@ RWStructuredBuffer<DispatchIndirectArguments> g_MeshletIndirectArgs : register(u
 // Written for every visible instance so TLASRenderer can patch BLAS addresses.
 RWStructuredBuffer<uint> g_InstanceLOD : register(u8);
 
-[numthreads(kThreadsPerGroup, 1, 1)]
+[numthreads(srrhi::CommonConsts::kThreadsPerGroup, 1, 1)]
 void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
 	uint instanceIndex = dispatchThreadId.x;
@@ -68,7 +68,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Occlusion culling
     if (g_Culling.m_EnableOcclusionCulling)
     {
-        SamplerState minSam = SamplerDescriptorHeap[SAMPLER_MIN_REDUCTION_INDEX];
+        SamplerState minSam = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_MIN_REDUCTION_INDEX];
         isVisible &= OcclusionSphereTest(sphereViewCenter, inst.m_Radius, uint2(g_Culling.m_HZBWidth, g_Culling.m_HZBHeight), g_Culling.m_P00, g_Culling.m_P11, g_HZB, minSam);
     }
 
@@ -106,7 +106,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
             InterlockedAdd(g_MeshletJobCount[0], 1, visibleIndex);
 
             DispatchIndirectArguments args;
-            args.m_ThreadGroupCountX = DivideAndRoundUp(mesh.m_MeshletCounts[lodIndex], kThreadsPerGroup);
+            args.m_ThreadGroupCountX = DivideAndRoundUp(mesh.m_MeshletCounts[lodIndex], srrhi::CommonConsts::kThreadsPerGroup);
             args.m_ThreadGroupCountY = 1;
             args.m_ThreadGroupCountZ = 1;
             g_MeshletIndirectArgs[visibleIndex] = args;
@@ -151,7 +151,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 [numthreads(1, 1, 1)]
 void BuildIndirect_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    g_DispatchIndirectArgs[0].m_ThreadGroupCountX = DivideAndRoundUp(g_OccludedCount[0], kThreadsPerGroup);
+    g_DispatchIndirectArgs[0].m_ThreadGroupCountX = DivideAndRoundUp(g_OccludedCount[0], srrhi::CommonConsts::kThreadsPerGroup);
     g_DispatchIndirectArgs[0].m_ThreadGroupCountY = 1;
     g_DispatchIndirectArgs[0].m_ThreadGroupCountZ = 1;
 }

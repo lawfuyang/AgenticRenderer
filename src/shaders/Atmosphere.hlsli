@@ -1,4 +1,4 @@
-#ifndef ATMOSPHERE_HLSLI
+﻿#ifndef ATMOSPHERE_HLSLI
 #define ATMOSPHERE_HLSLI
 
 #include "ShaderShared.h"
@@ -81,7 +81,7 @@ static const float lm = 1.0;
 static const float km = 1000.0 * m;
 static const float m2 = m * m;
 static const float m3 = m * m * m;
-static const float deg = PI / 180.0;
+static const float deg = srrhi::CommonConsts::PI / 180.0;
 static const float watt_per_square_meter = watt / m2;
 static const float watt_per_square_meter_per_sr = watt / (m2 * sr);
 static const float watt_per_square_meter_per_nm = watt / (m2 * nm);
@@ -186,8 +186,8 @@ float2 GetTransmittanceTextureUvFromRMu(float r, float mu)
     float rho = SafeSqrt(r * r - ATMOSPHERE.bottom_radius * ATMOSPHERE.bottom_radius);
     float d = DistanceToTopAtmosphereBoundary(r, mu);
     float H = SafeSqrt(ATMOSPHERE.top_radius * ATMOSPHERE.top_radius - ATMOSPHERE.bottom_radius * ATMOSPHERE.bottom_radius);
-    float x_mu = GetTextureCoordFromUnitRange(d / (rho + H), TRANSMITTANCE_TEXTURE_WIDTH);
-    float x_r = GetTextureCoordFromUnitRange(rho / H, TRANSMITTANCE_TEXTURE_HEIGHT);
+    float x_mu = GetTextureCoordFromUnitRange(d / (rho + H), srrhi::CommonConsts::TRANSMITTANCE_TEXTURE_WIDTH);
+    float x_r = GetTextureCoordFromUnitRange(rho / H, srrhi::CommonConsts::TRANSMITTANCE_TEXTURE_HEIGHT);
     return float2(x_mu, x_r);
 }
 
@@ -201,7 +201,7 @@ texture lookup (assuming there is no intersection with the ground):
 float3 GetTransmittanceToTopAtmosphereBoundary(uint transmittance_texture_index, float r, float mu)
 {
     float2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
-    return SampleBindlessTextureLevel(transmittance_texture_index, SAMPLER_LINEAR_CLAMP_INDEX, uv, 0).rgb;
+    return SampleBindlessTextureLevel(transmittance_texture_index, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, uv, 0).rgb;
 }
 
 /*
@@ -262,7 +262,7 @@ float4 GetScatteringTextureUvwzFromRMuMuSNu(float r, float mu, float mu_s, float
 {
     float H = sqrt(ATMOSPHERE.top_radius * ATMOSPHERE.top_radius - ATMOSPHERE.bottom_radius * ATMOSPHERE.bottom_radius);
     float rho = SafeSqrt(r * r - ATMOSPHERE.bottom_radius * ATMOSPHERE.bottom_radius);
-    float u_r = GetTextureCoordFromUnitRange(rho / H, SCATTERING_TEXTURE_R_SIZE);
+    float u_r = GetTextureCoordFromUnitRange(rho / H, srrhi::CommonConsts::SCATTERING_TEXTURE_R_SIZE);
 
     float r_mu = r * mu;
     float discriminant = r_mu * r_mu - r * r + ATMOSPHERE.bottom_radius * ATMOSPHERE.bottom_radius;
@@ -272,14 +272,14 @@ float4 GetScatteringTextureUvwzFromRMuMuSNu(float r, float mu, float mu_s, float
         float d = -r_mu - SafeSqrt(discriminant);
         float d_min = r - ATMOSPHERE.bottom_radius;
         float d_max = rho;
-        u_mu = 0.5 - 0.5 * GetTextureCoordFromUnitRange(d_max == d_min ? 0.0 : (d - d_min) / (d_max - d_min), SCATTERING_TEXTURE_MU_SIZE / 2);
+        u_mu = 0.5 - 0.5 * GetTextureCoordFromUnitRange(d_max == d_min ? 0.0 : (d - d_min) / (d_max - d_min), srrhi::CommonConsts::SCATTERING_TEXTURE_MU_SIZE / 2);
     }
     else
     {
         float d = -r_mu + SafeSqrt(discriminant + H * H);
         float d_min = ATMOSPHERE.top_radius - r;
         float d_max = rho + H;
-        u_mu = 0.5 + 0.5 * GetTextureCoordFromUnitRange((d - d_min) / (d_max - d_min), SCATTERING_TEXTURE_MU_SIZE / 2);
+        u_mu = 0.5 + 0.5 * GetTextureCoordFromUnitRange((d - d_min) / (d_max - d_min), srrhi::CommonConsts::SCATTERING_TEXTURE_MU_SIZE / 2);
     }
 
     float d = DistanceToTopAtmosphereBoundary(ATMOSPHERE.bottom_radius, mu_s);
@@ -288,7 +288,7 @@ float4 GetScatteringTextureUvwzFromRMuMuSNu(float r, float mu, float mu_s, float
     float a = (d - d_min) / (d_max - d_min);
     float D = DistanceToTopAtmosphereBoundary(ATMOSPHERE.bottom_radius, ATMOSPHERE.mu_s_min);
     float A = (D - d_min) / (d_max - d_min);
-    float u_mu_s = GetTextureCoordFromUnitRange(max(1.0 - a / A, 0.0) / (1.0 + a), SCATTERING_TEXTURE_MU_S_SIZE);
+    float u_mu_s = GetTextureCoordFromUnitRange(max(1.0 - a / A, 0.0) / (1.0 + a), srrhi::CommonConsts::SCATTERING_TEXTURE_MU_S_SIZE);
 
     float u_nu = (nu + 1.0) / 2.0;
     return float4(u_nu, u_mu_s, u_mu, u_r);
@@ -324,14 +324,14 @@ in <code>scattering_texture</code> and
 float3 GetCombinedScattering(uint scattering_texture_index, float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground, out float3 single_mie_scattering)
 {
     float4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(r, mu, mu_s, nu, ray_r_mu_intersects_ground);
-    float tex_coord_x = uvwz.x * float(SCATTERING_TEXTURE_NU_SIZE - 1);
+    float tex_coord_x = uvwz.x * float(srrhi::CommonConsts::SCATTERING_TEXTURE_NU_SIZE - 1);
     float tex_x = floor(tex_coord_x);
     float lerp_val = tex_coord_x - tex_x;
-    float3 uvw0 = float3((tex_x + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
-    float3 uvw1 = float3((tex_x + 1.0 + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
+    float3 uvw0 = float3((tex_x + uvwz.y) / float(srrhi::CommonConsts::SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
+    float3 uvw1 = float3((tex_x + 1.0 + uvwz.y) / float(srrhi::CommonConsts::SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
 
-    float4 combined_scattering = SampleBindlessTexture3DLevel(scattering_texture_index, SAMPLER_LINEAR_CLAMP_INDEX, uvw0, 0) * (1.0 - lerp_val) +
-        SampleBindlessTexture3DLevel(scattering_texture_index, SAMPLER_LINEAR_CLAMP_INDEX, uvw1, 0) * lerp_val;
+    float4 combined_scattering = SampleBindlessTexture3DLevel(scattering_texture_index, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, uvw0, 0) * (1.0 - lerp_val) +
+        SampleBindlessTexture3DLevel(scattering_texture_index, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, uvw1, 0) * lerp_val;
 
     float3 scattering = combined_scattering.rgb;
     single_mie_scattering = GetExtrapolatedSingleMieScattering(combined_scattering);
@@ -346,13 +346,13 @@ for better angular precision. We provide them here for completeness:
 */
 float RayleighPhaseFunction(float nu)
 {
-    float k = 3.0 / (16.0 * PI * sr);
+    float k = 3.0 / (16.0 * srrhi::CommonConsts::PI * sr);
     return k * (1.0 + nu * nu);
 }
 
 float MiePhaseFunction(float g, float nu)
 {
-    float k = 3.0 / (8.0 * PI * sr) * (1.0 - g * g) / (2.0 + g * g);
+    float k = 3.0 / (8.0 * srrhi::CommonConsts::PI * sr) * (1.0 - g * g) / (2.0 + g * g);
     return k * (1.0 + nu * nu) / pow(max(1.0 + g * g - 2.0 * g * nu, 0.0001), 1.5);
 }
 
@@ -371,7 +371,7 @@ float2 GetIrradianceTextureUvFromRMuS(float r, float mu_s)
     float x_r = (r - ATMOSPHERE.bottom_radius) /
         (ATMOSPHERE.top_radius - ATMOSPHERE.bottom_radius);
     float x_mu_s = mu_s * 0.5 + 0.5;
-    return float2(GetTextureCoordFromUnitRange(x_mu_s, IRRADIANCE_TEXTURE_WIDTH), GetTextureCoordFromUnitRange(x_r, IRRADIANCE_TEXTURE_HEIGHT));
+    return float2(GetTextureCoordFromUnitRange(x_mu_s, srrhi::CommonConsts::IRRADIANCE_TEXTURE_WIDTH), GetTextureCoordFromUnitRange(x_r, srrhi::CommonConsts::IRRADIANCE_TEXTURE_HEIGHT));
 }
 
 /*
@@ -383,7 +383,7 @@ with a single texture lookup:
 float3 GetIrradiance(uint irradiance_texture_index, float r, float mu_s)
 {
     float2 uv = GetIrradianceTextureUvFromRMuS(r, mu_s);
-    return SampleBindlessTextureLevel(irradiance_texture_index, SAMPLER_LINEAR_CLAMP_INDEX, uv, 0).rgb;
+    return SampleBindlessTextureLevel(irradiance_texture_index, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, uv, 0).rgb;
 }
 
 /*
@@ -568,13 +568,13 @@ float3 GetAtmosphereSunRadiance(float3 p_atmo, float3 sunDirection, float sunInt
 {
     float r = length(p_atmo);
     float mu_s = dot(p_atmo, sunDirection) / r;
-    return ATMOSPHERE.solar_irradiance * GetTransmittanceToSun(BRUNETON_TRANSMITTANCE_TEXTURE, r, mu_s) * sunIntensity;
+    return ATMOSPHERE.solar_irradiance * GetTransmittanceToSun(srrhi::CommonConsts::BRUNETON_TRANSMITTANCE_TEXTURE, r, mu_s) * sunIntensity;
 }
 
 float3 GetAtmosphereSkyIrradiance(float3 p_atmo, float3 normal, float3 sunDirection, float sunIntensity)
 {
     float3 skyIrradiance;
-    GetSunAndSkyIrradiance(BRUNETON_TRANSMITTANCE_TEXTURE, BRUNETON_IRRADIANCE_TEXTURE, p_atmo, normal, sunDirection, skyIrradiance);
+    GetSunAndSkyIrradiance(srrhi::CommonConsts::BRUNETON_TRANSMITTANCE_TEXTURE, srrhi::CommonConsts::BRUNETON_IRRADIANCE_TEXTURE, p_atmo, normal, sunDirection, skyIrradiance);
     return skyIrradiance * sunIntensity;
 }
 
@@ -582,7 +582,7 @@ float3 GetAtmosphereSkyRadiance(float3 cameraPos, float3 viewRay, float3 sunDire
 {
     float3 cameraPos_atmo = GetAtmospherePos(cameraPos);
     float3 transmittance;
-    float3 skyRadiance = GetSkyRadiance(BRUNETON_TRANSMITTANCE_TEXTURE, BRUNETON_SCATTERING_TEXTURE, cameraPos_atmo, viewRay, 0.0, sunDirection, transmittance);
+    float3 skyRadiance = GetSkyRadiance(srrhi::CommonConsts::BRUNETON_TRANSMITTANCE_TEXTURE, srrhi::CommonConsts::BRUNETON_SCATTERING_TEXTURE, cameraPos_atmo, viewRay, 0.0, sunDirection, transmittance);
 
     // Add sun disk
     if (bAddSunDisk)
@@ -591,7 +591,7 @@ float3 GetAtmosphereSkyRadiance(float3 cameraPos, float3 viewRay, float3 sunDire
         float sunAngularRadius = ATMOSPHERE.sun_angular_radius;
         if (nu > cos(sunAngularRadius))
         {
-            float3 sunDiskRadiance = ATMOSPHERE.solar_irradiance / (PI * sunAngularRadius * sunAngularRadius);
+            float3 sunDiskRadiance = ATMOSPHERE.solar_irradiance / (srrhi::CommonConsts::PI * sunAngularRadius * sunAngularRadius);
             skyRadiance += sunDiskRadiance * transmittance;
         }
     }

@@ -1,4 +1,4 @@
-#include "ShaderShared.h"
+﻿#include "ShaderShared.h"
 #include "RaytracingCommon.hlsli"
 #include "CommonLighting.hlsli"
 #include "Atmosphere.hlsli"
@@ -71,15 +71,15 @@ bool TraceRay(RayDesc ray, RNG rng, out RayHitInfo hit)
 
             float2 uvSample = GetInterpolatedUV(primitiveIndex, 0 /*LOD 0: path tracer always uses LOD 0 BLAS*/, bary, mesh, g_Indices, g_Vertices);
 
-            if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+            if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
             {
                 if (AlphaTest(uvSample, mat))
                     q.CommitNonOpaqueTriangleHit();
             }
-            else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
+            else if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND)
             {
                 float alpha = mat.m_BaseColor.w;
-                if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+                if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
                 {
                     alpha *= SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uvSample).w;
                 }
@@ -202,9 +202,9 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
             // and thick/volumetric surfaces (full IOR refraction).
             // Uses exact dielectric Fresnel for lobe selection and GGX microfacets
             // for rough transmission with proper refraction PDF Jacobian.
-            if (mat.m_TransmissionFactor > 0.0f || mat.m_AlphaMode == ALPHA_MODE_BLEND)
+            if (mat.m_TransmissionFactor > 0.0f || mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND)
             {
-                float effectiveAlpha     = (mat.m_AlphaMode == ALPHA_MODE_BLEND) ? pbr.alpha : 1.0f;
+                float effectiveAlpha     = (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND) ? pbr.alpha : 1.0f;
                 float transmissionFactor = max(mat.m_TransmissionFactor, 1.0f - effectiveAlpha);
 
                 float materialIOR = max(mat.m_IOR, 1.0001f);
@@ -352,7 +352,7 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
                 if (dot(N, newDir) <= 0.0f)
                     break;
 
-                // weight = albedo * (1-metallic)  (PDF = NdotL/PI, BRDF = albedo/PI, NdotL cancels)
+                // weight = albedo * (1-metallic)  (PDF = NdotL/srrhi::CommonConsts::PI, BRDF = albedo/srrhi::CommonConsts::PI, NdotL cancels)
                 brdfWeight = pbr.baseColor * (1.0f - pbr.metallic) / (1.0f - specProb);
             }
 

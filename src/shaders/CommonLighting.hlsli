@@ -1,4 +1,4 @@
-#ifndef COMMON_LIGHTING_HLSLI
+﻿#ifndef COMMON_LIGHTING_HLSLI
 #define COMMON_LIGHTING_HLSLI
 
 #include "ShaderShared.h"
@@ -26,10 +26,10 @@ float3 Schlick_Fresnel(float3 F0, float cosTheta)
     return F0 + (1.0f - F0) * pow(max(1.0f - cosTheta, 0.0f), 5.0f);
 }
 
-// ---- Lambertian diffuse (FullSample: Lambert(N, L) = NdotL / PI) ----
+// ---- Lambertian diffuse (FullSample: Lambert(N, L) = NdotL / srrhi::CommonConsts::PI) ----
 float Lambert(float3 N, float3 L)
 {
-    return max(0.0f, dot(N, L)) / M_PI;
+    return max(0.0f, dot(N, L)) / srrhi::CommonConsts::M_PI;
 }
 
 // ---- ONB construction (Pixar branchless) ----
@@ -75,13 +75,13 @@ void GetReflectivityFromMetallic(float metalness, float3 baseColor, out float3 d
 }
 
 // GGX normal distribution function.
-// Returns D(NdotH, roughness) = alpha^2 / (PI * ((NdotH^2*(alpha^2-1)+1))^2)
+// Returns D(NdotH, roughness) = alpha^2 / (srrhi::CommonConsts::PI * ((NdotH^2*(alpha^2-1)+1))^2)
 float D_GGX(float NdotH, float roughness)
 {
     float alpha  = roughness * roughness;
     float alpha2 = alpha * alpha;
     float denom  = (NdotH * NdotH * (alpha2 - 1.0f) + 1.0f);
-    return alpha2 / (PI * denom * denom);
+    return alpha2 / (srrhi::CommonConsts::PI * denom * denom);
 }
 
 // Height-correlated Smith G2 divided by (4 * NdotV), expressed as G2/NdotV.
@@ -141,7 +141,7 @@ float OrenNayar(float NdotL, float NdotV, float LdotV, float roughness)
         sqrt((1.0 - NdotL*NdotL) * (1.0 - NdotV*NdotV)) /
         max(NdotL, NdotV);
 
-    return NdotL * (A + B * max(0.0, cosPhi) * sinAlphaTanBeta) / PI;
+    return NdotL * (A + B * max(0.0, cosPhi) * sinAlphaTanBeta) / srrhi::CommonConsts::PI;
 }
 
 float DisneyBurleyDiffuse(float NdotL, float NdotV, float LdotH, float perceptualRoughness)
@@ -163,12 +163,12 @@ float DisneyBurleyDiffuse(float NdotL, float NdotV, float LdotH, float perceptua
         lerp(1.0, Fd90, FL) *
         lerp(1.0, Fd90, FV);
 
-    return Fd * NdotL / PI;
+    return Fd * NdotL / srrhi::CommonConsts::PI;
 }
 
 float3 SampleHemisphereCosine(float2 u, float3 normal)
 {
-    float phi = 2.0f * PI * u.x;
+    float phi = 2.0f * srrhi::CommonConsts::PI * u.x;
     float cosTheta = sqrt(u.y);
     float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
     
@@ -183,7 +183,7 @@ float3 SampleHemisphereCosine(float2 u, float3 normal)
 
 float3 SampleHemisphereUniform(float2 u, float3 normal)
 {
-    float phi = 2.0f * PI * u.x;
+    float phi = 2.0f * srrhi::CommonConsts::PI * u.x;
     float cosTheta = u.y;
     float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
     
@@ -361,7 +361,7 @@ LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, f
 {
     LightingComponents components;
 
-    // DisneyBurleyDiffuse already returns Fd * NdotL / PI — do NOT multiply by NdotL again.
+    // DisneyBurleyDiffuse already returns Fd * NdotL / srrhi::CommonConsts::PI — do NOT multiply by NdotL again.
     float diffuseTerm = DisneyBurleyDiffuse(inputs.NdotL, inputs.NdotV, inputs.LdotH, inputs.roughness);
     float3 diffuse = diffuseTerm * inputs.kD * inputs.baseColor;
 
@@ -374,7 +374,7 @@ LightingComponents EvaluateDirectLight(LightingInputs inputs, float3 radiance, f
     return components;
 }
 
-// with 'bWithTransmission', accumulates transmission through semi-transparent (ALPHA_MODE_BLEND) surfaces
+// with 'bWithTransmission', accumulates transmission through semi-transparent (srrhi::CommonConsts::ALPHA_MODE_BLEND) surfaces
 // during shadow ray tracing. Returns transmission factor: 1.0 = unshadowed, 
 // [0, 1) = partially transmitted light, 0.0 = fully blocked opaque geometry.
 template <bool bWithTransmission = false>
@@ -416,7 +416,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
             MeshData mesh = inputs.meshData[inst.m_MeshDataIndex];
             MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
 
-            if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+            if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
             {
                 TriangleVertices tv = GetTriangleVertices(primitiveIndex, inst.m_LODIndex, mesh, inputs.indices, inputs.vertices);
                 RayGradients grad = GetShadowRayGradients(tv, bary, ray.Origin, inst.m_World);
@@ -426,7 +426,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
                     q.CommitNonOpaqueTriangleHit();
                 }
             }
-            else if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
+            else if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND)
             {
                 if (bWithTransmission)
                 {
@@ -434,7 +434,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
                     // remain hittable and be handled as light filters instead of disappearing.
                     float2 uvSample = GetInterpolatedUV(primitiveIndex, inst.m_LODIndex, bary, mesh, inputs.indices, inputs.vertices);
                     float alpha = mat.m_BaseColor.w;
-                    if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+                    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
                     {
                         alpha *= SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uvSample).w;
                     }
@@ -473,7 +473,7 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
                     // Do not commit hit; continue through translucent surface
                 }
             }
-            else if (mat.m_AlphaMode == ALPHA_MODE_OPAQUE)
+            else if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE)
             {
                 q.CommitNonOpaqueTriangleHit();
             }
@@ -640,7 +640,7 @@ float3 SampleGGX_VNDF(float2 u, float3 N, float3 V, float roughness)
 
     // Disk sample
     float r   = sqrt(u.x);
-    float phi = 2.0f * PI * u.y;
+    float phi = 2.0f * srrhi::CommonConsts::PI * u.y;
     float t1  = r * cos(phi);
     float t2  = r * sin(phi);
     float s   = 0.5f * (1.0f + Vh.y);
@@ -689,13 +689,13 @@ float3 EvalGGX_VNDF_Weight(float3 F0, float3 N, float3 V, float3 L, float3 H, fl
 
 // Samples a direction uniformly within a solid-angle cone cap around `dir`.
 // cosHalfAngle = cos(half-angle of cone); u = two uniform randoms in [0,1).
-// PDF = 1 / (2*PI*(1 - cosHalfAngle)); caller averages N samples so PDFs cancel.
+// PDF = 1 / (2*srrhi::CommonConsts::PI*(1 - cosHalfAngle)); caller averages N samples so PDFs cancel.
 float3 SampleConeSolidAngle(float3 dir, float cosHalfAngle, float2 u)
 {
     // Map u.x linearly so cosTheta ranges from 1 (cone centre) to cosHalfAngle (edge)
     float cosTheta = 1.0f - u.x * (1.0f - cosHalfAngle);
     float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
-    float phi      = 2.0f * PI * u.y;
+    float phi      = 2.0f * srrhi::CommonConsts::PI * u.y;
 
     float3 localDir = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
 
@@ -779,7 +779,7 @@ LightingComponents ComputePointLighting(LightingInputs inputs, GPULight light, i
         float2 u         = NextFloat2(rng);
         float  cosT      = 1.0f - 2.0f * u.x;
         float  sinT      = sqrt(max(0.0f, 1.0f - cosT * cosT));
-        float  phi_s     = 2.0f * PI * u.y;
+        float  phi_s     = 2.0f * srrhi::CommonConsts::PI * u.y;
         float3 sphereDir = float3(sinT * cos(phi_s), cosT, sinT * sin(phi_s));
 
         float3 samplePos  = light.m_Position + sphereDir * light.m_Radius;
@@ -849,7 +849,7 @@ LightingComponents ComputeSpotLighting(LightingInputs inputs, GPULight light, in
         float2 u         = NextFloat2(rng);
         float  cosT      = 1.0f - 2.0f * u.x;
         float  sinT      = sqrt(max(0.0f, 1.0f - cosT * cosT));
-        float  phi_s     = 2.0f * PI * u.y;
+        float  phi_s     = 2.0f * srrhi::CommonConsts::PI * u.y;
         float3 sphereDir = float3(sinT * cos(phi_s), cosT, sinT * sin(phi_s));
 
         float3 samplePos  = light.m_Position + sphereDir * light.m_Radius;
@@ -911,21 +911,21 @@ IBLComponents ComputeIBL(LightingInputs inputs)
 {
     IBLComponents components;
 
-    SamplerState clampSampler = SamplerDescriptorHeap[SAMPLER_ANISOTROPIC_CLAMP_INDEX];
+    SamplerState clampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_ANISOTROPIC_CLAMP_INDEX];
 
     // Diffuse IBL
-    TextureCube irradianceMap = ResourceDescriptorHeap[DEFAULT_TEXTURE_IRRADIANCE];
+    TextureCube irradianceMap = ResourceDescriptorHeap[srrhi::CommonConsts::DEFAULT_TEXTURE_IRRADIANCE];
     float3 irradiance = irradianceMap.Sample(clampSampler, inputs.N).rgb;
     float3 diffuseIBL = irradiance * inputs.baseColor * inputs.kD;
 
     // Specular IBL
-    TextureCube prefilteredEnvMap = ResourceDescriptorHeap[DEFAULT_TEXTURE_RADIANCE];
+    TextureCube prefilteredEnvMap = ResourceDescriptorHeap[srrhi::CommonConsts::DEFAULT_TEXTURE_RADIANCE];
     float3 R = reflect(-inputs.V, inputs.N);
     
     float mipLevel = inputs.roughness * (float(inputs.radianceMipCount) - 1.0f);
     float3 prefilteredColor = prefilteredEnvMap.SampleLevel(clampSampler, R, mipLevel).rgb;
 
-    Texture2D brdfLut = ResourceDescriptorHeap[DEFAULT_TEXTURE_BRDF_LUT];
+    Texture2D brdfLut = ResourceDescriptorHeap[srrhi::CommonConsts::DEFAULT_TEXTURE_BRDF_LUT];
     float2 brdf = brdfLut.SampleLevel(clampSampler, float2(inputs.NdotV, inputs.roughness), 0).rg;
 
     float3 specularIBL = prefilteredColor * (inputs.F0 * brdf.x + brdf.y);
@@ -1000,27 +1000,27 @@ float2 randomFromBarycentric(float3 barycentric)
 // Uniform sample on a unit disk.
 float2 sampleDisk(float2 rand)
 {
-    float angle = 2.0f * PI * rand.x;
+    float angle = 2.0f * srrhi::CommonConsts::PI * rand.x;
     return float2(cos(angle), sin(angle)) * sqrt(rand.y);
 }
 
 // Cosine-weighted hemisphere sample in local tangent space (+Z = up).
-// Returns direction; solidAnglePdf = cos(theta) / PI.
+// Returns direction; solidAnglePdf = cos(theta) / srrhi::CommonConsts::PI.
 float3 SampleCosHemisphere(float2 rand, out float solidAnglePdf)
 {
     float2 tangential = sampleDisk(rand);
     float elevation   = sqrt(saturate(1.0f - rand.y));
-    solidAnglePdf     = elevation / PI;
+    solidAnglePdf     = elevation / srrhi::CommonConsts::PI;
     return float3(tangential.xy, elevation);
 }
 
 // Uniform sphere sample in local tangent space (+Z = up).
-// solidAnglePdf = 1 / (4*PI).
+// solidAnglePdf = 1 / (4*srrhi::CommonConsts::PI).
 float3 sampleSphere(float2 rand, out float solidAnglePdf)
 {
     rand.y = rand.y * 2.0f - 1.0f;
     float2 tangential = sampleDisk(float2(rand.x, 1.0f - rand.y * rand.y));
-    solidAnglePdf     = 0.25f / PI;
+    solidAnglePdf     = 0.25f / srrhi::CommonConsts::PI;
     return float3(tangential.xy, rand.y);
 }
 
@@ -1064,7 +1064,7 @@ float3 sampleGGX_VNDF(float3 Ve, float roughness, float2 random)
     float3 T2   = cross(Vh, T1);
 
     float r   = sqrt(random.x);
-    float phi = 2.0f * PI * random.y;
+    float phi = 2.0f * srrhi::CommonConsts::PI * random.y;
     float t1  = r * cos(phi);
     float t2  = r * sin(phi);
     float s   = 0.5f * (1.0f + Vh.z);
@@ -1082,13 +1082,13 @@ float2 directionToEquirectUV(float3 normalizedDirection)
     float azimuth   = 0.0f;
     if (abs(normalizedDirection.y) < 1.0f)
         azimuth = atan2(normalizedDirection.z, normalizedDirection.x);
-    return float2(azimuth / (2.0f * PI) - 0.25f, 0.5f - elevation / PI);
+    return float2(azimuth / (2.0f * srrhi::CommonConsts::PI) - 0.25f, 0.5f - elevation / srrhi::CommonConsts::PI);
 }
 
 float3 equirectUVToDirection(float2 uv, out float cosElevation)
 {
-    float azimuth   = (uv.x + 0.25f) * (2.0f * PI);
-    float elevation = (0.5f - uv.y) * PI;
+    float azimuth   = (uv.x + 0.25f) * (2.0f * srrhi::CommonConsts::PI);
+    float elevation = (0.5f - uv.y) * srrhi::CommonConsts::PI;
     cosElevation    = cos(elevation);
     return float3(cos(azimuth) * cosElevation, sin(elevation), sin(azimuth) * cosElevation);
 }

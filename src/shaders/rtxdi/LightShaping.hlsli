@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -51,12 +51,12 @@ float evaluateIesProfile(int profileIndex, float3 emissionDirection_, float3 lig
     emissionDirection = normalize(emissionDirection);
 
     const float angle = acos(emissionDirection.z);
-    const float normAngle = angle / PI;
+    const float normAngle = angle / srrhi::CommonConsts::PI;
 
     const float tangentAngle = atan2(emissionDirection.y, emissionDirection.x);
-    const float normTangentAngle = tangentAngle * .5f / PI + .5f;
+    const float normTangentAngle = tangentAngle * .5f / srrhi::CommonConsts::PI + .5f;
 
-    float iesMultiplier = SampleBindlessTextureLevel(profileIndex, SAMPLER_LINEAR_CLAMP_INDEX, float2(normAngle, normTangentAngle), 0).x;
+    float iesMultiplier = SampleBindlessTextureLevel(profileIndex, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, float2(normAngle, normTangentAngle), 0).x;
 
     return iesMultiplier;
 }
@@ -90,7 +90,7 @@ float3 getConeVertexForSphericalSource(float3 sphereCenter, float sphereRadius, 
 {
     // Compute the sine of the clamped half angle. When the angle is more than 90 degrees (half a pi),
     // the offset should be exactly one sphere radius.
-    float sinHalfAngle = sin(min(coneHalfAngle, PI * 0.5));
+    float sinHalfAngle = sin(min(coneHalfAngle, srrhi::CommonConsts::PI * 0.5));
     
     // Offset is the hypotenuse of a right triangle whose vertices are: the light center; the cone vertex; 
     // and any point on the circle where the cone touches the sphere.
@@ -158,7 +158,7 @@ float getShapingFluxFactor(LightShaping shaping)
 
     // TODO: account for IES profiles
 
-    return solidAngleOverTwoPi * 0.5; // (solidAngle / (4 * PI))
+    return solidAngleOverTwoPi * 0.5; // (solidAngle / (4 * srrhi::CommonConsts::PI))
 }
 
 #endif // LIGHT_SHAPING_HLSLI

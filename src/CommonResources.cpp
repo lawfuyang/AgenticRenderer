@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "CommonResources.h"
 #include "Renderer.h"
 #include "TextureLoader.h"
@@ -85,15 +85,15 @@ void CommonResources::Initialize()
     }
 
     // Register common samplers with global sampler descriptor heap
-    renderer->RegisterSamplerAtIndex(SAMPLER_ANISOTROPIC_CLAMP_INDEX, AnisotropicClamp);
-    renderer->RegisterSamplerAtIndex(SAMPLER_ANISOTROPIC_WRAP_INDEX, AnisotropicWrap);
-    renderer->RegisterSamplerAtIndex(SAMPLER_POINT_CLAMP_INDEX, PointClamp);
-    renderer->RegisterSamplerAtIndex(SAMPLER_POINT_WRAP_INDEX, PointWrap);
-    renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_CLAMP_INDEX, LinearClamp);
-    renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_WRAP_INDEX, LinearWrap);
-    renderer->RegisterSamplerAtIndex(SAMPLER_MIN_REDUCTION_INDEX, MinReductionClamp);
-    renderer->RegisterSamplerAtIndex(SAMPLER_MAX_REDUCTION_INDEX, MaxReductionClamp);
-    renderer->RegisterSamplerAtIndex(SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX, LinearClampBorderWhite);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_ANISOTROPIC_CLAMP_INDEX, AnisotropicClamp);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_ANISOTROPIC_WRAP_INDEX, AnisotropicWrap);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_POINT_CLAMP_INDEX, PointClamp);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_POINT_WRAP_INDEX, PointWrap);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, LinearClamp);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_LINEAR_WRAP_INDEX, LinearWrap);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_MIN_REDUCTION_INDEX, MinReductionClamp);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_MAX_REDUCTION_INDEX, MaxReductionClamp);
+    renderer->RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX, LinearClampBorderWhite);
 
     // Initialize common raster states
     bool frontCCW = true; // glTF spec says counter-clockwise is front face
@@ -404,9 +404,9 @@ void CommonResources::Initialize()
         };
 
         // Bruneton constants (use shared ShaderShared.h values)
-        LoadBruneton("transmittance.dat", "BrunetonTransmittance", BrunetonTransmittance, TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
-        LoadBruneton("scattering.dat", "BrunetonScattering", BrunetonScattering, SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT, SCATTERING_TEXTURE_DEPTH); // WIDTH=NU_SIZE*MU_S_SIZE, HEIGHT=SCATTERING_TEXTURE_MU_SIZE, DEPTH=SCATTERING_TEXTURE_R_SIZE
-        LoadBruneton("irradiance.dat", "BrunetonIrradiance", BrunetonIrradiance, IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
+        LoadBruneton("transmittance.dat", "BrunetonTransmittance", BrunetonTransmittance, srrhi::CommonConsts::TRANSMITTANCE_TEXTURE_WIDTH, srrhi::CommonConsts::TRANSMITTANCE_TEXTURE_HEIGHT);
+        LoadBruneton("scattering.dat", "BrunetonScattering", BrunetonScattering, srrhi::CommonConsts::SCATTERING_TEXTURE_WIDTH, srrhi::CommonConsts::SCATTERING_TEXTURE_HEIGHT, srrhi::CommonConsts::SCATTERING_TEXTURE_DEPTH); // WIDTH=NU_SIZE*MU_S_SIZE, HEIGHT=srrhi::CommonConsts::SCATTERING_TEXTURE_MU_SIZE, DEPTH=srrhi::CommonConsts::SCATTERING_TEXTURE_R_SIZE
+        LoadBruneton("irradiance.dat", "BrunetonIrradiance", BrunetonIrradiance, srrhi::CommonConsts::IRRADIANCE_TEXTURE_WIDTH, srrhi::CommonConsts::IRRADIANCE_TEXTURE_HEIGHT);
 
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)
@@ -462,18 +462,18 @@ void CommonResources::RegisterDefaultTextures()
     Renderer* renderer = Renderer::GetInstance();
 
     // Register textures with the global bindless system
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_BLACK, DefaultTextureBlack);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_WHITE, DefaultTextureWhite);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_GRAY, DefaultTextureGray);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_NORMAL, DefaultTextureNormal);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_PBR, DefaultTexturePBR);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_BRDF_LUT, BRDF_LUT);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_IRRADIANCE, IrradianceTexture);
-    renderer->RegisterTextureAtIndex(DEFAULT_TEXTURE_RADIANCE, RadianceTexture);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_BLACK, DefaultTextureBlack);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_WHITE, DefaultTextureWhite);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_GRAY, DefaultTextureGray);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_NORMAL, DefaultTextureNormal);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_PBR, DefaultTexturePBR);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_BRDF_LUT, BRDF_LUT);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_IRRADIANCE, IrradianceTexture);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::DEFAULT_TEXTURE_RADIANCE, RadianceTexture);
 
-    renderer->RegisterTextureAtIndex(BRUNETON_TRANSMITTANCE_TEXTURE, BrunetonTransmittance);
-    renderer->RegisterTextureAtIndex(BRUNETON_SCATTERING_TEXTURE, BrunetonScattering);
-    renderer->RegisterTextureAtIndex(BRUNETON_IRRADIANCE_TEXTURE, BrunetonIrradiance);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::BRUNETON_TRANSMITTANCE_TEXTURE, BrunetonTransmittance);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::BRUNETON_SCATTERING_TEXTURE, BrunetonScattering);
+    renderer->RegisterTextureAtIndex(srrhi::CommonConsts::BRUNETON_IRRADIANCE_TEXTURE, BrunetonIrradiance);
 
     SDL_Log("[CommonResources] Default textures registered with bindless system");
 }

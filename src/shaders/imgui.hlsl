@@ -1,4 +1,4 @@
-// Include shared types
+﻿// Include shared types
 #include "ShaderShared.h"
 
 // Instantiate the push-constant variable used by the ImGui shaders
@@ -38,6 +38,6 @@ struct PSInput
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    SamplerState sampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+    SamplerState sampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     return input.Color * sTexture.Sample(sampler, input.UV);
 }

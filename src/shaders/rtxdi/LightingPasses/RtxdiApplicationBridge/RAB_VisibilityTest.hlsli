@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -103,7 +103,7 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 // Only used for final shading.
 // Not a required bridge function.
 // Returns a float3 throughput: 1.0 if fully visible, 0.0 if occluded.
-// Partially transparent geometry (ALPHA_MODE_BLEND) is treated as fully transparent (throughput = 1.0).
+// Partially transparent geometry (srrhi::CommonConsts::ALPHA_MODE_BLEND) is treated as fully transparent (throughput = 1.0).
 float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, float3 samplePosition)
 {
     RayDesc ray = SetupShadowRay(surface.worldPos, surface.normal, samplePosition, 0.01);

@@ -1,4 +1,4 @@
-#include "SceneLoader.h"
+﻿#include "SceneLoader.h"
 #include "Config.h"
 #include "Renderer.h"
 #include "CommonResources.h"
@@ -1019,8 +1019,8 @@ void SceneLoader::ApplyEnvironmentLights(Scene& scene)
 	SDL_assert(std::filesystem::exists(renderer->m_IrradianceTexturePath));
 	SDL_assert(std::filesystem::exists(renderer->m_RadianceTexturePath));
 
-	renderer->m_IrradianceTexture = ::LoadAndRegisterEnvMap(renderer->m_IrradianceTexturePath, DEFAULT_TEXTURE_IRRADIANCE, "Upload Env Irradiance");
-	renderer->m_RadianceTexture = ::LoadAndRegisterEnvMap(renderer->m_RadianceTexturePath, DEFAULT_TEXTURE_RADIANCE, "Upload Env Radiance");
+	renderer->m_IrradianceTexture = ::LoadAndRegisterEnvMap(renderer->m_IrradianceTexturePath, srrhi::CommonConsts::DEFAULT_TEXTURE_IRRADIANCE, "Upload Env Irradiance");
+	renderer->m_RadianceTexture = ::LoadAndRegisterEnvMap(renderer->m_RadianceTexturePath, srrhi::CommonConsts::DEFAULT_TEXTURE_RADIANCE, "Upload Env Radiance");
 }
 
 const char* SceneLoader::cgltf_result_tostring(cgltf_result result)
@@ -1235,21 +1235,21 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 
 		if (data->materials[i].alpha_mode == cgltf_alpha_mode_mask)
 		{
-			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_MASK;
+			scene.m_Materials.back().m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_MASK;
 			scene.m_Materials.back().m_AlphaCutoff = data->materials[i].alpha_cutoff;
 		}
 		else if (data->materials[i].alpha_mode == cgltf_alpha_mode_blend)
 		{
-			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_BLEND;
+			scene.m_Materials.back().m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_BLEND;
 		}
 		else
 		{
-			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_OPAQUE;
+			scene.m_Materials.back().m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_OPAQUE;
 		}
 
 		if (data->materials[i].has_transmission)
 		{
-			scene.m_Materials.back().m_AlphaMode = ALPHA_MODE_BLEND;
+			scene.m_Materials.back().m_AlphaMode = srrhi::CommonConsts::ALPHA_MODE_BLEND;
 			scene.m_Materials.back().m_TransmissionFactor = data->materials[i].transmission.transmission_factor;
 		}
 
@@ -1390,10 +1390,10 @@ MaterialConstants MaterialConstantsFromMaterial(const Scene::Material& mat, cons
 	mc.m_EmissiveFactor = Vector4{ mat.m_EmissiveFactor.x, mat.m_EmissiveFactor.y, mat.m_EmissiveFactor.z, 1.0f };
 	mc.m_RoughnessMetallic = Vector2{ mat.m_RoughnessFactor, mat.m_MetallicFactor };
 	mc.m_TextureFlags = 0;
-	if (mat.m_BaseColorTexture != -1) mc.m_TextureFlags |= TEXFLAG_ALBEDO;
-	if (mat.m_NormalTexture != -1) mc.m_TextureFlags |= TEXFLAG_NORMAL;
-	if (mat.m_MetallicRoughnessTexture != -1) mc.m_TextureFlags |= TEXFLAG_ROUGHNESS_METALLIC;
-	if (mat.m_EmissiveTexture != -1) mc.m_TextureFlags |= TEXFLAG_EMISSIVE;
+	if (mat.m_BaseColorTexture != -1) mc.m_TextureFlags |= srrhi::CommonConsts::TEXFLAG_ALBEDO;
+	if (mat.m_NormalTexture != -1) mc.m_TextureFlags |= srrhi::CommonConsts::TEXFLAG_NORMAL;
+	if (mat.m_MetallicRoughnessTexture != -1) mc.m_TextureFlags |= srrhi::CommonConsts::TEXFLAG_ROUGHNESS_METALLIC;
+	if (mat.m_EmissiveTexture != -1) mc.m_TextureFlags |= srrhi::CommonConsts::TEXFLAG_EMISSIVE;
 	mc.m_AlbedoTextureIndex = mat.m_AlbedoTextureIndex;
 	mc.m_NormalTextureIndex = mat.m_NormalTextureIndex;
 	mc.m_RoughnessMetallicTextureIndex = mat.m_RoughnessMetallicTextureIndex;
@@ -1775,8 +1775,8 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 		uint32_t baseIndexCount = static_cast<uint32_t>(localIndices.size());
 		if (baseIndexCount > 0)
 		{
-			const size_t max_vertices = kMaxMeshletVertices;
-			const size_t max_triangles = kMaxMeshletTriangles;
+			const size_t max_vertices = srrhi::CommonConsts::kMaxMeshletVertices;
+			const size_t max_triangles = srrhi::CommonConsts::kMaxMeshletTriangles;
 			const float cone_weight = 0.25f;
 
 			const uint32_t kIndexLimitForLODGeneration = 1024;
@@ -1791,7 +1791,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 			std::vector<uint32_t> currentLodIndices = localIndices;
 			float accumulatedError = 0.0f;
 
-			for (uint32_t lod = 0; lod < MAX_LOD_COUNT; ++lod)
+			for (uint32_t lod = 0; lod < srrhi::CommonConsts::MAX_LOD_COUNT; ++lod)
 			{
 				std::vector<uint32_t> lodIndices;
 				float lodError = 0.0f;

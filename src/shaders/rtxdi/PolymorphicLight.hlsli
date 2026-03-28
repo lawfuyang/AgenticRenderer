@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -21,7 +21,7 @@
 #define DISTANT_LIGHT_DISTANCE 1e7
 
 #ifndef ENVIRONMENT_SAMPLER
-#define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
+#define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
 #endif
 
 struct PolymorphicLightSample
@@ -144,7 +144,7 @@ struct SphereLight
         const float2 u = random;
         const float sinThetaMax2 = radius2 / lightDistance2;
         const float cosThetaMax = sqrt(max(0.0f, 1.0f - sinThetaMax2));
-        const float phi = 2.0f * PI * u.x;
+        const float phi = 2.0f * srrhi::CommonConsts::PI * u.x;
         const float cosTheta = lerp(cosThetaMax, 1.0f, u.y);
         const float sinTheta = sqrt(max(0.0f, 1.0f - square(cosTheta)));
         const float sinTheta2 = sinTheta * sinTheta;
@@ -179,7 +179,7 @@ struct SphereLight
         // Calculate the pdf
 
         // Note: The cone already represents a solid angle effectively so its pdf is already a solid angle pdf
-        const float solidAnglePdf = 1.0f / (2.0f * PI * (1.0f - cosThetaMax));
+        const float solidAnglePdf = 1.0f / (2.0f * srrhi::CommonConsts::PI * (1.0f - cosThetaMax));
 
         // Create the light sample
 
@@ -195,12 +195,12 @@ struct SphereLight
 
     float getSurfaceArea()
     {
-        return 4 * PI * square(radius);
+        return 4 * srrhi::CommonConsts::PI * square(radius);
     }
 
     float getPower()
     {
-        return getSurfaceArea() * PI * calcLuminance(radiance) * getShapingFluxFactor(shaping);
+        return getSurfaceArea() * srrhi::CommonConsts::PI * calcLuminance(radiance) * getShapingFluxFactor(shaping);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -212,7 +212,7 @@ struct SphereLight
         distance = getAverageDistanceToVolume(distance, volumeRadius);
 
         float sinHalfAngle = radius / distance;
-        float solidAngle = 2 * PI * (1.0 - sqrt(1.0 - square(sinHalfAngle)));
+        float solidAngle = 2 * srrhi::CommonConsts::PI * (1.0 - sqrt(1.0 - square(sinHalfAngle)));
 
         return solidAngle * calcLuminance(radiance);
     }
@@ -260,7 +260,7 @@ struct PointLight
 
     float getPower()
     {
-        return 4.0 * PI * calcLuminance(flux) * getShapingFluxFactor(shaping);
+        return 4.0 * srrhi::CommonConsts::PI * calcLuminance(flux) * getShapingFluxFactor(shaping);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -307,7 +307,7 @@ struct CylinderLight
         // Compute phi and z
 
         const float2 u = random;
-        const float phi = 2.0f * PI * u.x;
+        const float phi = 2.0f * srrhi::CommonConsts::PI * u.x;
 
         float sinPhi;
         float cosPhi;
@@ -353,12 +353,12 @@ struct CylinderLight
 
     float getSurfaceArea()
     {
-        return 2.0f * PI * radius * axisLength;
+        return 2.0f * srrhi::CommonConsts::PI * radius * axisLength;
     }
 
     float getPower()
     {
-        return getSurfaceArea() * PI * calcLuminance(radiance);
+        return getSurfaceArea() * srrhi::CommonConsts::PI * calcLuminance(radiance);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -369,7 +369,7 @@ struct CylinderLight
         // Assume illumination by a quad that represents the cylinder when viewed from afar.
         float quadArea = 2.0 * radius * axisLength;
         float approximateSolidAngle = quadArea / square(distance);
-        approximateSolidAngle = min(approximateSolidAngle, 2 * PI);
+        approximateSolidAngle = min(approximateSolidAngle, 2 * srrhi::CommonConsts::PI);
 
         return approximateSolidAngle * calcLuminance(radiance);
     }
@@ -443,12 +443,12 @@ struct DiskLight
 
     float getSurfaceArea()
     {
-        return PI * square(radius);
+        return srrhi::CommonConsts::PI * square(radius);
     }
 
     float getPower()
     {
-        return getSurfaceArea() * PI * calcLuminance(radiance);// * getShapingFluxFactor(shaping);
+        return getSurfaceArea() * srrhi::CommonConsts::PI * calcLuminance(radiance);// * getShapingFluxFactor(shaping);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -461,7 +461,7 @@ struct DiskLight
         distance = getAverageDistanceToVolume(distance, volumeRadius);
 
         float approximateSolidAngle = getSurfaceArea() / square(distance);
-        approximateSolidAngle = min(approximateSolidAngle, 2 * PI);
+        approximateSolidAngle = min(approximateSolidAngle, 2 * srrhi::CommonConsts::PI);
 
         return approximateSolidAngle * calcLuminance(radiance);
     }
@@ -539,7 +539,7 @@ struct RectLight
 
     float getPower()
     {
-        return getSurfaceArea() * PI * calcLuminance(radiance);
+        return getSurfaceArea() * srrhi::CommonConsts::PI * calcLuminance(radiance);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -552,7 +552,7 @@ struct RectLight
         distance = getAverageDistanceToVolume(distance, volumeRadius);
 
         float approximateSolidAngle = getSurfaceArea() / square(distance);
-        approximateSolidAngle = min(approximateSolidAngle, 2 * PI);
+        approximateSolidAngle = min(approximateSolidAngle, 2 * srrhi::CommonConsts::PI);
 
         return approximateSolidAngle * calcLuminance(radiance);
     }
@@ -676,7 +676,7 @@ struct TriangleLight
 
     float getPower()
     {
-        return surfaceArea * PI * calcLuminance(radiance);
+        return surfaceArea * srrhi::CommonConsts::PI * calcLuminance(radiance);
     }
 
     float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
@@ -690,7 +690,7 @@ struct TriangleLight
         distance = getAverageDistanceToVolume(distance, volumeRadius);
 
         float approximateSolidAngle = surfaceArea / square(distance);
-        approximateSolidAngle = min(approximateSolidAngle, 2 * PI);
+        approximateSolidAngle = min(approximateSolidAngle, 2 * srrhi::CommonConsts::PI);
 
         return approximateSolidAngle * calcLuminance(radiance);
     }
@@ -763,7 +763,7 @@ struct EnvironmentLight
             sampleDirection = equirectUVToDirection(directionUV, cosElevation);
 
             // Inverse of the solid angle of one texel of the environment map using the equirectangular projection.
-            lightSample.solidAnglePdf = (textureSize.x * textureSize.y) / (2 * PI * PI * cosElevation);
+            lightSample.solidAnglePdf = (textureSize.x * textureSize.y) / (2 * srrhi::CommonConsts::PI * srrhi::CommonConsts::PI * cosElevation);
             textureUV = random;
         }
         else
@@ -776,7 +776,7 @@ struct EnvironmentLight
         float3 sampleRadiance = radianceScale;
         if (textureIndex >= 0)
         {
-    sampleRadiance *= SampleBindlessTextureLevel(textureIndex, SAMPLER_LINEAR_CLAMP_INDEX, textureUV, 0).xyz;
+    sampleRadiance *= SampleBindlessTextureLevel(textureIndex, srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX, textureUV, 0).xyz;
         }
 
         // Inf / NaN guard.

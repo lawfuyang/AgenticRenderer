@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "pch.h"
 #include "GraphicRHI.h"
@@ -62,9 +62,9 @@ static bool s_##ClassName##Registered = []() { \
 
 enum class RenderingMode : uint32_t
 {
-    Normal = RENDERING_MODE_NORMAL,
-    IBL = RENDERING_MODE_IBL,
-    ReferencePathTracer = RENDERING_MODE_PATH_TRACER
+    Normal = srrhi::CommonConsts::RENDERING_MODE_NORMAL,
+    IBL = srrhi::CommonConsts::RENDERING_MODE_IBL,
+    ReferencePathTracer = srrhi::CommonConsts::RENDERING_MODE_PATH_TRACER
 };
 
 struct Renderer
@@ -146,7 +146,7 @@ struct Renderer
 
     void AddComputePass(const RenderPassParams& params);
     void AddFullScreenPass(const RenderPassParams& params);
-    void GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType);
+    void GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, uint32_t reductionType);
     nvrhi::ShaderHandle GetShaderHandle(std::string_view name) const;
 
     // Global Bindless Texture System
@@ -273,7 +273,7 @@ private:
     // Global bindless texture system
     nvrhi::DescriptorTableHandle m_StaticTextureDescriptorTable;
     nvrhi::BindingLayoutHandle m_StaticTextureBindingLayout;
-    uint32_t m_NextTextureIndex = DEFAULT_TEXTURE_COUNT;
+    uint32_t m_NextTextureIndex = srrhi::CommonConsts::DEFAULT_TEXTURE_COUNT;
 
     // Global sampler descriptor heap
     nvrhi::DescriptorTableHandle m_StaticSamplerDescriptorTable;

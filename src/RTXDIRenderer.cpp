@@ -1471,7 +1471,7 @@ public:
             if (m_PDFMipCount > 1u)
             {
                 nvrhi::BufferHandle spdAtomicCounter = renderGraph.GetBuffer(m_RG_SPDAtomicCounter, RGResourceAccessMode::Write);
-                renderer->GenerateMipsUsingSPD(localLightPDFTex, spdAtomicCounter, commandList, "Generate Local Light PDF Mips", SPD_REDUCTION_AVERAGE);
+                renderer->GenerateMipsUsingSPD(localLightPDFTex, spdAtomicCounter, commandList, "Generate Local Light PDF Mips", srrhi::CommonConsts::SPD_REDUCTION_AVERAGE);
             }
 
             {
@@ -1499,7 +1499,7 @@ public:
             if (m_EnvPDFMipCount > 1u)
             {
                 nvrhi::BufferHandle spdEnvCounter = renderGraph.GetBuffer(m_RG_SPDEnvAtomicCounter, RGResourceAccessMode::Write);
-                renderer->GenerateMipsUsingSPD(envLightPDFTex, spdEnvCounter, commandList, "Generate Env Light PDF Mips", SPD_REDUCTION_AVERAGE);
+                renderer->GenerateMipsUsingSPD(envLightPDFTex, spdEnvCounter, commandList, "Generate Env Light PDF Mips", srrhi::CommonConsts::SPD_REDUCTION_AVERAGE);
             }
 
             {

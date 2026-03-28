@@ -1,4 +1,4 @@
-#define DEFERRED_PASS
+﻿#define DEFERRED_PASS
 #include "ShaderShared.h"
 #include "Bindless.hlsli"
 #include "CommonLighting.hlsli"
@@ -77,7 +77,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     lightingInputs.sunShadow = 1.0f;
 
     float3 color = 0;
-    if (g_Deferred.m_RenderingMode == RENDERING_MODE_IBL)
+    if (g_Deferred.m_RenderingMode == srrhi::CommonConsts::RENDERING_MODE_IBL)
     {
         lightingInputs.L = g_Deferred.m_SunDirection;
         PrepareLightingByproducts(lightingInputs);
@@ -110,24 +110,24 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     }
 
     // Debug visualizations
-    if (g_Deferred.m_DebugMode != DEBUG_MODE_NONE)
+    if (g_Deferred.m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE)
     {
-        if (g_Deferred.m_DebugMode == DEBUG_MODE_WORLD_NORMALS)
+        if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_WORLD_NORMALS)
             color = N * 0.5f + 0.5f;
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_ALBEDO)
+        else if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_ALBEDO)
             color = baseColor;
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_ROUGHNESS)
+        else if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_ROUGHNESS)
             color = roughness.xxx;
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_METALLIC)
+        else if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_METALLIC)
             color = metallic.xxx;
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_EMISSIVE)
+        else if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_EMISSIVE)
             color = emissive;
-        else if (g_Deferred.m_DebugMode == DEBUG_MODE_MOTION_VECTORS)
+        else if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_MOTION_VECTORS)
             color = float3(abs(g_GBufferMotion.Load(uint3(uvInt, 0)).xy), 0.0f);
 
-        if (g_Deferred.m_DebugMode == DEBUG_MODE_INSTANCES ||
-            g_Deferred.m_DebugMode == DEBUG_MODE_MESHLETS ||
-            g_Deferred.m_DebugMode == DEBUG_MODE_LOD)
+        if (g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_INSTANCES ||
+            g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_MESHLETS ||
+            g_Deferred.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_LOD)
             {
                 color = baseColor;
             }

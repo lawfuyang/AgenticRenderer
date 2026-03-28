@@ -1,4 +1,4 @@
-#include "Scene.h"
+﻿#include "Scene.h"
 
 #include "meshoptimizer.h"
 
@@ -54,13 +54,13 @@ static void ReadVector(std::istream& is, std::vector<T>& vec)
 
 static void WriteMeshletDataCompressed(std::ostream& os, const std::vector<Meshlet>& meshlets, const std::vector<uint32_t>& meshletVertices, const std::vector<uint32_t>& meshletTriangles)
 {
-	std::vector<unsigned char> encoded(meshopt_encodeMeshletBound(kMaxMeshletVertices, kMaxMeshletTriangles));
+	std::vector<unsigned char> encoded(meshopt_encodeMeshletBound(srrhi::CommonConsts::kMaxMeshletVertices, srrhi::CommonConsts::kMaxMeshletTriangles));
 
 	for (const Meshlet& m : meshlets)
 	{
 		const uint32_t* vertices = &meshletVertices[m.m_VertexOffset];
 
-		unsigned char triangles[kMaxMeshletTriangles * 3];
+		unsigned char triangles[srrhi::CommonConsts::kMaxMeshletTriangles * 3];
 		for (uint32_t i = 0; i < m.m_TriangleCount; ++i)
 		{
 			uint32_t packed = meshletTriangles[m.m_TriangleOffset + i];
@@ -88,7 +88,7 @@ static void ReadMeshletDataCompressed(std::istream& is, const std::vector<Meshle
 		is.read(reinterpret_cast<char*>(encoded.data()), encodedSize);
 
 		uint32_t* vertices = &meshletVertices[m.m_VertexOffset];
-		unsigned char triangles[kMaxMeshletTriangles * 3];
+		unsigned char triangles[srrhi::CommonConsts::kMaxMeshletTriangles * 3];
 
 		meshopt_decodeMeshlet(vertices, m.m_VertexCount, sizeof(uint32_t), triangles, m.m_TriangleCount, 3, encoded.data(), encodedSize);
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -55,7 +55,7 @@ float3 RAB_RayPayloadGetEmittedRadiance(RAB_RayPayload rayPayload)
     float3 emissive = mat.m_EmissiveFactor.rgb;
 
     // Sample emissive texture if present (matching FullSample's sampleGeometryMaterial behavior)
-    if ((mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_EMISSIVE) != 0)
     {
         MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
         float2 uv = GetInterpolatedUV(

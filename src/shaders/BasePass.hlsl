@@ -1,4 +1,4 @@
-#include "ShaderShared.h"
+﻿#include "ShaderShared.h"
 #include "Culling.h"
 #include "Bindless.hlsli"
 #include "CommonLighting.hlsli"
@@ -74,7 +74,7 @@ struct MeshPayload
 {
     uint m_InstanceIndex;
     uint m_LODIndex;
-    uint m_MeshletIndices[kThreadsPerGroup];
+    uint m_MeshletIndices[srrhi::CommonConsts::kThreadsPerGroup];
 };
 
 groupshared MeshPayload s_Payload;
@@ -85,7 +85,7 @@ cbuffer DrawIDCB : register(b255)
   uint g_DrawID;
 };
 
-[numthreads(kThreadsPerGroup, 1, 1)]
+[numthreads(srrhi::CommonConsts::kThreadsPerGroup, 1, 1)]
 void ASMain(
     uint3 dispatchThreadID : SV_DispatchThreadID,
     uint3 groupThreadID : SV_GroupThreadID,
@@ -96,7 +96,7 @@ void ASMain(
     MeshletJob job = g_MeshletJobs[g_DrawID];
     uint instanceIndex = job.m_InstanceIndex;
     uint lodIndex = job.m_LODIndex;
-    uint meshletOffset = groupId.x * kThreadsPerGroup;
+    uint meshletOffset = groupId.x * srrhi::CommonConsts::kThreadsPerGroup;
 
     if (groupThreadID.x == 0)
     {
@@ -137,7 +137,7 @@ void ASMain(
 
         if (bVisible && g_PerFrame.m_EnableOcclusionCulling)
         {
-            SamplerState minSam = SamplerDescriptorHeap[NonUniformResourceIndex(SAMPLER_MIN_REDUCTION_INDEX)];
+            SamplerState minSam = SamplerDescriptorHeap[NonUniformResourceIndex(srrhi::CommonConsts::SAMPLER_MIN_REDUCTION_INDEX)];
             bVisible &= OcclusionSphereTest(viewCenter, worldRadius, uint2(g_PerFrame.m_HZBWidth, g_PerFrame.m_HZBHeight), g_PerFrame.m_P00, g_PerFrame.m_P11, g_HZB, minSam);
         }
 
@@ -171,7 +171,7 @@ void ASMain(
     DispatchMesh(numVisible, 1, 1, s_Payload);
 }
 
-[numthreads(kMaxMeshletTriangles, 1, 1)]
+[numthreads(srrhi::CommonConsts::kMaxMeshletTriangles, 1, 1)]
 [outputtopology("triangle")]
 void MSMain(
     uint3 dispatchThreadID : SV_DispatchThreadID,
@@ -179,8 +179,8 @@ void MSMain(
     uint3 groupId : SV_GroupID,
     uint groupIndex : SV_GroupIndex,
     in payload MeshPayload payload,
-    out vertices VSOut vout[kMaxMeshletVertices],
-    out indices uint3 triangles[kMaxMeshletTriangles]
+    out vertices VSOut vout[srrhi::CommonConsts::kMaxMeshletVertices],
+    out indices uint3 triangles[srrhi::CommonConsts::kMaxMeshletTriangles]
 )
 {
     uint meshletIndex = payload.m_MeshletIndices[groupId.x];
@@ -230,18 +230,18 @@ struct GBufferOut
 
 float3 GetDebugColor(uint debugMode, uint instanceID, uint meshletID, uint lodIndex)
 {
-    if (debugMode == DEBUG_MODE_INSTANCES)
+    if (debugMode == srrhi::CommonConsts::DEBUG_MODE_INSTANCES)
     {
         return HashColor(instanceID);
     }
-    else if (debugMode == DEBUG_MODE_MESHLETS)
+    else if (debugMode == srrhi::CommonConsts::DEBUG_MODE_MESHLETS)
     {
         // Color by meshlet ID
         return HashColor(meshletID);
     }
-    else if (debugMode == DEBUG_MODE_LOD)
+    else if (debugMode == srrhi::CommonConsts::DEBUG_MODE_LOD)
     {
-        float3 lodColors[MAX_LOD_COUNT] = {
+        float3 lodColors[srrhi::CommonConsts::MAX_LOD_COUNT] = {
             float3(0.0, 1.0, 0.0), // 0: Green
             float3(1.0, 0.0, 0.0), // 1: Red
             float3(0.0, 1.0, 1.0), // 2: Cyan
@@ -293,7 +293,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
     MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
 
     // Texture sampling (only when present)
-    bool hasAlbedo = (mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0;
+    bool hasAlbedo = (mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0;
     float4 albedoSample = hasAlbedo
         ? SampleBindlessTexture(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, input.uv)
         : float4(mat.m_BaseColor.xyz, mat.m_BaseColor.w);
@@ -308,17 +308,17 @@ GBufferOut GBuffer_PSMain(VSOut input)
     }
 #endif
 
-    bool hasORM = (mat.m_TextureFlags & TEXFLAG_ROUGHNESS_METALLIC) != 0;
+    bool hasORM = (mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ROUGHNESS_METALLIC) != 0;
     float4 ormSample = hasORM
         ? SampleBindlessTexture(mat.m_RoughnessMetallicTextureIndex, mat.m_RoughnessSamplerIndex, input.uv)
         : float4(mat.m_RoughnessMetallic.x, mat.m_RoughnessMetallic.y, 1.0f, 0.0f); // R=occ, G=rough, B=metal
 
-    bool hasNormal = (mat.m_TextureFlags & TEXFLAG_NORMAL) != 0;
+    bool hasNormal = (mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_NORMAL) != 0;
     float4 nmSample = hasNormal
         ? SampleBindlessTexture(mat.m_NormalTextureIndex, mat.m_NormalSamplerIndex, input.uv)
         : float4(0.5f, 0.5f, 1.0f, 0.0f);
 
-    bool hasEmissive = (mat.m_TextureFlags & TEXFLAG_EMISSIVE) != 0;
+    bool hasEmissive = (mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_EMISSIVE) != 0;
     float4 emissiveSample = hasEmissive
         ? SampleBindlessTexture(mat.m_EmissiveTextureIndex, mat.m_EmissiveSamplerIndex, input.uv)
         : float4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -390,7 +390,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
 
     float3 color = 0;
     float3 directSpecular = 0;
-    if (g_PerFrame.m_RenderingMode == RENDERING_MODE_IBL)
+    if (g_PerFrame.m_RenderingMode == srrhi::CommonConsts::RENDERING_MODE_IBL)
     {
         lightingInputs.L = g_PerFrame.m_SunDirection;
         PrepareLightingByproducts(lightingInputs);
@@ -445,7 +445,7 @@ GBufferOut GBuffer_PSMain(VSOut input)
         float lod = roughness * maxLod;
         lod = min(lod, 6); // TODO: garbage mips beyond mip 6? need to debug SPD
         
-        SamplerState clampSam = SamplerDescriptorHeap[NonUniformResourceIndex(SAMPLER_ANISOTROPIC_CLAMP_INDEX)];
+        SamplerState clampSam = SamplerDescriptorHeap[NonUniformResourceIndex(srrhi::CommonConsts::SAMPLER_ANISOTROPIC_CLAMP_INDEX)];
         float3 refractedColor = g_OpaqueColor.SampleLevel(clampSam, refractUV, lod).rgb;
 
         // --- Volume Attenuation (Beer-Lambert) ---
@@ -468,23 +468,23 @@ GBufferOut GBuffer_PSMain(VSOut input)
     color += emissive;
 
     // Debug visualizations
-    if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)
+    if (g_PerFrame.m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE)
     {
-        if (g_PerFrame.m_DebugMode == DEBUG_MODE_INSTANCES ||
-            g_PerFrame.m_DebugMode == DEBUG_MODE_MESHLETS ||
-            g_PerFrame.m_DebugMode == DEBUG_MODE_LOD)
+        if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_INSTANCES ||
+            g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_MESHLETS ||
+            g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_LOD)
         {
             color = GetDebugColor(g_PerFrame.m_DebugMode, input.instanceID, input.meshletID, input.lodIndex);
         }
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_WORLD_NORMALS)
+        else if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_WORLD_NORMALS)
             color = N * 0.5f + 0.5f;
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_ALBEDO)
+        else if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_ALBEDO)
             color = baseColor;
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_ROUGHNESS)
+        else if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_ROUGHNESS)
             color = roughness.xxx;
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_METALLIC)
+        else if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_METALLIC)
             color = metallic.xxx;
-        else if (g_PerFrame.m_DebugMode == DEBUG_MODE_EMISSIVE)
+        else if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_EMISSIVE)
             color = emissive;
     }
 
@@ -501,11 +501,11 @@ GBufferOut GBuffer_PSMain(VSOut input)
     output.MotionVectors.w = 0; // Unused
     
     // Debug visualizations
-    if (g_PerFrame.m_DebugMode != DEBUG_MODE_NONE)
+    if (g_PerFrame.m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE)
     {
-        if (g_PerFrame.m_DebugMode == DEBUG_MODE_INSTANCES ||
-            g_PerFrame.m_DebugMode == DEBUG_MODE_MESHLETS ||
-            g_PerFrame.m_DebugMode == DEBUG_MODE_LOD)
+        if (g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_INSTANCES ||
+            g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_MESHLETS ||
+            g_PerFrame.m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_LOD)
         {
             float3 debugColor = GetDebugColor(g_PerFrame.m_DebugMode, input.instanceID, input.meshletID, input.lodIndex);
             output.Albedo = float4(debugColor, alpha);

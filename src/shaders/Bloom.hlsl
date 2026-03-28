@@ -1,4 +1,4 @@
-#include "ShaderShared.h"
+﻿#include "ShaderShared.h"
 #include "srrhi/hlsl/Bloom.hlsli"
 
 static const srrhi::BloomPrefilterConstants  PrefilterCB    = srrhi::BloomPrefilterInputs::GetPrefilterConstants();
@@ -35,7 +35,7 @@ float3 Prefilter(float3 color)
 
 float4 Prefilter_PSMain(FullScreenVertexOut input) : SV_Target
 {
-    SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     float3 color = PrefilterInput.SampleLevel(linearClampSampler, input.uv, 0).rgb;
     return float4(Prefilter(SafeHDR(color)) * PrefilterCB.m_Strength, 1.0);
 }
@@ -44,7 +44,7 @@ float4 Prefilter_PSMain(FullScreenVertexOut input) : SV_Target
 
 float4 Downsample_PSMain(FullScreenVertexOut input) : SV_Target
 {
-    SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     float2 texelSize = 1.0 / float2(DownsampleCB.m_Width, DownsampleCB.m_Height);
     float2 uv = input.uv;
 
@@ -84,7 +84,7 @@ float4 Downsample_PSMain(FullScreenVertexOut input) : SV_Target
 
 float4 Upsample_PSMain(FullScreenVertexOut input) : SV_Target
 {
-    SamplerState linearClampSampler = SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX];
+    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     float2 texelSize = 1.0 / float2(UpsampleCB.m_Width, UpsampleCB.m_Height);
     float d = UpsampleCB.m_UpsampleRadius;
 

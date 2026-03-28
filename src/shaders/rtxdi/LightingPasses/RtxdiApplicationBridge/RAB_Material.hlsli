@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -14,7 +14,7 @@
 #define RAB_MATERIAL_HLSLI
 
 // brdf functions (Lambert, GGX_times_NdotL, Schlick_Fresnel, ConstructONB,
-// SampleCosHemisphere, ImportanceSampleGGX_VNDF, M_PI) are all in CommonLighting.hlsli
+// SampleCosHemisphere, ImportanceSampleGGX_VNDF, srrhi::CommonConsts::M_PI) are all in CommonLighting.hlsli
 // which is included transitively via ShaderParameters.h -> ShaderShared.h -> CommonLighting
 // (or directly by the top-level shader). No separate include needed here.
 #include "Rtxdi/Utils/RandomSamplerstate.hlsli"

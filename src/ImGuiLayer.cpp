@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "ImGuiLayer.h"
 #include "Renderer.h"
 
@@ -96,7 +96,7 @@ void ImGuiLayer::UpdateFrame()
 
             const char* lodNames[] = { "Auto", "LOD 0", "LOD 1", "LOD 2", "LOD 3", "LOD 4", "LOD 5", "LOD 6", "LOD 7" };
             int forcedLODIdx = renderer->m_ForcedLOD + 1;
-            if (ImGui::SliderInt("Forced LOD", &forcedLODIdx, 0, MAX_LOD_COUNT))
+            if (ImGui::SliderInt("Forced LOD", &forcedLODIdx, 0, srrhi::CommonConsts::MAX_LOD_COUNT))
             {
                 renderer->m_ForcedLOD = forcedLODIdx - 1;
             }

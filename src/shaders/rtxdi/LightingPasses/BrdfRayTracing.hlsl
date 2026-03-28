@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -104,7 +104,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
 		// Calculates PDF of individual respective lobes.
         const float specularLobe_PDF = SampleGGX_VNDF_PDF(surface.material.roughness, surface.normal, V, ray.Direction);
-    const float diffuseLobe_PDF = saturate(dot(ray.Direction, surface.normal)) / PI;
+    const float diffuseLobe_PDF = saturate(dot(ray.Direction, surface.normal)) / srrhi::CommonConsts::PI;
 
         // For delta surfaces, we only pass the diffuse lobe to ReSTIR GI, and this pdf is for that.
         overall_PDF = isDeltaSurface ? diffuseLobe_PDF : lerp(diffuseLobe_PDF, specularLobe_PDF, specular_PDF);

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -27,7 +27,7 @@ bool considerTransparentMaterial(uint instanceIndex, uint geometryIndex, uint tr
         t_SceneVertices);
 
     float4 baseColorSample = float4(1.0, 1.0, 1.0, 1.0);
-    if ((mat.m_TextureFlags & TEXFLAG_ALBEDO) != 0)
+    if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0)
     {
         baseColorSample = SampleBindlessTextureLevel(mat.m_AlbedoTextureIndex, mat.m_AlbedoSamplerIndex, uv, 0);
     }
@@ -35,12 +35,12 @@ bool considerTransparentMaterial(uint instanceIndex, uint geometryIndex, uint tr
     float alpha = mat.m_BaseColor.a * baseColorSample.a;
     float3 transmissionTint = mat.m_BaseColor.rgb * baseColorSample.rgb;
 
-    if (mat.m_AlphaMode == ALPHA_MODE_MASK)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
     {
         return alpha >= mat.m_AlphaCutoff;
     }
 
-    if (mat.m_AlphaMode == ALPHA_MODE_BLEND)
+    if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_BLEND)
     {
         float opacity = saturate(alpha * (1.0f - mat.m_TransmissionFactor));
         throughput *= (1.0f - opacity);

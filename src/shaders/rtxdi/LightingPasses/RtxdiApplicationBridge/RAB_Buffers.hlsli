@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
@@ -95,7 +95,7 @@ RWTexture2D<float4>                         u_SpecularLighting          : regist
 #define RTXDI_LIGHT_RESERVOIR_BUFFER    u_LightReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER   t_NeighborOffsets
 #define RTXDI_GI_RESERVOIR_BUFFER       u_GIReservoirs
-#define IES_SAMPLER                     SamplerDescriptorHeap[SAMPLER_LINEAR_CLAMP_INDEX]
+#define IES_SAMPLER                     SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
 
 // Translates a light index between frames.
 // Since lights don't stream in/out, the index is always stable — return it unchanged.

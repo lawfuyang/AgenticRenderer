@@ -1,4 +1,4 @@
-// TLASPatch.hlsl
+﻿// TLASPatch.hlsl
 // GPU-side TLAS patching compute shader.
 //
 // Reads the per-instance LOD index buffer written by the GPU culling passes and:
@@ -15,7 +15,7 @@
 
 // ---- Inputs ----------------------------------------------------------------
 
-// Flat BLAS address table: blasAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex]
+// Flat BLAS address table: blasAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex]
 // Uploaded once at scene load by Scene::BuildAccelerationStructures.
 StructuredBuffer<uint64_t> g_BLASAddresses : register(t0);
 
@@ -49,13 +49,13 @@ void TLASPatch_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     uint lodIndex = g_InstanceLOD[instanceIndex];
 
-    // Clamp lodIndex to [0, MAX_LOD_COUNT-1] for safety
-    lodIndex = min(lodIndex, MAX_LOD_COUNT - 1);
+    // Clamp lodIndex to [0, srrhi::CommonConsts::MAX_LOD_COUNT-1] for safety
+    lodIndex = min(lodIndex, srrhi::CommonConsts::MAX_LOD_COUNT - 1);
 
     // Look up the BLAS device address for this instance + LOD and write it directly
     // into the typed struct field — no manual byte offsets required.
     g_RTInstanceDescs[instanceIndex].blasDeviceAddress =
-        g_BLASAddresses[instanceIndex * MAX_LOD_COUNT + lodIndex];
+        g_BLASAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex];
 
     // Write m_LODIndex into the per-instance data buffer
     g_InstanceData[instanceIndex].m_LODIndex = lodIndex;

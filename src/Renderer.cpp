@@ -1,4 +1,4 @@
-#include "Renderer.h"
+﻿#include "Renderer.h"
 #include "Utilities.h"
 #include "Config.h"
 #include "CommonResources.h"
@@ -829,7 +829,7 @@ void Renderer::Run()
         // Handle debug mode settings
         if (m_DebugMode != m_ActiveDebugMode)
         {
-            if (m_DebugMode != DEBUG_MODE_NONE && m_ActiveDebugMode == DEBUG_MODE_NONE)
+            if (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE && m_ActiveDebugMode == srrhi::CommonConsts::DEBUG_MODE_NONE)
             {
                 // Entering debug mode: save current state
                 m_DebugBackup.m_EnableBloom = m_EnableBloom;
@@ -841,7 +841,7 @@ void Renderer::Run()
                 m_EnableBloom = false;
                 m_EnableAutoExposure = false;
             }
-            else if (m_DebugMode == DEBUG_MODE_NONE && m_ActiveDebugMode != DEBUG_MODE_NONE)
+            else if (m_DebugMode == srrhi::CommonConsts::DEBUG_MODE_NONE && m_ActiveDebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE)
             {
                 // Leaving debug mode: restore state
                 m_EnableBloom = m_DebugBackup.m_EnableBloom;
@@ -852,7 +852,7 @@ void Renderer::Run()
             m_ActiveDebugMode = m_DebugMode;
         }
 
-        if (m_DebugMode != DEBUG_MODE_NONE)
+        if (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE)
         {
             // Lock settings in debug mode for consistent raw output
             m_EnableBloom = false;
@@ -1569,7 +1569,7 @@ void Renderer::AddComputePass(const RenderPassParams& params)
     }
 }
 
-void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, SpdReductionType reductionType)
+void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferHandle spdAtomicCounter, nvrhi::CommandListHandle commandList, const char* markerName, uint32_t reductionType)
 {
     PROFILE_FUNCTION();
     PROFILE_GPU_SCOPED(markerName, commandList);
