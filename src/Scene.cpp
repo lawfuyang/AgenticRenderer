@@ -18,7 +18,7 @@ void Scene::LoadScene()
 	const std::filesystem::path sceneDir = sceneFilePath.parent_path();
 
 	Renderer* renderer = Renderer::GetInstance();
-	std::vector<VertexQuantized> allVerticesQuantized;
+	std::vector<srrhi::VertexQuantized> allVerticesQuantized;
 	std::vector<uint32_t> allIndices;
 
 	SCOPED_TIMER("[Scene] LoadScene Total");
@@ -113,7 +113,7 @@ void Scene::BuildAccelerationStructures()
 			SDL_assert(primitive.m_BLAS.empty());
 			meshDataToPrimitive[primitive.m_MeshDataIndex] = &primitive;
 
-			const MeshData& meshData = m_MeshData[primitive.m_MeshDataIndex];
+			const srrhi::MeshData& meshData = m_MeshData[primitive.m_MeshDataIndex];
 			const uint32_t lodCount = meshData.m_LODCount;
 			SDL_assert(lodCount > 0 && lodCount <= srrhi::CommonConsts::MAX_LOD_COUNT);
 
@@ -131,7 +131,7 @@ void Scene::BuildAccelerationStructures()
 				geometryTriangle.vertexOffset = 0; // Indices are already global relative to the start of the vertex buffer
 				geometryTriangle.indexCount = meshData.m_IndexCounts[lod];
 				geometryTriangle.vertexCount = primitive.m_VertexCount;
-				geometryTriangle.vertexStride = sizeof(VertexQuantized);
+				geometryTriangle.vertexStride = sizeof(srrhi::VertexQuantized);
 
 				geometryDesc.flags = nvrhi::rt::GeometryFlags::None; // can't be opaque since we have alpha tested materials that can be applied to this mesh
 				geometryDesc.geometryType = nvrhi::rt::GeometryType::Triangles;

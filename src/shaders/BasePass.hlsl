@@ -3,6 +3,7 @@
 #include "Bindless.hlsli"
 #include "CommonLighting.hlsli"
 #include "Atmosphere.hlsli"
+#include "MeshCommon.hlsli"
 
 cbuffer PerFrameCB : register(b0)
 {
@@ -11,19 +12,19 @@ cbuffer PerFrameCB : register(b0)
 
 StructuredBuffer<PerInstanceData> g_Instances : register(t0);
 StructuredBuffer<MaterialConstants> g_Materials : register(t1);
-StructuredBuffer<VertexQuantized> g_Vertices : register(t2);
-StructuredBuffer<Meshlet> g_Meshlets : register(t3);
+StructuredBuffer<srrhi::VertexQuantized> g_Vertices : register(t2);
+StructuredBuffer<srrhi::Meshlet> g_Meshlets : register(t3);
 StructuredBuffer<uint> g_MeshletVertices : register(t4);
 StructuredBuffer<uint> g_MeshletTriangles : register(t5);
-StructuredBuffer<MeshletJob> g_MeshletJobs : register(t6);
-StructuredBuffer<MeshData> g_MeshData : register(t7);
+StructuredBuffer<srrhi::MeshletJob> g_MeshletJobs : register(t6);
+StructuredBuffer<srrhi::MeshData> g_MeshData : register(t7);
 StructuredBuffer<uint> g_Indices : register(t10);
 Texture2D<float> g_HZB : register(t8);
 RaytracingAccelerationStructure g_SceneAS : register(t9);
 Texture2D g_OpaqueColor : register(t11);
 StructuredBuffer<srrhi::GPULight> g_Lights : register(t12);
 
-void UnpackMeshletBV(Meshlet m, out float3 center, out float radius)
+void UnpackMeshletBV(srrhi::Meshlet m, out float3 center, out float radius)
 {
     center.x = f16tof32(m.m_CenterRadius[0] & 0xFFFF);
     center.y = f16tof32(m.m_CenterRadius[0] >> 16);
@@ -44,7 +45,7 @@ struct VSOut
     nointerpolation uint lodIndex : TEXCOORD4;
 };
 
-VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshletID, uint lodIndex)
+VSOut PrepareVSOut(srrhi::Vertex v, PerInstanceData inst, uint instanceID, uint meshletID, uint lodIndex)
 {
     VSOut o;
     float4 worldPos = MatrixMultiply(float4(v.m_Pos, 1.0f), inst.m_World);
@@ -66,7 +67,7 @@ VSOut PrepareVSOut(Vertex v, PerInstanceData inst, uint instanceID, uint meshlet
 VSOut VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_StartInstanceLocation)
 {
     PerInstanceData inst = g_Instances[instanceID];
-    Vertex v = UnpackVertex(g_Vertices[vertexID]);
+    srrhi::Vertex v = UnpackVertex(g_Vertices[vertexID]);
     return PrepareVSOut(v, inst, instanceID, 0xFFFFFFFF, 0);
 }
 
@@ -93,7 +94,7 @@ void ASMain(
     uint groupIndex : SV_GroupIndex
 )
 {
-    MeshletJob job = g_MeshletJobs[g_DrawID];
+    srrhi::MeshletJob job = g_MeshletJobs[g_DrawID];
     uint instanceIndex = job.m_InstanceIndex;
     uint lodIndex = job.m_LODIndex;
     uint meshletOffset = groupId.x * srrhi::CommonConsts::kThreadsPerGroup;
@@ -108,12 +109,12 @@ void ASMain(
 
     uint meshletIndex = meshletOffset + groupThreadID.x;
     PerInstanceData inst = g_Instances[instanceIndex];
-    MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
+    srrhi::MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
     if (meshletIndex < mesh.m_MeshletCounts[lodIndex])
     {
         uint absoluteMeshletIndex = mesh.m_MeshletOffsets[lodIndex] + meshletIndex;
-        Meshlet m = g_Meshlets[absoluteMeshletIndex];
+        srrhi::Meshlet m = g_Meshlets[absoluteMeshletIndex];
 
         float3 meshletCenter;
         float meshletRadius;
@@ -187,14 +188,14 @@ void MSMain(
     uint instanceIndex = payload.m_InstanceIndex;
     uint outputIdx = groupThreadID.x;
 
-    Meshlet m = g_Meshlets[meshletIndex];
+    srrhi::Meshlet m = g_Meshlets[meshletIndex];
     
     SetMeshOutputCounts(m.m_VertexCount, m.m_TriangleCount);
     
     if (outputIdx < m.m_VertexCount)
     {
         uint vertexIndex = g_MeshletVertices[m.m_VertexOffset + outputIdx];
-        Vertex v = UnpackVertex(g_Vertices[vertexIndex]);
+        srrhi::Vertex v = UnpackVertex(g_Vertices[vertexIndex]);
         
         PerInstanceData inst = g_Instances[instanceIndex];
         vout[outputIdx] = PrepareVSOut(v, inst, instanceIndex, meshletIndex, payload.m_LODIndex);

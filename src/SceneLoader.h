@@ -22,8 +22,8 @@ public:
     };
 
     // Main GLTF loading function
-    static bool LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene);
-    static bool LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
+    static bool LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene);
+    static bool LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
     static void ApplyEnvironmentLights(Scene& scene);
 
     // Helper functions for processing GLTF data
@@ -31,13 +31,13 @@ public:
     static void ProcessCameras(const cgltf_data* data, Scene& scene, const SceneOffsets& offsets);
     static void ProcessLights(const cgltf_data* data, Scene& scene, const SceneOffsets& offsets);
     static void ProcessAnimations(const cgltf_data* data, Scene& scene, const SceneOffsets& offsets);
-    static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<VertexQuantized>& outVerticesQuantized, std::vector<uint32_t>& outIndices, const SceneOffsets& offsets);
+    static void ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<srrhi::VertexQuantized>& outVerticesQuantized, std::vector<uint32_t>& outIndices, const SceneOffsets& offsets);
     static void ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene, const SceneOffsets& offsets);
 
     // Texture and GPU buffer functions
     static void LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sceneDir, Renderer* renderer);
     static void UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* renderer);
-    static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<VertexQuantized>& allVerticesQuantized, const std::vector<uint32_t>& allIndices);
+    static void CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<srrhi::VertexQuantized>& allVerticesQuantized, const std::vector<uint32_t>& allIndices);
     static void CreateAndUploadLightBuffer(Scene& scene, Renderer* renderer);
 
 private:

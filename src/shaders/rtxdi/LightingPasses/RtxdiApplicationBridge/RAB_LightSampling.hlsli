@@ -178,7 +178,7 @@ uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
         // hit is relative to that LOD's index buffer and does NOT map 1:1
         // to LOD 0 triangles.  Guard against out-of-bounds access by
         // checking against the LOD 0 triangle count.
-        MeshData geometry = t_GeometryData[hitInstance.m_MeshDataIndex];
+        srrhi::MeshData geometry = t_GeometryData[hitInstance.m_MeshDataIndex];
         uint lod0TriangleCount = geometry.m_IndexCounts[0] / 3;
         if (primitiveIndex >= lod0TriangleCount)
             return RTXDI_InvalidLightIndex;

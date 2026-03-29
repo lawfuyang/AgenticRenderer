@@ -15,6 +15,8 @@
 
 #include <SharedShaderInclude/ShaderParameters.h>
 
+#include "srrhi/hlsl/Mesh.hlsli"
+
 // ---- Constant buffers ----
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 
@@ -40,7 +42,7 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 // t18 = t_GBufferEmissive
 // t19 = t_GeometryInstanceToLight
 // t20 = t_InstanceData  (PerInstanceData)
-// t21 = t_GeometryData  (MeshData)
+// t21 = t_GeometryData  (srrhi::MeshData)
 // t22 = t_MaterialConstants
 // t23 = t_SceneIndices
 // t24 = t_SceneVertices
@@ -66,10 +68,10 @@ StructuredBuffer<PolymorphicLightInfo>      t_LightDataBuffer           : regist
 Texture2D<float4>                           t_GBufferEmissive           : register(t18);
 StructuredBuffer<uint>                      t_GeometryInstanceToLight   : register(t19);
 StructuredBuffer<PerInstanceData>           t_InstanceData              : register(t20);
-StructuredBuffer<MeshData>                  t_GeometryData              : register(t21);
+StructuredBuffer<srrhi::MeshData>           t_GeometryData              : register(t21);
 StructuredBuffer<MaterialConstants>         t_MaterialConstants         : register(t22);
 StructuredBuffer<uint>                      t_SceneIndices              : register(t23);
-StructuredBuffer<VertexQuantized>           t_SceneVertices             : register(t24);
+StructuredBuffer<srrhi::VertexQuantized>    t_SceneVertices             : register(t24);
 
 // ---- UAVs (match RTXDIRenderer.cpp binding layout) ----
 // u0  = u_LightReservoirs

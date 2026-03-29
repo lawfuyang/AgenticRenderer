@@ -176,7 +176,7 @@ static nvrhi::TextureHandle LoadAndRegisterEnvMap(const std::string& path, uint3
 	return tex;
 }
 
-bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices)
+bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices)
 {
 	SCOPED_TIMER("[Scene] LoadJSONScene");
 
@@ -1600,18 +1600,18 @@ void SceneLoader::ProcessAnimations(const cgltf_data* data, Scene& scene, const 
 	}
 }
 
-void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<VertexQuantized>& outVerticesQuantized, std::vector<uint32_t>& outIndices, const SceneOffsets& offsets)
+void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vector<srrhi::VertexQuantized>& outVerticesQuantized, std::vector<uint32_t>& outIndices, const SceneOffsets& offsets)
 {
 	SCOPED_TIMER("[Scene] Meshes");
 
 	struct PrimitiveResult
 	{
-		std::vector<VertexQuantized> vertices;
+		std::vector<srrhi::VertexQuantized> vertices;
 		std::vector<uint32_t> indices;
-		std::vector<Meshlet> meshlets;
+		std::vector<srrhi::Meshlet> meshlets;
 		std::vector<uint32_t> meshletVertices;
 		std::vector<uint32_t> meshletTriangles;
-		MeshData meshData;
+		srrhi::MeshData meshData;
 		Scene::Primitive minimalPrim;
 	};
 
@@ -1680,10 +1680,10 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 
 		const cgltf_size vertCount = posAcc->count;
 
-		std::vector<Vertex> rawVertices(vertCount);
+		std::vector<srrhi::Vertex> rawVertices(vertCount);
 		for (cgltf_size v = 0; v < vertCount; ++v)
 		{
-			Vertex vx{};
+			srrhi::Vertex vx{};
 			float pos[4] = { 0,0,0,0 };
 			cgltf_size posComps = cgltf_num_components(posAcc->type);
 			cgltf_accessor_read_float(posAcc, v, pos, posComps);
@@ -1732,21 +1732,21 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 		}
 
 		std::vector<uint32_t> remap(rawIndices.size());
-		size_t uniqueVertices = meshopt_generateVertexRemap(remap.data(), rawIndices.data(), rawIndices.size(), rawVertices.data(), rawVertices.size(), sizeof(Vertex));
+		size_t uniqueVertices = meshopt_generateVertexRemap(remap.data(), rawIndices.data(), rawIndices.size(), rawVertices.data(), rawVertices.size(), sizeof(srrhi::Vertex));
 
-		std::vector<Vertex> optimizedVertices(uniqueVertices);
+		std::vector<srrhi::Vertex> optimizedVertices(uniqueVertices);
 		std::vector<uint32_t> localIndices(rawIndices.size());
 
-		meshopt_remapVertexBuffer(optimizedVertices.data(), rawVertices.data(), rawVertices.size(), sizeof(Vertex), remap.data());
+		meshopt_remapVertexBuffer(optimizedVertices.data(), rawVertices.data(), rawVertices.size(), sizeof(srrhi::Vertex), remap.data());
 		meshopt_remapIndexBuffer(localIndices.data(), rawIndices.data(), rawIndices.size(), remap.data());
 
 		meshopt_optimizeVertexCache(localIndices.data(), localIndices.data(), localIndices.size(), uniqueVertices);
-		meshopt_optimizeVertexFetch(optimizedVertices.data(), localIndices.data(), localIndices.size(), optimizedVertices.data(), uniqueVertices, sizeof(Vertex));
+		meshopt_optimizeVertexFetch(optimizedVertices.data(), localIndices.data(), localIndices.size(), optimizedVertices.data(), uniqueVertices, sizeof(srrhi::Vertex));
 
 		res.vertices.reserve(uniqueVertices);
-		for (const Vertex& v : optimizedVertices)
+		for (const srrhi::Vertex& v : optimizedVertices)
 		{
-			VertexQuantized vq{};
+			srrhi::VertexQuantized vq{};
 			vq.m_Pos = v.m_Pos;
 			vq.m_Normal = (meshopt_quantizeSnorm(v.m_Normal.x, 10) + 511) |
 				((meshopt_quantizeSnorm(v.m_Normal.y, 10) + 511) << 10) |
@@ -1788,7 +1788,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 
 			const float attribute_weights[3] = { 1.0f, 1.0f, 1.0f };
 
-			const float simplifyScale = meshopt_simplifyScale(&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex));
+			const float simplifyScale = meshopt_simplifyScale(&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(srrhi::Vertex));
 
 			std::vector<uint32_t> currentLodIndices = localIndices;
 			float accumulatedError = 0.0f;
@@ -1815,8 +1815,8 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 					size_t new_index_count = meshopt_simplifyWithAttributes(
 						lodIndices.data(),
 						currentLodIndices.data(), prevIndexCount,
-						&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex),
-						&optimizedVertices[0].m_Normal.x, sizeof(Vertex),
+						&optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(srrhi::Vertex),
+						&optimizedVertices[0].m_Normal.x, sizeof(srrhi::Vertex),
 						attribute_weights, 3,
 						nullptr, target_index_count, kMaxError,
 						meshopt_SimplifySparse,
@@ -1859,7 +1859,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 				std::vector<unsigned char> meshlet_triangles(max_meshlets * max_triangles * 3);
 
 				const size_t meshlet_count = meshopt_buildMeshlets(localMeshlets.data(), meshlet_vertices.data(), meshlet_triangles.data(),
-					lodIndices.data(), lodIndices.size(), &optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex),
+					lodIndices.data(), lodIndices.size(), &optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(srrhi::Vertex),
 					max_vertices, max_triangles, cone_weight);
 
 				localMeshlets.resize(meshlet_count);
@@ -1874,9 +1874,9 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 					meshopt_optimizeMeshlet(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset], m.triangle_count, m.vertex_count);
 
 					meshopt_Bounds bounds = meshopt_computeMeshletBounds(&meshlet_vertices[m.vertex_offset], &meshlet_triangles[m.triangle_offset],
-						m.triangle_count, &optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(Vertex));
+						m.triangle_count, &optimizedVertices[0].m_Pos.x, uniqueVertices, sizeof(srrhi::Vertex));
 
-					Meshlet gpuMeshlet;
+					srrhi::Meshlet gpuMeshlet;
 					gpuMeshlet.m_VertexOffset = (uint32_t)(res.meshletVertices.size());
 					gpuMeshlet.m_TriangleOffset = (uint32_t)(res.meshletTriangles.size());
 					gpuMeshlet.m_VertexCount = (uint32_t)m.vertex_count;
@@ -1951,7 +1951,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 			}
 			scene.m_MeshData.push_back(primRes.meshData);
 
-			for (Meshlet& m : primRes.meshlets)
+			for (srrhi::Meshlet& m : primRes.meshlets)
 			{
 				m.m_VertexOffset += currentMeshletVertexOffset;
 				m.m_TriangleOffset += currentMeshletTriangleOffset;
@@ -1983,7 +1983,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 		if (!mesh.m_Primitives.empty())
 		{
 			uint32_t meshVertexCount = currentVertexOffset - meshFirstVertex;
-			Sphere::CreateFromPoints(s, meshVertexCount, &outVerticesQuantized[meshFirstVertex].m_Pos, sizeof(VertexQuantized));
+			Sphere::CreateFromPoints(s, meshVertexCount, &outVerticesQuantized[meshFirstVertex].m_Pos, sizeof(srrhi::VertexQuantized));
 		}
 		else
 		{
@@ -2106,7 +2106,7 @@ void SceneLoader::ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene,
 	}
 }
 
-void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<VertexQuantized>& allVerticesQuantized, const std::vector<uint32_t>& allIndices)
+void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, const std::vector<srrhi::VertexQuantized>& allVerticesQuantized, const std::vector<uint32_t>& allIndices)
 {
 	SCOPED_TIMER("[Scene] GPU Upload");
 
@@ -2116,10 +2116,10 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 	// Create quantized vertex buffer
 	if (!allVerticesQuantized.empty())
 	{
-		size_t vqbytes = allVerticesQuantized.size() * sizeof(VertexQuantized);
+		size_t vqbytes = allVerticesQuantized.size() * sizeof(srrhi::VertexQuantized);
 		nvrhi::BufferDesc desc{};
 		desc.byteSize = (uint32_t)vqbytes;
-		desc.structStride = sizeof(VertexQuantized);
+		desc.structStride = sizeof(srrhi::VertexQuantized);
 		desc.isVertexBuffer = true;
 		desc.isAccelStructBuildInput = true;
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
@@ -2151,28 +2151,28 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 	if (!scene.m_MeshData.empty())
 	{
 		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_MeshData.size() * sizeof(MeshData));
-		desc.structStride = sizeof(MeshData);
+		desc.byteSize = (uint32_t)(scene.m_MeshData.size() * sizeof(srrhi::MeshData));
+		desc.structStride = sizeof(srrhi::MeshData);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_MeshDataBuffer";
 		scene.m_MeshDataBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		cmd->writeBuffer(scene.m_MeshDataBuffer, scene.m_MeshData.data(), scene.m_MeshData.size() * sizeof(MeshData), 0);
+		cmd->writeBuffer(scene.m_MeshDataBuffer, scene.m_MeshData.data(), scene.m_MeshData.size() * sizeof(srrhi::MeshData), 0);
 	}
 
 	// Create meshlet buffers
 	if (!scene.m_Meshlets.empty())
 	{
 		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_Meshlets.size() * sizeof(Meshlet));
-		desc.structStride = sizeof(Meshlet);
+		desc.byteSize = (uint32_t)(scene.m_Meshlets.size() * sizeof(srrhi::Meshlet));
+		desc.structStride = sizeof(srrhi::Meshlet);
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
 		desc.debugName = "Scene_MeshletBuffer";
 		scene.m_MeshletBuffer = renderer->m_RHI->m_NvrhiDevice->createBuffer(desc);
 
-		cmd->writeBuffer(scene.m_MeshletBuffer, scene.m_Meshlets.data(), scene.m_Meshlets.size() * sizeof(Meshlet), 0);
+		cmd->writeBuffer(scene.m_MeshletBuffer, scene.m_Meshlets.data(), scene.m_Meshlets.size() * sizeof(srrhi::Meshlet), 0);
 	}
 
 	if (!scene.m_MeshletVertices.empty())
@@ -2244,10 +2244,10 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 		"  Meshlet Vertices Buf:  %.2f MB (%zu meshlet vertices)\n"
 		"  Meshlet Triangles Buf: %.2f MB (%zu meshlet triangles)\n"
 		"  Instance Data Buffer:  %.2f MB (%zu instances)",
-		(allVerticesQuantized.size() * sizeof(VertexQuantized)) / (1024.0f * 1024.0f), allVerticesQuantized.size(),
+		(allVerticesQuantized.size() * sizeof(srrhi::VertexQuantized)) / (1024.0f * 1024.0f), allVerticesQuantized.size(),
 		(allIndices.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), allIndices.size(),
-		(scene.m_MeshData.size() * sizeof(MeshData)) / (1024.0f * 1024.0f), scene.m_MeshData.size(),
-		(scene.m_Meshlets.size() * sizeof(Meshlet)) / (1024.0f * 1024.0f), scene.m_Meshlets.size(),
+		(scene.m_MeshData.size() * sizeof(srrhi::MeshData)) / (1024.0f * 1024.0f), scene.m_MeshData.size(),
+		(scene.m_Meshlets.size() * sizeof(srrhi::Meshlet)) / (1024.0f * 1024.0f), scene.m_Meshlets.size(),
 		(scene.m_MeshletVertices.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletVertices.size(),
 		(scene.m_MeshletTriangles.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletTriangles.size(),
 		(scene.m_InstanceData.size() * sizeof(PerInstanceData)) / (1024.0f * 1024.0f), scene.m_InstanceData.size());
@@ -2313,7 +2313,7 @@ void SceneLoader::CreateAndUploadLightBuffer(Scene& scene, Renderer* renderer)
 	}
 }
 
-bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene)
+bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene)
 {
 	const cgltf_options options{};
 	cgltf_data* data = nullptr;

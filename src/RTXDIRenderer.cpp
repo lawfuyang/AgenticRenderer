@@ -506,7 +506,7 @@ public:
                     continue;
 
                 // Find the MeshData to get the triangle count at LOD 0.
-                const MeshData& meshData = scene.m_MeshData[inst.m_MeshDataIndex];
+                const srrhi::MeshData& meshData = scene.m_MeshData[inst.m_MeshDataIndex];
                 const uint32_t triangleCount = meshData.m_IndexCounts[0] / 3u;
                 if (triangleCount == 0)
                     continue;

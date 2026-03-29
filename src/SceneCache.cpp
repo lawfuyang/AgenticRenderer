@@ -3,7 +3,7 @@
 #include "meshoptimizer.h"
 
 static constexpr uint32_t kSceneCacheMagic = 0x59464C52; // "RLFY"
-static constexpr uint32_t kSceneCacheVersion = 28;
+static constexpr uint32_t kSceneCacheVersion = 29;
 
 // --- Binary Serialization Helpers ---
 template<typename T>
@@ -52,11 +52,11 @@ static void ReadVector(std::istream& is, std::vector<T>& vec)
 		is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
 }
 
-static void WriteMeshletDataCompressed(std::ostream& os, const std::vector<Meshlet>& meshlets, const std::vector<uint32_t>& meshletVertices, const std::vector<uint32_t>& meshletTriangles)
+static void WriteMeshletDataCompressed(std::ostream& os, const std::vector<srrhi::Meshlet>& meshlets, const std::vector<uint32_t>& meshletVertices, const std::vector<uint32_t>& meshletTriangles)
 {
 	std::vector<unsigned char> encoded(meshopt_encodeMeshletBound(srrhi::CommonConsts::kMaxMeshletVertices, srrhi::CommonConsts::kMaxMeshletTriangles));
 
-	for (const Meshlet& m : meshlets)
+	for (const srrhi::Meshlet& m : meshlets)
 	{
 		const uint32_t* vertices = &meshletVertices[m.m_VertexOffset];
 
@@ -76,10 +76,10 @@ static void WriteMeshletDataCompressed(std::ostream& os, const std::vector<Meshl
 	}
 }
 
-static void ReadMeshletDataCompressed(std::istream& is, const std::vector<Meshlet>& meshlets, std::vector<uint32_t>& meshletVertices, std::vector<uint32_t>& meshletTriangles)
+static void ReadMeshletDataCompressed(std::istream& is, const std::vector<srrhi::Meshlet>& meshlets, std::vector<uint32_t>& meshletVertices, std::vector<uint32_t>& meshletTriangles)
 {
 	std::vector<unsigned char> encoded;
-	for (const Meshlet& m : meshlets)
+	for (const srrhi::Meshlet& m : meshlets)
 	{
 		uint32_t encodedSize;
 		ReadPOD(is, encodedSize);
@@ -102,7 +102,7 @@ static void ReadMeshletDataCompressed(std::istream& is, const std::vector<Meshle
 	}
 }
 
-void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<VertexQuantized>& allVerticesQuantized)
+void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<srrhi::VertexQuantized>& allVerticesQuantized)
 {
 	std::ofstream os(cachePath, std::ios::binary);
 	if (!os.is_open())
@@ -252,7 +252,7 @@ void Scene::SaveToCache(const std::string& cachePath, const std::vector<uint32_t
 	}
 }
 
-bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& allIndices, std::vector<VertexQuantized>& allVerticesQuantized)
+bool Scene::LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& allIndices, std::vector<srrhi::VertexQuantized>& allVerticesQuantized)
 {
 	std::ifstream is(cachePath, std::ios::binary);
 	if (!is.is_open()) return false;

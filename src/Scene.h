@@ -7,6 +7,7 @@
 #include "shaders/ShaderShared.h"
 
 #include "shaders/srrhi/cpp/Common.h"
+#include "shaders/srrhi/cpp/Mesh.h"
 
 // Minimal scene representation for glTF meshes/nodes/materials/textures
 class Scene
@@ -230,8 +231,8 @@ public:
     bool m_LightsDirty = true;
 
     std::vector<PerInstanceData> m_InstanceData;
-    std::vector<MeshData> m_MeshData;
-    std::vector<Meshlet> m_Meshlets;
+    std::vector<srrhi::MeshData> m_MeshData;
+    std::vector<srrhi::Meshlet> m_Meshlets;
     std::vector<uint32_t> m_MeshletVertices;
     std::vector<uint32_t> m_MeshletTriangles;
     nvrhi::BufferHandle m_InstanceDataBuffer;
@@ -325,8 +326,8 @@ public:
     float GetSceneBoundingRadius() const { return m_SceneBoundingSphere.Radius; }
 
     // Binary Scene Cache
-    bool LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& allIndices, std::vector<VertexQuantized>& allVerticesQuantized);
-    void SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<VertexQuantized>& allVerticesQuantized);
+    bool LoadFromCache(const std::string& cachePath, std::vector<uint32_t>& allIndices, std::vector<srrhi::VertexQuantized>& allVerticesQuantized);
+    void SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<srrhi::VertexQuantized>& allVerticesQuantized);
 
     void UpdateNodeBoundingSphere(int nodeIndex);
 };

@@ -57,7 +57,7 @@ float3 RAB_RayPayloadGetEmittedRadiance(RAB_RayPayload rayPayload)
     // Sample emissive texture if present (matching FullSample's sampleGeometryMaterial behavior)
     if ((mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_EMISSIVE) != 0)
     {
-        MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
+        srrhi::MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
         float2 uv = GetInterpolatedUV(
             rayPayload.primitiveIndex,
             instance.m_LODIndex,

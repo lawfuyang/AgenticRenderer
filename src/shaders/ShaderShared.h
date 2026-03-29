@@ -106,57 +106,8 @@
 static const float3 kEarthCenter = float3(0.0f, -6360000.0f, 0.0f);
 
 #include "srrhi/hlsl/Common.hlsli" // TODO: remove this when everything gets converted to srrhi
-#endif
-
-#ifdef __cplusplus
-// C++ aliases for HLSL scalar/vector types used in shared structs (ShaderParameters.h etc.)
-// Note: cstdint and DirectXMath.h must already be included by the including C++ translation unit.
-typedef uint32_t uint;
-typedef DirectX::XMUINT2 uint2;
-typedef DirectX::XMINT2  int2;
-typedef DirectX::XMFLOAT2 float2;
-typedef DirectX::XMFLOAT3 float3;
-typedef DirectX::XMFLOAT4 float4;
-
+#else
 #include "srrhi/cpp/Common.h" // TODO: remove this when everything gets converted to srrhi
-
-#endif // __cplusplus
-
-// Forward-lighting specific shared types.
-// Vertex input: provide simple C++ and HLSL variants
-struct Vertex
-{
-  Vector3 m_Pos;
-  Vector3 m_Normal;
-  Vector2 m_Uv;
-  Vector4 m_Tangent;
-};
-
-
-struct VertexQuantized
-{
-  Vector3 m_Pos;     // 12 bytes
-  uint32_t m_Normal; // 10-10-10-2 snorm (4 bytes)
-  uint32_t m_Uv;     // half2 (4 bytes)
-  uint32_t m_Tangent; // 10-10-10-2 snorm (4 bytes)
-};                   // total: 24 bytes (multiple of 4)
-
-#if !defined(__cplusplus)
-  Vertex UnpackVertex(VertexQuantized vq)
-  {
-    Vertex v;
-    v.m_Pos = vq.m_Pos;
-    v.m_Normal.x = float(vq.m_Normal & 1023) / 511.0f - 1.0f;
-    v.m_Normal.y = float((vq.m_Normal >> 10) & 1023) / 511.0f - 1.0f;
-    v.m_Normal.z = float((vq.m_Normal >> 20) & 1023) / 511.0f - 1.0f;
-    
-    float2 octTan = float2((vq.m_Tangent & 255), (vq.m_Tangent >> 8) & 255) / 127.0f - 1.0f;
-    v.m_Tangent.xyz = DecodeOct(octTan);
-    v.m_Tangent.w = (vq.m_Normal & (1u << 30)) != 0 ? -1.0f : 1.0f;
-
-    v.m_Uv = f16tof32(uint2(vq.m_Uv & 0xFFFF, vq.m_Uv >> 16));
-    return v;
-  }
 #endif // __cplusplus
 
 // Shared per-frame data structure (one definition used by both C++ and HLSL).
@@ -255,34 +206,6 @@ struct MaterialConstants
   Vector3 m_SigmaA;          // absorption coefficient (per-channel, units: 1/m)
   uint32_t m_IsThinSurface;  // 1 = thin-walled surface (no refraction bend), 0 = thick/volumetric
   Vector3 m_SigmaS;          // scattering coefficient (per-channel, reserved for future volume scattering)
-};
-
-struct MeshData
-{
-  uint32_t m_LODCount;
-  uint32_t pad0[3];
-  uint32_t m_IndexOffsets[srrhi::CommonConsts::MAX_LOD_COUNT];
-  uint32_t m_IndexCounts[srrhi::CommonConsts::MAX_LOD_COUNT];
-  uint32_t m_MeshletOffsets[srrhi::CommonConsts::MAX_LOD_COUNT];
-  uint32_t m_MeshletCounts[srrhi::CommonConsts::MAX_LOD_COUNT];
-  float m_LODErrors[srrhi::CommonConsts::MAX_LOD_COUNT];
-};
-
-struct Meshlet
-{
-  uint32_t m_CenterRadius[2]; // x: center.x, y: center.y, z: center.z, w: radius (all quantized as 16-bit half-floats)
-  uint32_t m_VertexOffset;
-  uint32_t m_TriangleOffset;
-  uint32_t m_VertexCount;
-  uint32_t m_TriangleCount;
-  uint32_t m_ConeAxisAndCutoff;
-  uint32_t pad0[3];
-};
-
-struct MeshletJob
-{
-  uint32_t m_InstanceIndex;
-  uint32_t m_LODIndex;
 };
 
 // Per-instance data for instanced rendering

@@ -24,12 +24,12 @@ StructuredBuffer<PrepareLightsTask>         t_TaskBuffer        : register(t0);
 StructuredBuffer<PolymorphicLightInfo>      t_PrimitiveLightBuffer : register(t1);
 
 StructuredBuffer<PerInstanceData>           t_InstanceData      : register(t2);
-StructuredBuffer<MeshData>                  t_GeometryData      : register(t3);
+StructuredBuffer<srrhi::MeshData>           t_GeometryData      : register(t3);
 StructuredBuffer<MaterialConstants>         t_MaterialConstants : register(t4);
 
 // Bindless scene geometry buffers (bound via bIncludeBindlessResources = true)
 StructuredBuffer<uint>                      t_SceneIndices      : register(t5);
-StructuredBuffer<VertexQuantized>           t_SceneVertices     : register(t6);
+StructuredBuffer<srrhi::VertexQuantized>    t_SceneVertices     : register(t6);
 
 #define ENVIRONMENT_SAMPLER SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
 #define IES_SAMPLER         SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX]
@@ -78,7 +78,7 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
         uint geometrySubIdx = task.instanceAndGeometryIndex & 0xFFFu;
 
         PerInstanceData instance = t_InstanceData[instanceIndex];
-        MeshData        geometry = t_GeometryData[instance.m_MeshDataIndex];
+        srrhi::MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
         MaterialConstants material = t_MaterialConstants[instance.m_MaterialIndex];
 
         // Get triangle vertex positions using the shared helper

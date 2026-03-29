@@ -113,8 +113,8 @@ void BasePassResources::DeclareResources(RenderGraph& rg, std::string_view rende
 
         {
             RGBufferDesc desc;
-            desc.m_NvrhiDesc.setByteSize(numPrimitives * sizeof(MeshletJob))
-                .setStructStride(sizeof(MeshletJob))
+            desc.m_NvrhiDesc.setByteSize(numPrimitives * sizeof(srrhi::MeshletJob))
+                .setStructStride(sizeof(srrhi::MeshletJob))
                 .setCanHaveUAVs(true)
                 .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
                 .setKeepInitialState(true)

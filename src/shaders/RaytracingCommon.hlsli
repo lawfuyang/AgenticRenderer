@@ -3,6 +3,7 @@
 
 #include "ShaderShared.h"
 #include "Bindless.hlsli"
+#include "MeshCommon.hlsli"
 
 struct RayHitInfo
 {
@@ -23,15 +24,15 @@ struct FullHitAttributes
 
 struct TriangleVertices
 {
-    Vertex v0, v1, v2;
+    srrhi::Vertex v0, v1, v2;
 };
 
 TriangleVertices GetTriangleVertices(
     uint primitiveIndex,
     uint lodIndex,
-    MeshData mesh,
+    srrhi::MeshData mesh,
     StructuredBuffer<uint> indices,
-    StructuredBuffer<VertexQuantized> vertices)
+    StructuredBuffer<srrhi::VertexQuantized> vertices)
 {
     uint baseIndex = mesh.m_IndexOffsets[lodIndex];
     uint i0 = indices[baseIndex + 3 * primitiveIndex + 0];
@@ -49,9 +50,9 @@ FullHitAttributes GetFullHitAttributes(
     RayHitInfo hit,
     RayDesc ray,
     PerInstanceData inst,
-    MeshData mesh,
+    srrhi::MeshData mesh,
     StructuredBuffer<uint> indices,
-    StructuredBuffer<VertexQuantized> vertices)
+    StructuredBuffer<srrhi::VertexQuantized> vertices)
 {
     TriangleVertices tv = GetTriangleVertices(hit.m_PrimitiveIndex, inst.m_LODIndex, mesh, indices, vertices);
 
@@ -76,9 +77,9 @@ float2 GetInterpolatedUV(
     uint primitiveIndex,
     uint lodIndex,
     float2 barycentrics,
-    MeshData mesh,
+    srrhi::MeshData mesh,
     StructuredBuffer<uint> indices,
-    StructuredBuffer<VertexQuantized> vertices)
+    StructuredBuffer<srrhi::VertexQuantized> vertices)
 {
     TriangleVertices tv = GetTriangleVertices(primitiveIndex, lodIndex, mesh, indices, vertices);
     return tv.v0.m_Uv * (1.0f - barycentrics.x - barycentrics.y) + tv.v1.m_Uv * barycentrics.x + tv.v2.m_Uv * barycentrics.y;

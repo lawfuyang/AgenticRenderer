@@ -2,6 +2,8 @@
 #include "ShaderShared.h"
 #include "Culling.h"
 
+#include "srrhi/hlsl/Mesh.hlsli"
+
 /*
 	-- 2 Phase Occlusion Culling --
 
@@ -23,13 +25,13 @@ cbuffer CullingCB : register(b0)
 
 StructuredBuffer<PerInstanceData> g_InstanceData : register(t0);
 Texture2D<float> g_HZB : register(t1);
-StructuredBuffer<MeshData> g_MeshData : register(t2);
+StructuredBuffer<srrhi::MeshData> g_MeshData : register(t2);
 RWStructuredBuffer<srrhi::DrawIndexedIndirectArguments> g_VisibleArgs : register(u0);
 RWStructuredBuffer<uint> g_VisibleCount : register(u1);
 RWStructuredBuffer<uint> g_OccludedIndices : register(u2);
 RWStructuredBuffer<uint> g_OccludedCount : register(u3);
 RWStructuredBuffer<srrhi::DispatchIndirectArguments> g_DispatchIndirectArgs : register(u4);
-RWStructuredBuffer<MeshletJob> g_MeshletJobs : register(u5);
+RWStructuredBuffer<srrhi::MeshletJob> g_MeshletJobs : register(u5);
 RWStructuredBuffer<uint> g_MeshletJobCount : register(u6);
 RWStructuredBuffer<srrhi::DispatchIndirectArguments> g_MeshletIndirectArgs : register(u7);
 // Per-instance LOD index output: g_InstanceLOD[actualInstanceIndex] = lodIndex.
@@ -53,7 +55,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 	}
 
 	PerInstanceData inst = g_InstanceData[actualInstanceIndex];
-    MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
+    srrhi::MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
     float3 sphereViewCenter = MatrixMultiply(float4(inst.m_Center, 1.0), g_Culling.m_View).xyz;
 
@@ -111,7 +113,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
             args.m_ThreadGroupCountZ = 1;
             g_MeshletIndirectArgs[visibleIndex] = args;
 
-            MeshletJob job;
+            srrhi::MeshletJob job;
             job.m_InstanceIndex = actualInstanceIndex;
             job.m_LODIndex = lodIndex;
             g_MeshletJobs[visibleIndex] = job;

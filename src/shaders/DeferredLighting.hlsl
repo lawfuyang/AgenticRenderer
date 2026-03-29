@@ -20,8 +20,8 @@ Texture2D<float>  g_Depth            : register(t4);
 RaytracingAccelerationStructure g_SceneAS : register(t5);
 StructuredBuffer<PerInstanceData> g_Instances : register(t10);
 StructuredBuffer<MaterialConstants> g_Materials : register(t11);
-StructuredBuffer<VertexQuantized> g_Vertices : register(t12);
-StructuredBuffer<MeshData> g_MeshData : register(t13);
+StructuredBuffer<srrhi::VertexQuantized> g_Vertices : register(t12);
+StructuredBuffer<srrhi::MeshData> g_MeshData : register(t13);
 StructuredBuffer<uint> g_Indices : register(t14);
 StructuredBuffer<srrhi::GPULight> g_Lights : register(t6);
 Texture2D<float4> g_RTXDIDIComposited : register(t8);  // CompositingPass output (DI + emissive, already remodulated)

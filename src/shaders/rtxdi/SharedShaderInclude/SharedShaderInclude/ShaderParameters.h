@@ -53,16 +53,18 @@ enum class IndirectLightingMode : uint32_t
     Brdf = INDIRECT_LIGHTING_MODE_BRDF,
     ReStirGI = INDIRECT_LIGHTING_MODE_RESTIRGI,
 };
+
+    // C++ aliases for HLSL scalar/vector types used in shared structs
+    typedef uint32_t uint;
+    typedef DirectX::XMUINT2 uint2;
+    typedef DirectX::XMINT2  int2;
+    typedef DirectX::XMFLOAT2 float2;
+    typedef DirectX::XMFLOAT3 float3;
+    typedef DirectX::XMFLOAT4 float4;
+
 #else
 #define IndirectLightingMode uint32_t
 #endif
-
-struct BrdfRayTracingConstants
-{
-    srrhi::PlanarViewConstants view;
-
-    uint frameIndex;
-};
 
 struct PrepareLightsConstants
 {
@@ -77,39 +79,6 @@ struct PrepareLightsTask
     uint triangleCount;
     uint lightBufferOffset;
     int previousLightBufferOffset; // -1 means no previous data
-};
-
-struct GBufferConstants
-{
-    srrhi::PlanarViewConstants view;
-    srrhi::PlanarViewConstants viewPrev;
-
-    float roughnessOverride;
-    float metalnessOverride;
-    float normalMapScale;
-    uint enableAlphaTestedGeometry;
-
-    int2 materialReadbackPosition;
-    uint materialReadbackBufferIndex;
-    uint enableTransparentGeometry;
-
-    float textureLodBias;
-    float textureGradientScale; // 2^textureLodBias
-};
-
-struct GlassConstants
-{
-    srrhi::PlanarViewConstants view;
-    
-    uint enableEnvironmentMap;
-    uint environmentMapTextureIndex;
-    float environmentScale;
-    float environmentRotation;
-
-    int2 materialReadbackPosition;
-    uint materialReadbackBufferIndex;
-    float normalMapScale;
-    IndirectLightingMode indirectLightingMode;
 };
 
 struct CompositingConstants
@@ -128,49 +97,6 @@ struct CompositingConstants
 
     float noiseClampHigh;
     uint checkerboard;
-};
-
-struct AccumulationConstants
-{
-    float2 outputSize;
-    float2 inputSize;
-    float2 inputTextureSizeInv;
-    float2 pixelOffset;
-    float blendFactor;
-};
-
-struct FilterGradientsConstants
-{
-    uint2 viewportSize;
-    int passIndex;
-    uint checkerboard;
-};
-
-struct ConfidenceConstants
-{
-    uint2 viewportSize;
-    float2 invGradientTextureSize;
-
-    float darknessBias;
-    float sensitivity;
-    uint checkerboard;
-    int inputBufferIndex;
-
-    float blendFactor;
-};
-
-struct VisualizationConstants
-{
-    RTXDI_RuntimeParameters runtimeParams;
-    RTXDI_ReservoirBufferParameters restirDIReservoirBufferParams;
-    RTXDI_ReservoirBufferParameters restirGIReservoirBufferParams;
-
-    int2 outputSize;
-    float2 resolutionScale;
-
-    uint visualizationMode;
-    uint inputBufferIndex;
-    uint enableAccumulation;
 };
 
 struct SceneConstants
@@ -226,11 +152,6 @@ struct ResamplingConstants
     uint2 environmentPdfTextureSize;
     uint2 localLightPdfTextureSize;
 
-};
-
-struct PerPassConstants
-{
-    int rayCountBufferIndex;
 };
 
 struct SecondaryGBufferData
