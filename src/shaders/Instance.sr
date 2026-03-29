@@ -1,0 +1,49 @@
+// Material constants (persistent, per-material data)
+struct MaterialConstants
+{
+    float4 m_BaseColor;
+    float4 m_EmissiveFactor;        // rgb: emissive factor, a: unused
+    float2 m_RoughnessMetallic;     // x: roughness, y: metallic
+    uint   m_TextureFlags;
+    uint   m_AlbedoTextureIndex;
+    uint   m_NormalTextureIndex;
+    uint   m_RoughnessMetallicTextureIndex;
+    uint   m_EmissiveTextureIndex;
+    uint   m_AlbedoSamplerIndex;
+    uint   m_NormalSamplerIndex;
+    uint   m_RoughnessSamplerIndex;
+    uint   m_EmissiveSamplerIndex;
+    uint   m_AlphaMode;
+    float  m_AlphaCutoff;
+    float  m_IOR;
+    float  m_TransmissionFactor;
+
+    // for rasterized path
+    float  m_ThicknessFactor;
+    float  m_AttenuationDistance;
+    float3 m_AttenuationColor;
+
+    // for path tracer
+    float3 m_SigmaA;          // absorption coefficient (per-channel, units: 1/m)
+    uint   m_IsThinSurface;   // 1 = thin-walled surface (no refraction bend), 0 = thick/volumetric
+    float3 m_SigmaS;          // scattering coefficient (per-channel, reserved for future volume scattering)
+};
+
+// Per-instance data for instanced rendering
+struct PerInstanceData
+{
+    float4x4 m_World;
+    float4x4 m_PrevWorld;
+    uint     m_MaterialIndex;
+    uint     m_MeshDataIndex;
+    float    m_Radius;
+    // Current LOD index for this instance.
+    // Written each frame by TLASPatch_CS (meshlet path) so that RT shaders
+    // can use m_IndexOffsets[m_LODIndex] in GetTriangleVertices.
+    // Defaults to 0 so instances not yet processed by the culling pass use LOD 0.
+    uint     m_LODIndex;
+    float3   m_Center;
+    // Index of the first geometry instance in the RTXDI geometry-to-light mapping table.
+    // Used by RTXDI to map triangle hits to emissive light indices.
+    uint     m_FirstGeometryInstanceIndex;
+};

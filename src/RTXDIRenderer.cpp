@@ -486,7 +486,7 @@ public:
             // Upload the updated m_FirstGeometryInstanceIndex values to the GPU buffer.
             scopeCl->writeBuffer(scene.m_InstanceDataBuffer,
                 scene.m_InstanceData.data(),
-                scene.m_InstanceData.size() * sizeof(PerInstanceData));
+                scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData));
 
             m_CachedTriangleLightTasks.clear();
             m_TotalEmissiveTriangles = 0;
@@ -494,7 +494,7 @@ public:
             // Walk all instances and build one PrepareLightsTask per emissive primitive.
             for (uint32_t instanceIdx = 0; instanceIdx < totalGeometryInstances; ++instanceIdx)
             {
-                const PerInstanceData& inst = scene.m_InstanceData[instanceIdx];
+                const srrhi::PerInstanceData& inst = scene.m_InstanceData[instanceIdx];
 
                 const Scene::Material& cpuMat = scene.m_Materials[inst.m_MaterialIndex];
                 const Vector3& emissive = cpuMat.m_EmissiveFactor;

@@ -8,6 +8,7 @@
 
 #include "shaders/srrhi/cpp/Common.h"
 #include "shaders/srrhi/cpp/Mesh.h"
+#include "shaders/srrhi/cpp/Instance.h"
 
 // Minimal scene representation for glTF meshes/nodes/materials/textures
 class Scene
@@ -230,7 +231,7 @@ public:
     uint32_t m_LightCount = 0;
     bool m_LightsDirty = true;
 
-    std::vector<PerInstanceData> m_InstanceData;
+    std::vector<srrhi::PerInstanceData> m_InstanceData;
     std::vector<srrhi::MeshData> m_MeshData;
     std::vector<srrhi::Meshlet> m_Meshlets;
     std::vector<uint32_t> m_MeshletVertices;

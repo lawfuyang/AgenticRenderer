@@ -7,7 +7,7 @@
 
 // Converts a Scene::Material to a GPU-ready MaterialConstants struct.
 // Declared here so both SceneLoader and Renderer can use it without duplication.
-MaterialConstants MaterialConstantsFromMaterial(const Scene::Material& mat, const std::vector<Scene::Texture>& textures);
+srrhi::MaterialConstants MaterialConstantsFromMaterial(const Scene::Material& mat, const std::vector<Scene::Texture>& textures);
 
 class SceneLoader
 {

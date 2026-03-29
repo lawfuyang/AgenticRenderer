@@ -283,9 +283,9 @@ struct LightingInputs
     uint radianceMipCount;
     bool enableRTShadows;
     RaytracingAccelerationStructure sceneAS;
-    StructuredBuffer<PerInstanceData> instances;
+    StructuredBuffer<srrhi::PerInstanceData> instances;
     StructuredBuffer<srrhi::MeshData> meshData;
-    StructuredBuffer<MaterialConstants> materials;
+    StructuredBuffer<srrhi::MaterialConstants> materials;
     StructuredBuffer<uint> indices;
     StructuredBuffer<srrhi::VertexQuantized> vertices;
     StructuredBuffer<srrhi::GPULight> lights;
@@ -414,9 +414,9 @@ float CalculateRTShadow(LightingInputs inputs, float3 L, float maxDist)
             float2 bary = q.CandidateTriangleBarycentrics();
             float hitT = q.CandidateTriangleRayT();
 
-            PerInstanceData inst = inputs.instances[instanceIndex];
+            srrhi::PerInstanceData inst = inputs.instances[instanceIndex];
             srrhi::MeshData mesh = inputs.meshData[inst.m_MeshDataIndex];
-            MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
+            srrhi::MaterialConstants mat = inputs.materials[inst.m_MaterialIndex];
 
             if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_MASK)
             {

@@ -5,6 +5,8 @@
 #include "Bindless.hlsli"
 #include "MeshCommon.hlsli"
 
+#include "srrhi/hlsl/Instance.hlsli"
+
 struct RayHitInfo
 {
     uint m_InstanceIndex;
@@ -49,7 +51,7 @@ TriangleVertices GetTriangleVertices(
 FullHitAttributes GetFullHitAttributes(
     RayHitInfo hit,
     RayDesc ray,
-    PerInstanceData inst,
+    srrhi::PerInstanceData inst,
     srrhi::MeshData mesh,
     StructuredBuffer<uint> indices,
     StructuredBuffer<srrhi::VertexQuantized> vertices)
@@ -129,7 +131,7 @@ RayGradients GetShadowRayGradients(
 
 bool AlphaTest(
     float2 uv,
-    MaterialConstants mat,
+    srrhi::MaterialConstants mat,
     float lod = 0.0f)
 {
     if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE)
@@ -152,7 +154,7 @@ bool AlphaTestGrad(
     float2 uv,
     float2 ddx_uv,
     float2 ddy_uv,
-    MaterialConstants mat)
+    srrhi::MaterialConstants mat)
 {
     if (mat.m_AlphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE)
         return true;
@@ -180,7 +182,7 @@ struct PBRAttributes
     float3 normal;
 };
 
-PBRAttributes GetPBRAttributes(FullHitAttributes attr, MaterialConstants mat, float lod = 0.0f)
+PBRAttributes GetPBRAttributes(FullHitAttributes attr, srrhi::MaterialConstants mat, float lod = 0.0f)
 {
     PBRAttributes pbrAttr;
     pbrAttr.baseColor = mat.m_BaseColor.xyz;

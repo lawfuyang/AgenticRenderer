@@ -10,8 +10,8 @@ cbuffer PerFrameCB : register(b0)
     ForwardLightingPerFrameData g_PerFrame;
 };
 
-StructuredBuffer<PerInstanceData> g_Instances : register(t0);
-StructuredBuffer<MaterialConstants> g_Materials : register(t1);
+StructuredBuffer<srrhi::PerInstanceData> g_Instances : register(t0);
+StructuredBuffer<srrhi::MaterialConstants> g_Materials : register(t1);
 StructuredBuffer<srrhi::VertexQuantized> g_Vertices : register(t2);
 StructuredBuffer<srrhi::Meshlet> g_Meshlets : register(t3);
 StructuredBuffer<uint> g_MeshletVertices : register(t4);
@@ -45,7 +45,7 @@ struct VSOut
     nointerpolation uint lodIndex : TEXCOORD4;
 };
 
-VSOut PrepareVSOut(srrhi::Vertex v, PerInstanceData inst, uint instanceID, uint meshletID, uint lodIndex)
+VSOut PrepareVSOut(srrhi::Vertex v, srrhi::PerInstanceData inst, uint instanceID, uint meshletID, uint lodIndex)
 {
     VSOut o;
     float4 worldPos = MatrixMultiply(float4(v.m_Pos, 1.0f), inst.m_World);
@@ -66,7 +66,7 @@ VSOut PrepareVSOut(srrhi::Vertex v, PerInstanceData inst, uint instanceID, uint 
 
 VSOut VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_StartInstanceLocation)
 {
-    PerInstanceData inst = g_Instances[instanceID];
+    srrhi::PerInstanceData inst = g_Instances[instanceID];
     srrhi::Vertex v = UnpackVertex(g_Vertices[vertexID]);
     return PrepareVSOut(v, inst, instanceID, 0xFFFFFFFF, 0);
 }
@@ -108,7 +108,7 @@ void ASMain(
     bool bVisible = false;
 
     uint meshletIndex = meshletOffset + groupThreadID.x;
-    PerInstanceData inst = g_Instances[instanceIndex];
+    srrhi::PerInstanceData inst = g_Instances[instanceIndex];
     srrhi::MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
     if (meshletIndex < mesh.m_MeshletCounts[lodIndex])
@@ -197,7 +197,7 @@ void MSMain(
         uint vertexIndex = g_MeshletVertices[m.m_VertexOffset + outputIdx];
         srrhi::Vertex v = UnpackVertex(g_Vertices[vertexIndex]);
         
-        PerInstanceData inst = g_Instances[instanceIndex];
+        srrhi::PerInstanceData inst = g_Instances[instanceIndex];
         vout[outputIdx] = PrepareVSOut(v, inst, instanceIndex, meshletIndex, payload.m_LODIndex);
     }
     
@@ -290,8 +290,8 @@ GBufferOut GBuffer_PSMain(VSOut input)
 #endif
 {
     // Instance + material
-    PerInstanceData inst = g_Instances[input.instanceID];
-    MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
+    srrhi::PerInstanceData inst = g_Instances[input.instanceID];
+    srrhi::MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
 
     // Texture sampling (only when present)
     bool hasAlbedo = (mat.m_TextureFlags & srrhi::CommonConsts::TEXFLAG_ALBEDO) != 0;

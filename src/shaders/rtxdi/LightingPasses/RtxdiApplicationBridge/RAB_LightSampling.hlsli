@@ -168,7 +168,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
 uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
 {
     uint lightIndex = RTXDI_InvalidLightIndex;
-    PerInstanceData hitInstance = t_InstanceData[instanceID];
+    srrhi::PerInstanceData hitInstance = t_InstanceData[instanceID];
     uint geometryInstanceIndex = hitInstance.m_FirstGeometryInstanceIndex + geometryIndex;
     lightIndex = t_GeometryInstanceToLight[geometryInstanceIndex];
     if (lightIndex != RTXDI_InvalidLightIndex)

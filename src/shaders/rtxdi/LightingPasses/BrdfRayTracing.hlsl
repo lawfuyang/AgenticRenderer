@@ -180,9 +180,9 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     if (payload.instanceID != ~0u)
     {
-        PerInstanceData instance = t_InstanceData[payload.instanceID];
+        srrhi::PerInstanceData instance = t_InstanceData[payload.instanceID];
         srrhi::MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
-        MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
+        srrhi::MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
 
         // Build RayHitInfo for GetFullHitAttributes
         RayHitInfo hit;

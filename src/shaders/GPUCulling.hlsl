@@ -4,6 +4,7 @@
 #include "Culling.h"
 
 #include "srrhi/hlsl/Mesh.hlsli"
+#include "srrhi/hlsl/Instance.hlsli"
 
 /*
 	-- 2 Phase Occlusion Culling --
@@ -24,7 +25,7 @@ cbuffer CullingCB : register(b0)
     CullingConstants g_Culling;
 };
 
-StructuredBuffer<PerInstanceData> g_InstanceData : register(t0);
+StructuredBuffer<srrhi::PerInstanceData> g_InstanceData : register(t0);
 Texture2D<float> g_HZB : register(t1);
 StructuredBuffer<srrhi::MeshData> g_MeshData : register(t2);
 RWStructuredBuffer<srrhi::DrawIndexedIndirectArguments> g_VisibleArgs : register(u0);
@@ -55,7 +56,7 @@ void Culling_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 		actualInstanceIndex = g_OccludedIndices[instanceIndex];
 	}
 
-	PerInstanceData inst = g_InstanceData[actualInstanceIndex];
+	srrhi::PerInstanceData inst = g_InstanceData[actualInstanceIndex];
     srrhi::MeshData mesh = g_MeshData[inst.m_MeshDataIndex];
 
     float3 sphereViewCenter = MatrixMultiply(float4(inst.m_Center, 1.0), g_Culling.m_View).xyz;

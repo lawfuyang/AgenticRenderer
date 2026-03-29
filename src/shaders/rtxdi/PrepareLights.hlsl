@@ -23,9 +23,9 @@ StructuredBuffer<PrepareLightsTask>         t_TaskBuffer        : register(t0);
 // t1 = CPU-converted analytical lights (directional/point/spot)
 StructuredBuffer<PolymorphicLightInfo>      t_PrimitiveLightBuffer : register(t1);
 
-StructuredBuffer<PerInstanceData>           t_InstanceData      : register(t2);
+StructuredBuffer<srrhi::PerInstanceData>           t_InstanceData      : register(t2);
 StructuredBuffer<srrhi::MeshData>           t_GeometryData      : register(t3);
-StructuredBuffer<MaterialConstants>         t_MaterialConstants : register(t4);
+StructuredBuffer<srrhi::MaterialConstants>         t_MaterialConstants : register(t4);
 
 // Bindless scene geometry buffers (bound via bIncludeBindlessResources = true)
 StructuredBuffer<uint>                      t_SceneIndices      : register(t5);
@@ -77,9 +77,9 @@ void main(uint dispatchThreadId : SV_DispatchThreadID)
         uint instanceIndex  = (task.instanceAndGeometryIndex >> 12) & 0x7FFFFu;
         uint geometrySubIdx = task.instanceAndGeometryIndex & 0xFFFu;
 
-        PerInstanceData instance = t_InstanceData[instanceIndex];
+        srrhi::PerInstanceData instance = t_InstanceData[instanceIndex];
         srrhi::MeshData geometry = t_GeometryData[instance.m_MeshDataIndex];
-        MaterialConstants material = t_MaterialConstants[instance.m_MaterialIndex];
+        srrhi::MaterialConstants material = t_MaterialConstants[instance.m_MaterialIndex];
 
         // Get triangle vertex positions using the shared helper
         // Always use LOD 0 for light preparation: the light buffer is sized

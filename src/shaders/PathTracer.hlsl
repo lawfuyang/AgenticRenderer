@@ -10,9 +10,9 @@ cbuffer PathTracerCB : register(b0)
 
 RaytracingAccelerationStructure g_SceneAS : register(t0);
 StructuredBuffer<srrhi::GPULight> g_Lights : register(t1);
-StructuredBuffer<PerInstanceData> g_Instances : register(t2);
+StructuredBuffer<srrhi::PerInstanceData> g_Instances : register(t2);
 StructuredBuffer<srrhi::MeshData> g_MeshData : register(t3);
-StructuredBuffer<MaterialConstants> g_Materials : register(t4);
+StructuredBuffer<srrhi::MaterialConstants> g_Materials : register(t4);
 StructuredBuffer<uint> g_Indices : register(t5);
 StructuredBuffer<srrhi::VertexQuantized> g_Vertices : register(t6);
 RWTexture2D<float4> g_Output : register(u0);
@@ -65,9 +65,9 @@ bool TraceRay(RayDesc ray, RNG rng, out RayHitInfo hit)
             uint primitiveIndex = q.CandidatePrimitiveIndex();
             float2 bary         = q.CandidateTriangleBarycentrics();
 
-            PerInstanceData inst = g_Instances[instanceIndex];
+            srrhi::PerInstanceData inst = g_Instances[instanceIndex];
             srrhi::MeshData mesh        = g_MeshData[inst.m_MeshDataIndex];
-            MaterialConstants mat= g_Materials[inst.m_MaterialIndex];
+            srrhi::MaterialConstants mat= g_Materials[inst.m_MaterialIndex];
 
             float2 uvSample = GetInterpolatedUV(primitiveIndex, 0 /*LOD 0: path tracer always uses LOD 0 BLAS*/, bary, mesh, g_Indices, g_Vertices);
 
@@ -145,9 +145,9 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
 
         if (didHit)
         {
-            PerInstanceData inst  = g_Instances[hit.m_InstanceIndex];
+            srrhi::PerInstanceData inst  = g_Instances[hit.m_InstanceIndex];
             srrhi::MeshData mesh         = g_MeshData[inst.m_MeshDataIndex];
-            MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
+            srrhi::MaterialConstants mat = g_Materials[inst.m_MaterialIndex];
 
             // Apply Beer-Lambert attenuation only while the current segment is in a medium.
             if (inDielectricVolume)

@@ -13,6 +13,8 @@
 #include "nvrhi/nvrhiHLSL.h"
 #include "ShaderShared.h"
 
+#include "srrhi/hlsl/Instance.hlsli"
+
 // ---- Inputs ----------------------------------------------------------------
 
 // Flat BLAS address table: blasAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex]
@@ -30,7 +32,7 @@ RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc> g_RTInstanceDescs : register
 
 // Per-instance data buffer (PerInstanceData structs).
 // We write m_LODIndex so RT shaders use the correct index offset.
-RWStructuredBuffer<PerInstanceData> g_InstanceData : register(u1);
+RWStructuredBuffer<srrhi::PerInstanceData> g_InstanceData : register(u1);
 
 // ---- Push constant ---------------------------------------------------------
 

@@ -1385,9 +1385,9 @@ void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::pa
 	}
 }
 
-MaterialConstants MaterialConstantsFromMaterial(const Scene::Material& mat, const std::vector<Scene::Texture>& textures)
+srrhi::MaterialConstants MaterialConstantsFromMaterial(const Scene::Material& mat, const std::vector<Scene::Texture>& textures)
 {
-	MaterialConstants mc{};
+	srrhi::MaterialConstants mc{};
 	mc.m_BaseColor = mat.m_BaseColorFactor;
 	mc.m_EmissiveFactor = Vector4{ mat.m_EmissiveFactor.x, mat.m_EmissiveFactor.y, mat.m_EmissiveFactor.z, 1.0f };
 	mc.m_RoughnessMetallic = Vector2{ mat.m_RoughnessFactor, mat.m_MetallicFactor };
@@ -1433,7 +1433,7 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* rend
 			mat.m_EmissiveTextureIndex = scene.m_Textures[mat.m_EmissiveTexture].m_BindlessIndex;
 	}
 
-	std::vector<MaterialConstants> materialConstants;
+	std::vector<srrhi::MaterialConstants> materialConstants;
 	materialConstants.reserve(scene.m_Materials.size());
 	for (const Scene::Material& mat : scene.m_Materials)
 	{
@@ -1443,8 +1443,8 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* rend
 	if (!materialConstants.empty())
 	{
 		nvrhi::BufferDesc matBufDesc = nvrhi::BufferDesc()
-			.setByteSize(materialConstants.size() * sizeof(MaterialConstants))
-			.setStructStride(sizeof(MaterialConstants))
+			.setByteSize(materialConstants.size() * sizeof(srrhi::MaterialConstants))
+			.setStructStride(sizeof(srrhi::MaterialConstants))
 			.setInitialState(nvrhi::ResourceStates::ShaderResource)
 			.setKeepInitialState(true)
 			.setDebugName("MaterialConstantsBuffer");
@@ -1452,7 +1452,7 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene, Renderer* rend
 
 		nvrhi::CommandListHandle cmd = renderer->AcquireCommandList();
 		ScopedCommandList scopedCmd{ cmd, "Upload MaterialConstants" };
-		scopedCmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(MaterialConstants));
+		scopedCmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(srrhi::MaterialConstants));
 	}
 }
 
@@ -2205,8 +2205,8 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 	if (!scene.m_InstanceData.empty())
 	{
 		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(PerInstanceData));
-		desc.structStride = sizeof(PerInstanceData);
+		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData));
+		desc.structStride = sizeof(srrhi::PerInstanceData);
 		desc.canHaveUAVs = true; // TLASPatch_CS writes m_LODIndex each frame
 		desc.initialState = nvrhi::ResourceStates::ShaderResource;
 		desc.keepInitialState = true;
@@ -2232,7 +2232,7 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 	if (scene.m_InstanceDataBuffer)
 	{
 		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
-			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(PerInstanceData), 0);
+			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData), 0);
 	}
 
 	// print buffers memory stats
@@ -2250,7 +2250,7 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, Renderer* renderer, co
 		(scene.m_Meshlets.size() * sizeof(srrhi::Meshlet)) / (1024.0f * 1024.0f), scene.m_Meshlets.size(),
 		(scene.m_MeshletVertices.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletVertices.size(),
 		(scene.m_MeshletTriangles.size() * sizeof(uint32_t)) / (1024.0f * 1024.0f), scene.m_MeshletTriangles.size(),
-		(scene.m_InstanceData.size() * sizeof(PerInstanceData)) / (1024.0f * 1024.0f), scene.m_InstanceData.size());
+		(scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData)) / (1024.0f * 1024.0f), scene.m_InstanceData.size());
 }
 
 void SceneLoader::CreateAndUploadLightBuffer(Scene& scene, Renderer* renderer)

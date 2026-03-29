@@ -16,6 +16,7 @@
 #include <SharedShaderInclude/ShaderParameters.h>
 
 #include "srrhi/hlsl/Mesh.hlsli"
+#include "srrhi/hlsl/Instance.hlsli"
 
 // ---- Constant buffers ----
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
@@ -67,9 +68,9 @@ RaytracingAccelerationStructure             PrevSceneBVH                : regist
 StructuredBuffer<PolymorphicLightInfo>      t_LightDataBuffer           : register(t17);
 Texture2D<float4>                           t_GBufferEmissive           : register(t18);
 StructuredBuffer<uint>                      t_GeometryInstanceToLight   : register(t19);
-StructuredBuffer<PerInstanceData>           t_InstanceData              : register(t20);
+StructuredBuffer<srrhi::PerInstanceData>           t_InstanceData              : register(t20);
 StructuredBuffer<srrhi::MeshData>           t_GeometryData              : register(t21);
-StructuredBuffer<MaterialConstants>         t_MaterialConstants         : register(t22);
+StructuredBuffer<srrhi::MaterialConstants>         t_MaterialConstants         : register(t22);
 StructuredBuffer<uint>                      t_SceneIndices              : register(t23);
 StructuredBuffer<srrhi::VertexQuantized>    t_SceneVertices             : register(t24);
 

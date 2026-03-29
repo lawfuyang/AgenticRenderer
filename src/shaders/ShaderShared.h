@@ -92,56 +92,6 @@ struct PathTracerConstants
     float m_CosSunAngularRadius; // cos(half-angle of sun disc)
 };
 
-// Material constants (persistent, per-material data)
-struct MaterialConstants
-{
-  Vector4 m_BaseColor;
-  Vector4 m_EmissiveFactor; // rgb: emissive factor, a: unused
-  Vector2 m_RoughnessMetallic; // x: roughness, y: metallic
-  uint32_t m_TextureFlags;
-  uint32_t m_AlbedoTextureIndex;
-  uint32_t m_NormalTextureIndex;
-  uint32_t m_RoughnessMetallicTextureIndex;
-  uint32_t m_EmissiveTextureIndex;
-  uint32_t m_AlbedoSamplerIndex;
-  uint32_t m_NormalSamplerIndex;
-  uint32_t m_RoughnessSamplerIndex;
-  uint32_t m_EmissiveSamplerIndex;
-  uint32_t m_AlphaMode;
-  float m_AlphaCutoff;
-  float m_IOR;
-  float m_TransmissionFactor;
-
-  // for rasterized path
-  float m_ThicknessFactor;
-  float m_AttenuationDistance;
-  Vector3 m_AttenuationColor;
-
-  // for path tracer
-  Vector3 m_SigmaA;          // absorption coefficient (per-channel, units: 1/m)
-  uint32_t m_IsThinSurface;  // 1 = thin-walled surface (no refraction bend), 0 = thick/volumetric
-  Vector3 m_SigmaS;          // scattering coefficient (per-channel, reserved for future volume scattering)
-};
-
-// Per-instance data for instanced rendering
-struct PerInstanceData
-{
-  Matrix m_World;
-  Matrix m_PrevWorld;
-  uint32_t m_MaterialIndex;
-  uint32_t m_MeshDataIndex;
-  float m_Radius;
-  // Current LOD index for this instance.
-  // Written each frame by TLASPatch_CS (meshlet path) so that RT shaders
-  // can use m_IndexOffsets[m_LODIndex] in GetTriangleVertices.
-  // Defaults to 0 so instances not yet processed by the culling pass use LOD 0.
-  uint32_t m_LODIndex;
-  Vector3 m_Center;
-  // Index of the first geometry instance in the RTXDI geometry-to-light mapping table.
-  // Used by RTXDI to map triangle hits to emissive light indices.
-  uint32_t m_FirstGeometryInstanceIndex;
-};
-
 struct CullingConstants
 {
   Vector4 m_FrustumPlanes[5];

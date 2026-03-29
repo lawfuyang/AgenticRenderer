@@ -15,9 +15,9 @@
 
 bool considerTransparentMaterial(uint instanceIndex, uint geometryIndex, uint triangleIndex, float2 rayBarycentrics, inout float3 throughput)
 {
-    PerInstanceData instance = t_InstanceData[instanceIndex];
+    srrhi::PerInstanceData instance = t_InstanceData[instanceIndex];
     srrhi::MeshData geometry        = t_GeometryData[instance.m_MeshDataIndex];
-    MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
+    srrhi::MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
     float2 uv = GetInterpolatedUV(
         triangleIndex,
         instance.m_LODIndex,

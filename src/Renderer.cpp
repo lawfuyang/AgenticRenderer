@@ -783,8 +783,8 @@ void Renderer::Run()
                 uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
                 scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
                     &m_Scene.m_InstanceData[startIdx],
-                    count * sizeof(PerInstanceData),
-                    startIdx * sizeof(PerInstanceData));
+                    count * sizeof(srrhi::PerInstanceData),
+                    startIdx * sizeof(srrhi::PerInstanceData));
 
                 if (m_Scene.m_RTInstanceDescBuffer)
                 {
@@ -810,7 +810,7 @@ void Renderer::Run()
             const uint32_t lastMat  = m_Scene.m_MaterialDirtyRange.second;
             const uint32_t count    = lastMat - firstMat + 1;
 
-            std::vector<MaterialConstants> materialConstants(count);
+            std::vector<srrhi::MaterialConstants> materialConstants(count);
             for (uint32_t i = 0; i < count; ++i)
                 materialConstants[i] = MaterialConstantsFromMaterial(m_Scene.m_Materials[firstMat + i], m_Scene.m_Textures);
 
@@ -818,8 +818,8 @@ void Renderer::Run()
             ScopedCommandList scopedCmd{ cmd, "Upload Animated Material Constants" };
             scopedCmd->writeBuffer(m_Scene.m_MaterialConstantsBuffer,
                 materialConstants.data(),
-                count * sizeof(MaterialConstants),
-                firstMat * sizeof(MaterialConstants));
+                count * sizeof(srrhi::MaterialConstants),
+                firstMat * sizeof(srrhi::MaterialConstants));
 
             m_Scene.m_MaterialDirtyRange = { UINT32_MAX, 0 };
         }

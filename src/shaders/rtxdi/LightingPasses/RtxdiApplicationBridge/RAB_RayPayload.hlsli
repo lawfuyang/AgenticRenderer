@@ -49,8 +49,8 @@ bool RAB_RayPayloadIsTwoSided(RAB_RayPayload rayPayload)
 
 float3 RAB_RayPayloadGetEmittedRadiance(RAB_RayPayload rayPayload)
 {
-    PerInstanceData instance = t_InstanceData[rayPayload.instanceID];
-    MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
+    srrhi::PerInstanceData instance = t_InstanceData[rayPayload.instanceID];
+    srrhi::MaterialConstants mat    = t_MaterialConstants[instance.m_MaterialIndex];
 
     float3 emissive = mat.m_EmissiveFactor.rgb;
 

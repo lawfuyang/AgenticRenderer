@@ -162,7 +162,7 @@ void Scene::BuildAccelerationStructures()
 	SDL_assert(m_RTInstanceDescs.empty());
 	for (uint32_t instanceID = 0; instanceID < m_InstanceData.size(); ++instanceID)
     {
-		const PerInstanceData& instData = m_InstanceData[instanceID];
+		const srrhi::PerInstanceData& instData = m_InstanceData[instanceID];
 		Primitive* primitive = meshDataToPrimitive.at(instData.m_MeshDataIndex);
 		const uint32_t alphaMode = m_Materials.at(primitive->m_MaterialIndex).m_AlphaMode;
 
@@ -215,7 +215,7 @@ void Scene::BuildAccelerationStructures()
 
         for (uint32_t instanceID = 0; instanceID < numInstances; ++instanceID)
         {
-            const PerInstanceData& instData = m_InstanceData[instanceID];
+            const srrhi::PerInstanceData& instData = m_InstanceData[instanceID];
             Primitive* primitive = meshDataToPrimitive.at(instData.m_MeshDataIndex);
             const uint32_t lodCount = (uint32_t)primitive->m_BLAS.size();
 
@@ -297,7 +297,7 @@ void Scene::FinalizeLoadedScene()
 
     // 2. Bucketize and fill instance data
     m_InstanceData.clear();
-    struct InstInfo { PerInstanceData data; int nodeIdx; };
+    struct InstInfo { srrhi::PerInstanceData data; int nodeIdx; };
     std::vector<InstInfo> opaqueStatic, opaqueDynamic;
     std::vector<InstInfo> maskedStatic, maskedDynamic;
     std::vector<InstInfo> transparentStatic, transparentDynamic;
@@ -309,7 +309,7 @@ void Scene::FinalizeLoadedScene()
         const Mesh& mesh = m_Meshes[node.m_MeshIndex];
         for (const Primitive& prim : mesh.m_Primitives)
         {
-            PerInstanceData inst{};
+            srrhi::PerInstanceData inst{};
             inst.m_World = node.m_WorldTransform;
             inst.m_PrevWorld = node.m_WorldTransform;
             inst.m_MaterialIndex = prim.m_MaterialIndex;
@@ -433,7 +433,7 @@ void Scene::Update(float deltaTime)
 	PROFILE_FUNCTION();
 
 	// Save current worlds as previous worlds for all instances
-	for (PerInstanceData& inst : m_InstanceData)
+	for (srrhi::PerInstanceData& inst : m_InstanceData)
 	{
 		inst.m_PrevWorld = inst.m_World;
 	}
