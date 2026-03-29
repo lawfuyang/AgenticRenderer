@@ -1,4 +1,6 @@
 ﻿#include "ShaderShared.h"
+#include "Common.hlsli"
+
 #include "srrhi/hlsl/Bloom.hlsli"
 
 static const srrhi::BloomPrefilterConstants  PrefilterCB    = srrhi::BloomPrefilterInputs::GetPrefilterConstants();

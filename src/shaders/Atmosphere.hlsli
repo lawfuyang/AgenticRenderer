@@ -2,6 +2,7 @@
 #define ATMOSPHERE_HLSLI
 
 #include "ShaderShared.h"
+#include "Common.hlsli"
 #include "Bindless.hlsli"
 
 struct DensityProfileLayer

@@ -1,6 +1,7 @@
 #ifndef MESH_COMMON_HLSLI
 #define MESH_COMMON_HLSLI
 
+#include "Common.hlsli"
 #include "srrhi/hlsl/Mesh.hlsli"
 
 srrhi::Vertex UnpackVertex(srrhi::VertexQuantized vq)
@@ -18,4 +19,4 @@ srrhi::Vertex UnpackVertex(srrhi::VertexQuantized vq)
   return v;
 }
 
-#endif
+#endif // MESH_COMMON_HLSLI
