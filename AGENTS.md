@@ -10,6 +10,7 @@ Required action:
 Outputs:
 - C++ headers: `src/shaders/srrhi/cpp`
 - HLSL headers: `src/shaders/srrhi/hlsl`
+- NEVER edit these files manually
 
 Integration requirements:
 - C++ source files must `#include` generated headers from `cpp`

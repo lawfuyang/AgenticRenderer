@@ -1,6 +1,8 @@
 #include "Renderer.h"
 #include "Utilities.h"
 
+#include "shaders/srrhi/cpp/TLASPatch.h"
+
 // Global Render Graph Handles for Transient Resources
 RGTextureHandle g_RG_DepthTexture;
 RGTextureHandle g_RG_HZBTexture;
@@ -195,29 +197,24 @@ public:
         {
             PROFILE_GPU_SCOPED("TLAS Patch", commandList);
 
-            nvrhi::BindingSetDesc bset;
-            bset.bindings =
-            {
-                nvrhi::BindingSetItem::PushConstants(0, sizeof(uint32_t)),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(0, scene.m_BLASAddressBuffer),
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(1, scene.m_InstanceLODBuffer),
-                // u0: RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc> for writing blasDeviceAddress
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(0, scene.m_RTInstanceDescBuffer),
-                // u1: RWStructuredBuffer<PerInstanceData> for writing m_LODIndex
-                nvrhi::BindingSetItem::StructuredBuffer_UAV(1, scene.m_InstanceDataBuffer),
-            };
-
             const uint32_t numInstances = (uint32_t)scene.m_InstanceData.size();
             const uint32_t dispatchX = DivideAndRoundUp(numInstances, 64u);
 
+            srrhi::TLASPatchInputs inputs;
+            inputs.m_PC.SetInstanceCount(numInstances);
+            inputs.SetBLASAddresses(scene.m_BLASAddressBuffer);
+            inputs.SetInstanceLOD(scene.m_InstanceLODBuffer);
+            inputs.SetRTInstanceDescs(scene.m_RTInstanceDescBuffer);
+            inputs.SetInstanceData(scene.m_InstanceDataBuffer);
+
             Renderer::RenderPassParams params;
-            params.commandList    = commandList;
-            params.shaderName     = "TLASPatch_TLASPatch_CSMain";
-            params.bindingSetDesc = bset;
+            params.commandList           = commandList;
+            params.shaderName            = "TLASPatch_TLASPatch_CSMain";
+            params.bindingSetDesc        = Renderer::CreateBindingSetDesc(inputs);
             params.bIncludeBindlessResources = false;
-            params.pushConstants     = &numInstances;
-            params.pushConstantsSize = sizeof(numInstances);
-            params.dispatchParams = { .x = dispatchX, .y = 1, .z = 1 };
+            params.pushConstants         = &inputs.m_PC;
+            params.pushConstantsSize     = srrhi::TLASPatchInputs::PushConstantBytes;
+            params.dispatchParams        = { .x = dispatchX, .y = 1, .z = 1 };
             renderer->AddComputePass(params);
         }
 

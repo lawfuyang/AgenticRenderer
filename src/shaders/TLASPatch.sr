@@ -1,0 +1,25 @@
+#include "Instance.sr"
+
+// nvrhi::rt::IndirectInstanceDesc is defined in nvrhi — declare it as extern
+// so srrhi knows the type exists without re-defining it.
+extern nvrhi::rt::IndirectInstanceDesc;
+
+cbuffer TLASPatchPC
+{
+    uint m_InstanceCount;
+};
+
+srinput TLASPatchInputs
+{
+    [push_constant]
+    TLASPatchPC m_PC;
+
+    // t0: flat BLAS address table [instanceIndex * MAX_LOD_COUNT + lodIndex]
+    StructuredBuffer<uint64_t> BLASAddresses;
+    // t1: per-instance LOD index written by GPU culling
+    StructuredBuffer<uint> InstanceLOD;
+
+    // u0: RT instance desc buffer (blasDeviceAddress field)
+    RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc> RTInstanceDescs;
+    RWStructuredBuffer<PerInstanceData> InstanceData;
+};

@@ -4,7 +4,7 @@
 // Reads the per-instance LOD index buffer written by the GPU culling passes and:
 //   1. Writes the correct per-LOD BLAS device address into the RT instance desc buffer
 //      via nvrhi::rt::IndirectInstanceDesc.blasDeviceAddress.
-//   2. Writes the LOD index into g_InstanceData[instanceIndex].m_LODIndex so that
+//   2. Writes the LOD index into InstanceData[instanceIndex].m_LODIndex so that
 //      RT shaders can use m_IndexOffsets[m_LODIndex] in GetTriangleVertices.
 //
 // Dispatch: ceil(instanceCount / 64) thread groups of 64 threads each.
@@ -13,34 +13,17 @@
 #include "nvrhi/nvrhiHLSL.h"
 
 #include "srrhi/hlsl/Common.hlsli"
-#include "srrhi/hlsl/Instance.hlsli"
+#include "srrhi/hlsl/TLASPatch.hlsli"
 
-// ---- Inputs ----------------------------------------------------------------
+// ---- Bind resources via srrhi accessors ------------------------------------
 
-// Flat BLAS address table: blasAddresses[instanceIndex * srrhi::CommonConsts::MAX_LOD_COUNT + lodIndex]
-// Uploaded once at scene load by Scene::BuildAccelerationStructures.
-StructuredBuffer<uint64_t> g_BLASAddresses : register(t0);
+static const srrhi::TLASPatchPC                                    g_PC              = srrhi::TLASPatchInputs::GetPC();
+static const StructuredBuffer<uint64_t>                            g_BLASAddresses   = srrhi::TLASPatchInputs::GetBLASAddresses();
+static const StructuredBuffer<uint>                                g_InstanceLOD     = srrhi::TLASPatchInputs::GetInstanceLOD();
+static RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc>         g_RTInstanceDescs = srrhi::TLASPatchInputs::GetRTInstanceDescs();
+static RWStructuredBuffer<srrhi::PerInstanceData>                  g_InstanceData    = srrhi::TLASPatchInputs::GetInstanceData();
 
-// Per-instance LOD index: g_InstanceLOD[instanceIndex] = lodIndex.
-// Written each frame by GPUCulling_Culling_CSMain for every visible instance.
-StructuredBuffer<uint> g_InstanceLOD : register(t1);
-
-// ---- Outputs ---------------------------------------------------------------
-
-// RT instance desc buffer as typed structs — no manual byte arithmetic needed.
-RWStructuredBuffer<nvrhi::rt::IndirectInstanceDesc> g_RTInstanceDescs : register(u0);
-
-// Per-instance data buffer (PerInstanceData structs).
-// We write m_LODIndex so RT shaders use the correct index offset.
-RWStructuredBuffer<srrhi::PerInstanceData> g_InstanceData : register(u1);
-
-// ---- Push constant ---------------------------------------------------------
-
-// Total number of instances to process.
-struct
-{
-    uint m_InstanceCount;
-} g_PC;
+// ---------------------------------------------------------------------------
 
 [numthreads(64, 1, 1)]
 void TLASPatch_CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
