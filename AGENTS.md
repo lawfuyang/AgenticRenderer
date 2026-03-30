@@ -49,12 +49,23 @@ Dependency:
 - Format: `UpperCamelCase`
 - Use nouns
 
+### bools
+- always prefix with 'b'
+- Example:
+  - `bool bisCorrect = true`
+
 ### Local Variables (stack)
 - Format: `lowerCamelCase`
 - Examples:
   - `i`
   - `c`
   - `myWidth`
+
+### Class member variables
+- Format: `m_UpperCamelCase`
+- Examples:
+  - `m_Width`
+  - `m_bIsTrue`
 
 ### Constants
 - Allowed formats:
@@ -64,3 +75,9 @@ Dependency:
 - Examples:
   - `MAX_LOD_COUNT`
   - `kThreadsPerGroup`
+
+### Global Variables
+- Format: `g_UpperCamelCase`
+
+### Static Global Variables
+- Format: `gs_UpperCamelCase`
