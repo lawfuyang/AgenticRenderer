@@ -22,10 +22,6 @@ cbuffer TonemapConstants
 {
     uint m_Width;
     uint m_Height;
-    float m_BloomIntensity;
-    uint m_EnableBloom;
-    uint m_DebugBloom;
-    uint m_Pad;
 };
 
 srinput LuminanceHistogramInputs
@@ -54,5 +50,4 @@ srinput TonemappingInputs
 
     Texture2D<float3> HDRColorInput;
     Buffer<float> ExposureInput;
-    Texture2D<float3> BloomInput;
 };

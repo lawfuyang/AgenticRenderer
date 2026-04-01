@@ -14,12 +14,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode != RenderingMode::ReferencePathTracer)
-        {
-            m_AccumulationIndex = 0;
-            return false;
-        }
-
+        
         RGTextureDesc desc;
         desc.m_NvrhiDesc.width = renderer->m_RHI->m_SwapchainExtent.x;
         desc.m_NvrhiDesc.height = renderer->m_RHI->m_SwapchainExtent.y;

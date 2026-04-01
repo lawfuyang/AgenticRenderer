@@ -6,8 +6,10 @@
 #include <Rtxdi/DI/ReSTIRDI.h>
 #include <Rtxdi/RtxdiUtils.h>
 #include <Rtxdi/LightSampling/RISBufferSegmentParameters.h>
+#include <Rtxdi/LightSampling/RISBufferSegmentAllocator.h>
 #include <Rtxdi/GI/ReSTIRGIParameters.h>
 #include <Rtxdi/ReGIR/ReGIRParameters.h>
+#include <Rtxdi/ReGIR/ReGIR.h>
 #include "shaders/srrhi/cpp/RTXDI.h"
 
 #include <imgui.h>
@@ -54,6 +56,11 @@ uint32_t g_ReSTIRDI_NumLocalLightUniformSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightPowerRISSamples = 8;
 uint32_t g_ReSTIRDI_NumLocalLightReGIRRISSamples = 8;
 
+// ReGIR dynamic parameters (updated each frame from ImGui)
+rtxdi::ReGIRDynamicParameters g_ReGIR_DynamicParams{};
+// ReGIR cell visualization toggle
+bool g_ReGIR_VisualizeRegirCells = false;
+
 void RTXDIIMGUISettings()
 {
     Renderer* renderer = Renderer::GetInstance();
@@ -85,6 +92,30 @@ void RTXDIIMGUISettings()
     ImGui::Checkbox("Show Advanced Settings", &g_ReSTIRDI_ShowAdvancedSettings);
     ImGui::Separator();
 
+    // ---- ReGIR Presampling ---------------------------------------------------
+    if (ImGui::TreeNode("ReGIR Presampling"))
+    {
+        static const char* regirPresamplingOptions[] = { "Uniform Sampling", "Power RIS" };
+        const char* currentPresamplingOption = regirPresamplingOptions[static_cast<int>(g_ReGIR_DynamicParams.presamplingMode)];
+        if (ImGui::BeginCombo("ReGIR RIS Presampling Mode", currentPresamplingOption))
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                bool is_selected = (i == static_cast<int>(g_ReGIR_DynamicParams.presamplingMode));
+                if (ImGui::Selectable(regirPresamplingOptions[i], is_selected))
+                    *(int*)&g_ReGIR_DynamicParams.presamplingMode = i;
+                if (is_selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SliderFloat("Cell Size", &g_ReGIR_DynamicParams.regirCellSize, 0.1f, 4.0f);
+        ImGui::SliderInt("Grid Build Samples", (int*)&g_ReGIR_DynamicParams.regirNumBuildSamples, 0, 32);
+        ImGui::SliderFloat("Sampling Jitter", &g_ReGIR_DynamicParams.regirSamplingJitter, 0.0f, 2.0f);
+        ImGui::TextDisabled("  Visualize Cells: use Debug Mode -> 'ReGIR Cells'");
+        ImGui::TreePop();
+    }
+
     // ---- Initial Sampling -----------------------------------------------------
     if (ImGui::TreeNode("Initial Sampling"))
     {
@@ -114,6 +145,23 @@ void RTXDIIMGUISettings()
                 g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = g_ReSTIRDI_NumLocalLightReGIRRISSamples;
                 break;
             default: break;
+            }
+
+            // ---- ReGIR Fallback Sampling Mode (inside Local Light Sampling) ----
+            ImGui::Separator();
+            static const char* regirFallbackOptions[] = { "Uniform Sampling", "Power RIS" };
+            const char* currentFallbackOption = regirFallbackOptions[static_cast<int>(g_ReGIR_DynamicParams.fallbackSamplingMode)];
+            if (ImGui::BeginCombo("ReGIR Fallback Sampling Mode", currentFallbackOption))
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    bool is_selected = (i == static_cast<int>(g_ReGIR_DynamicParams.fallbackSamplingMode));
+                    if (ImGui::Selectable(regirFallbackOptions[i], is_selected))
+                        *(int*)&g_ReGIR_DynamicParams.fallbackSamplingMode = i;
+                    if (is_selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
 
             ImGui::TreePop();
@@ -352,6 +400,13 @@ public:
     // ------------------------------------------------------------------
     std::unique_ptr<rtxdi::ReSTIRDIContext> m_Context;
 
+    // ReGIR context — created once in CreateRTXDIContext(), used for grid build
+    std::unique_ptr<rtxdi::ReGIRContext>    m_ReGIRContext;
+
+    // RIS buffer segment allocator — shared between ReSTIR DI and ReGIR so that
+    // GetReGIRCellOffset() / GetReGIRLightSlotCount() return correct values.
+    rtxdi::RISBufferSegmentAllocator        m_RISBufferSegmentAllocator;
+
     std::unique_ptr<NrdIntegration> m_NrdIntegration;
     nrd::RelaxSettings m_NRDRelaxSettings;
 
@@ -362,11 +417,32 @@ public:
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
+        // Reset the allocator so it can be reused if context is recreated
+        m_RISBufferSegmentAllocator = rtxdi::RISBufferSegmentAllocator{};
+
+        // Allocate local-light RIS segment (tiles × tile size)
+        m_RISBufferSegmentAllocator.allocateSegment(k_RISTileSize * k_RISTileCount);
+        // Allocate env-light RIS segment
+        m_RISBufferSegmentAllocator.allocateSegment(k_EnvRISTileSize * k_EnvRISTileCount);
+
         // Create the ReSTIRDI context
         rtxdi::ReSTIRDIStaticParameters staticParams;
         staticParams.RenderWidth = width;
         staticParams.RenderHeight = height;
         m_Context = std::make_unique<rtxdi::ReSTIRDIContext>(staticParams);
+
+        // Create the ReGIR context (Onion mode, matching FullSample defaults)
+        rtxdi::ReGIRStaticParameters regirStaticParams;
+        regirStaticParams.Mode = rtxdi::ReGIRMode::Onion;
+        regirStaticParams.LightsPerCell = 512;
+        regirStaticParams.onionParameters.OnionDetailLayers = 5;
+        regirStaticParams.onionParameters.OnionCoverageLayers = 10;
+
+        m_ReGIRContext = std::make_unique<rtxdi::ReGIRContext>(regirStaticParams, m_RISBufferSegmentAllocator);
+
+        // Initialize dynamic parameters to defaults
+        g_ReGIR_DynamicParams = rtxdi::ReGIRDynamicParameters{};
+        m_ReGIRContext->SetDynamicParameters(g_ReGIR_DynamicParams);
     }
 
     void Initialize() override
@@ -401,8 +477,6 @@ public:
         g_ReSTIRDI_ShadingParams.reuseFinalVisibility = 1u;
 
         g_ReSTIRDI_TemporalResamplingParams.enablePermutationSampling = 0u; // disabling this somehow increases image quality?
-        g_ReSTIRDI_InitialSamplingParams.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Power_RIS;  // TODO: delete this when ReGIR_RIS once it's working
-        g_ReSTIRDI_InitialSamplingParams.numLocalLightSamples = 8; // TODO: delete this when ReGIR_RIS once it's working
 
         CreateRTXDIContext();
 
@@ -517,10 +591,6 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        // Only run in normal / IBL mode; skip for path tracer
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
-            return false;
-
         // If the user turned RTXDI off, we want the DeferredRenderer to take
         // the classic path — don't participate in the render graph at all.
         if (!renderer->m_EnableReSTIRDI)
@@ -530,12 +600,13 @@ public:
         const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
-        // RIS buffer capacity covers local-light tiles and env-light tiles.
+        // RIS buffer capacity covers local-light tiles, env-light tiles, and ReGIR cell slots.
         // The env segment always reserves k_EnvRISTileSize × k_EnvRISTileCount
         // even when env sampling is disabled, so the binding stays stable.
         const uint32_t k_LocalRISEntries = k_RISTileSize  * k_RISTileCount;
         const uint32_t k_EnvRISEntries   = k_EnvRISTileSize * k_EnvRISTileCount;
-        const uint32_t totalRISEntries   = k_LocalRISEntries + k_EnvRISEntries;
+        const uint32_t k_ReGIREntries    = m_ReGIRContext ? m_ReGIRContext->GetReGIRLightSlotCount() : 0u;
+        const uint32_t totalRISEntries   = k_LocalRISEntries + k_EnvRISEntries + k_ReGIREntries;
 
         // ------------------------------------------------------------------
         // RELAX denoising output textures (only when denoising is enabled)
@@ -648,8 +719,9 @@ public:
             m_NeighborOffsetsBufferIsNew = renderGraph.DeclarePersistentBuffer(bd, m_RG_NeighborOffsetsBuffer);
         }
 
-        // ---- RIS buffer (transient) -----------------------------------------------
-        // Sized for all presampled local light tiles.
+        // ---- RIS buffer (persistent) -----------------------------------------------
+        // Sized for all presampled local light tiles + env tiles + ReGIR cell slots.
+        // Must be persistent so the one-time ReGIR grid build result survives across frames.
         {
             RGBufferDesc bd;
             bd.m_NvrhiDesc.byteSize     = static_cast<uint64_t>(totalRISEntries) * sizeof(uint32_t) * 2;
@@ -658,7 +730,7 @@ public:
             bd.m_NvrhiDesc.canHaveUAVs  = true;
             bd.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             bd.m_NvrhiDesc.debugName    = "RTXDI_RISBuffer";
-            renderGraph.DeclareBuffer(bd, m_RG_RISBuffer);
+            renderGraph.DeclarePersistentBuffer(bd, m_RG_RISBuffer);
         }
 
         // ---- Light reservoir buffer (transient) --------------------------------
@@ -1058,7 +1130,68 @@ public:
         g_Const.SetEnableBrdfAdditiveBlend(0u);
         g_Const.SetEnableAccumulation(0u);
         g_Const.SetDirectLightingMode(srrhi::RTXDIConstants::DIRECT_LIGHTING_MODE_RESTIR);
-        g_Const.SetVisualizeRegirCells(0u);
+        // Sync the standalone bool with the debug mode combo so both paths work
+        g_ReGIR_VisualizeRegirCells = (renderer->m_ActiveDebugMode == srrhi::CommonConsts::DEBUG_MODE_REGIR_CELLS);
+        g_Const.SetVisualizeRegirCells(g_ReGIR_VisualizeRegirCells ? 1u : 0u);
+
+        // ---- ReGIR parameters ----
+        if (m_ReGIRContext)
+        {
+            // Update dynamic parameters from ImGui state each frame
+            m_ReGIRContext->SetDynamicParameters(g_ReGIR_DynamicParams);
+
+            // Fill ReGIR_Parameters (mirrors FillReGIRConstants from FullSample LightingPasses.cpp)
+            auto staticParams  = m_ReGIRContext->GetReGIRStaticParameters();
+            auto dynamicParams = m_ReGIRContext->GetReGIRDynamicParameters();
+            auto onionParams   = m_ReGIRContext->GetReGIROnionCalculatedParameters();
+
+            ReGIR_Parameters regirParams{};
+            regirParams.gridParams.cellsX = staticParams.gridParameters.GridSize.x;
+            regirParams.gridParams.cellsY = staticParams.gridParameters.GridSize.y;
+            regirParams.gridParams.cellsZ = staticParams.gridParameters.GridSize.z;
+
+            // Update the grid center to follow the camera so the Onion grid
+            // is always centered on the viewer.
+            const Vector3 camPos = renderer->m_Scene.m_Camera.GetPosition();
+            g_ReGIR_DynamicParams.center = { camPos.x, camPos.y, camPos.z };
+            m_ReGIRContext->SetDynamicParameters(g_ReGIR_DynamicParams);
+            // Re-fetch dynamic params after updating center
+            dynamicParams = m_ReGIRContext->GetReGIRDynamicParameters();
+
+            regirParams.commonParams.numRegirBuildSamples       = dynamicParams.regirNumBuildSamples;
+            regirParams.commonParams.risBufferOffset            = m_ReGIRContext->GetReGIRCellOffset();
+            regirParams.commonParams.lightsPerCell              = staticParams.LightsPerCell;
+            regirParams.commonParams.centerX                    = dynamicParams.center.x;
+            regirParams.commonParams.centerY                    = dynamicParams.center.y;
+            regirParams.commonParams.centerZ                    = dynamicParams.center.z;
+            // Onion operates with radii; "size" feels more like diameter — halve it
+            regirParams.commonParams.cellSize = (staticParams.Mode == rtxdi::ReGIRMode::Onion)
+                ? dynamicParams.regirCellSize * 0.5f
+                : dynamicParams.regirCellSize;
+            regirParams.commonParams.localLightSamplingFallbackMode = static_cast<uint32_t>(dynamicParams.fallbackSamplingMode);
+            regirParams.commonParams.localLightPresamplingMode      = static_cast<uint32_t>(dynamicParams.presamplingMode);
+            regirParams.commonParams.samplingJitter                 = std::max(0.f, dynamicParams.regirSamplingJitter * 2.f);
+
+            regirParams.onionParams.cubicRootFactor = onionParams.regirOnionCubicRootFactor;
+            regirParams.onionParams.linearFactor    = onionParams.regirOnionLinearFactor;
+            regirParams.onionParams.numLayerGroups  = static_cast<uint32_t>(onionParams.regirOnionLayers.size());
+
+            const uint32_t numLayers = static_cast<uint32_t>(onionParams.regirOnionLayers.size());
+            SDL_assert(numLayers <= RTXDI_ONION_MAX_LAYER_GROUPS);
+            for (uint32_t g = 0; g < numLayers; ++g)
+            {
+                regirParams.onionParams.layers[g] = onionParams.regirOnionLayers[g];
+                regirParams.onionParams.layers[g].innerRadius *= regirParams.commonParams.cellSize;
+                regirParams.onionParams.layers[g].outerRadius *= regirParams.commonParams.cellSize;
+            }
+
+            const uint32_t numRings = static_cast<uint32_t>(onionParams.regirOnionRings.size());
+            SDL_assert(numRings <= RTXDI_ONION_MAX_RINGS);
+            for (uint32_t n = 0; n < numRings; ++n)
+                regirParams.onionParams.rings[n] = onionParams.regirOnionRings[n];
+
+            g_Const.SetRegir(regirParams);
+        }
 
         // Upload constant buffers (volatile — recreated every frame)
         const nvrhi::BufferHandle rtxdiCB = device->createBuffer(
@@ -1455,6 +1588,27 @@ public:
         }
 
         // ------------------------------------------------------------------
+        // ReGIR Grid Build (every frame — grid center follows the camera)
+        // ------------------------------------------------------------------
+        if (m_ReGIRContext && lbp.localLightBufferRegion.numLights > 0)
+        {
+            PROFILE_SCOPED("PresampleReGIR");
+
+            const uint32_t regirSlots = m_ReGIRContext->GetReGIRLightSlotCount();
+            if (regirSlots > 0)
+            {
+                const uint32_t dispatchX = DivideAndRoundUp(regirSlots, srrhi::RTXDIConstants::RTXDI_GRID_BUILD_GROUP_SIZE);
+                renderer->AddComputePass({
+                    .commandList    = commandList,
+                    .shaderName     = "rtxdi/LightingPasses/Presampling/PresampleReGIR_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION",
+                    .bindingSetDesc = bset,
+                    .bIncludeBindlessResources = false,
+                    .dispatchParams = { .x = dispatchX, .y = 1u, .z = 1u }
+                });
+            }
+        }
+
+        // ------------------------------------------------------------------
         // Generate Initial Samples
         // ------------------------------------------------------------------
         {
@@ -1462,8 +1616,7 @@ public:
 
             renderer->AddComputePass({
                 .commandList    = commandList,
-                // TODO: change to 'GenerateInitialSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION' when ReGIR is implemented
-                .shaderName     = "rtxdi/LightingPasses/DI/GenerateInitialSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_DISABLED",
+                .shaderName     = "rtxdi/LightingPasses/DI/GenerateInitialSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION",
                 .bindingSetDesc = bset,
                 .bIncludeBindlessResources = true,
                 .dispatchParams = {
@@ -1526,8 +1679,7 @@ public:
 
             renderer->AddComputePass({
                 .commandList    = commandList,
-                // TODO: change to 'ShadeSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION' when ReGIR is implemented
-                .shaderName     = "rtxdi/LightingPasses/DI/ShadeSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_DISABLED",
+                .shaderName     = "rtxdi/LightingPasses/DI/ShadeSamples_main_RTXDI_REGIR_MODE=RTXDI_REGIR_ONION",
                 .bindingSetDesc = bset,
                 .bIncludeBindlessResources = true,
                 .dispatchParams = {

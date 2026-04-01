@@ -87,7 +87,7 @@ void ImGuiLayer::UpdateFrame()
             ImGui::Checkbox("Enable Sky", &renderer->m_EnableSky);
 
             static const char* kDebugModes[] = {
-                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD", "Motion Vectors"
+                "None", "Instances", "Meshlets", "World Normals", "Albedo", "Roughness", "Metallic", "Emissive", "LOD", "Motion Vectors", "ReGIR Cells"
             };
             ImGui::Combo("Debug Mode", &renderer->m_DebugMode, kDebugModes, IM_ARRAYSIZE(kDebugModes));
 

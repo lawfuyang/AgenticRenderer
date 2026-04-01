@@ -15,11 +15,6 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
-        {
-            return false;
-        }
-
         // SkyRenderer handles both atmospheric sky (Normal mode) and IBL background (IBL mode)
         if (renderer->m_Mode == RenderingMode::Normal && !renderer->m_EnableSky)
         {

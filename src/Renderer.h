@@ -142,6 +142,7 @@ struct Renderer
         // Graphics specific
         nvrhi::FramebufferHandle framebuffer;
         nvrhi::DepthStencilState* depthStencilState = nullptr;
+        nvrhi::BlendState::RenderTarget* blendState = nullptr;
     };
 
     void AddComputePass(const RenderPassParams& params);
@@ -229,7 +230,7 @@ struct Renderer
 
     bool m_EnableBloom = true;
     bool m_DebugBloom = false;
-    float m_BloomIntensity = 0.01f;
+    float m_BloomIntensity = 0.005f;
 
     // ReSTIR DI settings
     bool m_EnableReSTIRDI = true;

@@ -18,7 +18,6 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferAlbedo);

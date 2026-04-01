@@ -5,20 +5,21 @@
 
 #include "shaders/srrhi/cpp/Bloom.h"
 
-extern RGTextureHandle g_RG_HDRColor;
-RGTextureHandle g_RG_BloomDownPyramid;
-RGTextureHandle g_RG_BloomUpPyramid;
+extern RGTextureHandle g_RG_TAAOutput;
 
 static constexpr uint32_t kBloomMipCount = 6;
 
 class BloomRenderer : public IRenderer
 {
+    RGTextureHandle m_RG_BloomDownPyramid;
+    RGTextureHandle m_RG_BloomUpPyramid;
+
 public:
 
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableBloom || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
+        if (!renderer->m_EnableBloom) return false;
 
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
@@ -33,16 +34,16 @@ public:
         desc.m_NvrhiDesc.debugName = "Bloom_DownPyramid_RG";
         desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
         desc.m_NvrhiDesc.setClearValue(nvrhi::Color{});
-        renderGraph.DeclareTexture(desc, g_RG_BloomDownPyramid);
+        renderGraph.DeclareTexture(desc, m_RG_BloomDownPyramid);
 
         desc.m_NvrhiDesc.debugName = "Bloom_UpPyramid_RG";
-        renderGraph.DeclareTexture(desc, g_RG_BloomUpPyramid);
+        renderGraph.DeclareTexture(desc, m_RG_BloomUpPyramid);
 
-        renderGraph.ReadTexture(g_RG_HDRColor);
+        renderGraph.WriteTexture(g_RG_TAAOutput);
 
         return true;
     }
-    
+
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
@@ -53,16 +54,16 @@ public:
         const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
         const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
 
-        nvrhi::TextureHandle bloomDownPyramid = renderGraph.GetTexture(g_RG_BloomDownPyramid, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle bloomUpPyramid   = renderGraph.GetTexture(g_RG_BloomUpPyramid,   RGResourceAccessMode::Write);
-        nvrhi::TextureHandle hdrColor         = renderGraph.GetTexture(g_RG_HDRColor,         RGResourceAccessMode::Read);
+        nvrhi::TextureHandle bloomDownPyramid = renderGraph.GetTexture(m_RG_BloomDownPyramid, RGResourceAccessMode::Write);
+        nvrhi::TextureHandle bloomUpPyramid   = renderGraph.GetTexture(m_RG_BloomUpPyramid,   RGResourceAccessMode::Write);
+        nvrhi::TextureHandle taaOutput = renderGraph.GetTexture(g_RG_TAAOutput, RGResourceAccessMode::Write);
 
-        // 1. Prefilter (HDR -> Down[0])
+        // 1. Prefilter (TAAOutput -> Down[0])
         {
             srrhi::BloomPrefilterInputs inputs;
             inputs.m_PrefilterConstants.SetKnee(renderer->m_BloomKnee);
             inputs.m_PrefilterConstants.SetStrength(1.0f);
-            inputs.SetInputTexture(hdrColor);
+            inputs.SetInputTexture(taaOutput);
 
             nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
             nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(bloomDownPyramid, nvrhi::TextureSubresourceSet(0, 1, 0, 1)));
@@ -140,6 +141,32 @@ public:
                 .pushConstants     = &inputs.m_UpsampleConstants,
                 .pushConstantsSize = srrhi::BloomUpsampleInputs::PushConstantBytes,
                 .framebuffer       = fb
+            };
+            renderer->AddFullScreenPass(params);
+        }
+
+        // 4. Composite: additively blend bloom up-pyramid mip 0 into TAAOutput
+        {
+            PROFILE_GPU_SCOPED("Bloom Composite", commandList);
+
+            srrhi::BloomCompositeInputs inputs;
+            inputs.m_CompositeConstants.SetBloomIntensity(renderer->m_BloomIntensity);
+            inputs.SetBloomTexture(bloomUpPyramid, 0, 1);
+
+            nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
+
+            nvrhi::FramebufferHandle fb = device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(taaOutput));
+
+            nvrhi::BlendState::RenderTarget additiveBlend = CommonResources::GetInstance().BlendTargetAdditive;
+
+            Renderer::RenderPassParams params{
+                .commandList       = commandList,
+                .shaderName        = "Bloom_Composite_PSMain",
+                .bindingSetDesc    = bset,
+                .pushConstants     = &inputs.m_CompositeConstants,
+                .pushConstantsSize = srrhi::BloomCompositeInputs::PushConstantBytes,
+                .framebuffer       = fb,
+                .blendState        = &additiveBlend
             };
             renderer->AddFullScreenPass(params);
         }

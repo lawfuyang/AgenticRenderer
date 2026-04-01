@@ -111,3 +111,15 @@ float4 Upsample_PSMain(FullScreenVertexOut input) : SV_Target
 
     return float4(bloom + upsample, 1.0);
 }
+
+// --- Composite (add bloom mip0 into scene color via additive blending) ---
+
+static const srrhi::BloomCompositeConstants CompositeCB     = srrhi::BloomCompositeInputs::GetCompositeConstants();
+static const Texture2D<float3>              CompositeBloom  = srrhi::BloomCompositeInputs::GetBloomTexture();
+
+float4 Composite_PSMain(FullScreenVertexOut input) : SV_Target
+{
+    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
+    float3 bloom = CompositeBloom.SampleLevel(linearClampSampler, input.uv, 0).rgb;
+    return float4(bloom * CompositeCB.m_BloomIntensity, 1.0);
+}

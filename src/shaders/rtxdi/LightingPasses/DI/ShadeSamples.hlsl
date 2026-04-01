@@ -72,7 +72,10 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)
     {
-        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.regir, RAB_GetSurfaceWorldPos(surface));
+        // Assign directly so the visualization is visible regardless of lighting
+        // (multiplying would make it invisible in shadowed/dark areas).
+        diffuse  = RTXDI_VisualizeReGIRCells(g_Const.regir, RAB_GetSurfaceWorldPos(surface));
+        specular = 0;
     }
 #endif
 

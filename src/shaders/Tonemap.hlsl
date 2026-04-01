@@ -7,7 +7,6 @@ static const srrhi::TonemapConstants TonemapCB = srrhi::TonemappingInputs::GetTo
 
 static const Texture2D<float3> HDRColorInput = srrhi::TonemappingInputs::GetHDRColorInput();
 static const Buffer<float> ExposureInput = srrhi::TonemappingInputs::GetExposureInput();
-static const Texture2D<float3> BloomInput = srrhi::TonemappingInputs::GetBloomInput();
 
 // Input color is non-negative and resides in the Linear Rec. 709 color space.
 // Output color is also Linear Rec. 709, but in the [0, 1] range.
@@ -43,24 +42,12 @@ float3 sRGB_OETF(float3 x)
 
 float4 Tonemap_PSMain(FullScreenVertexOut input) : SV_Target
 {
-    SamplerState linearClampSampler = SamplerDescriptorHeap[srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX];
     uint2 pixelPos = uint2(input.uv * float2(TonemapCB.m_Width, TonemapCB.m_Height));
     float3 color = HDRColorInput[pixelPos];
     float exposure = ExposureInput[0];
-    
-    float3 bloom = 0;
-    if (TonemapCB.m_EnableBloom)
-    {
-        bloom = BloomInput.SampleLevel(linearClampSampler, input.uv, 0).rgb * TonemapCB.m_BloomIntensity;
-    }
 
-    if (TonemapCB.m_DebugBloom)
-    {
-        return float4(bloom, 1.0f);
-    }
-
-    // Apply exposure to both HDR color and bloom
-    color = (color + bloom) * exposure;
+    // Apply exposure
+    color = color * exposure;
     
     float3 tonemapped = PBRNeutralToneMapping(color);
 

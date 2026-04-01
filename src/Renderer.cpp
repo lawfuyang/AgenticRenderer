@@ -918,11 +918,9 @@ void Renderer::Run()
             m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
             m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
             m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
+            m_RenderGraph.ScheduleRenderer(g_TAARenderer);
             m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
         }
-
-        // TAA runs after scene rendering, before HDR tonemapping
-        m_RenderGraph.ScheduleRenderer(g_TAARenderer);
 
         m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
         m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
@@ -1482,6 +1480,8 @@ void Renderer::AddFullScreenPass(const RenderPassParams& params)
 
     desc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
     desc.renderState.depthStencilState = params.depthStencilState ? *params.depthStencilState : CommonResources::GetInstance().DepthDisabled;
+    if (params.blendState)
+        desc.renderState.blendState.targets[0] = *params.blendState;
 
     nvrhi::MeshletPipelineHandle pipeline = GetOrCreateMeshletPipeline(desc, params.framebuffer->getFramebufferInfo());
 

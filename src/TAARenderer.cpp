@@ -153,29 +153,29 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
-        if (!renderer->m_bTAAEnabled)
-            return false;
-
-        const uint32_t width  = renderer->m_RHI->m_SwapchainExtent.x;
-        const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
-
-        // Declare the TAA output texture
         {
+            const uint32_t width = renderer->m_RHI->m_SwapchainExtent.x;
+            const uint32_t height = renderer->m_RHI->m_SwapchainExtent.y;
+
             RGTextureDesc desc;
-            desc.m_NvrhiDesc.width        = width;
-            desc.m_NvrhiDesc.height       = height;
-            desc.m_NvrhiDesc.format       = Renderer::HDR_COLOR_FORMAT;
-            desc.m_NvrhiDesc.debugName    = "TAAOutput_RG";
-            desc.m_NvrhiDesc.isUAV        = true;
+            desc.m_NvrhiDesc.width = width;
+            desc.m_NvrhiDesc.height = height;
+            desc.m_NvrhiDesc.format = Renderer::HDR_COLOR_FORMAT;
+            desc.m_NvrhiDesc.debugName = "TAAOutput_RG";
+            desc.m_NvrhiDesc.isUAV = true;
+            desc.m_NvrhiDesc.isRenderTarget = true;
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             renderGraph.DeclareTexture(desc, g_RG_TAAOutput);
         }
 
-        // Read inputs
         renderGraph.ReadTexture(g_RG_HDRColor);
-        renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
-        renderGraph.ReadTexture(g_RG_DepthTexture);
-        renderGraph.ReadTexture(g_RG_ExposureTexture);
+
+        if (renderer->m_bTAAEnabled)
+        {
+            renderGraph.ReadTexture(g_RG_GBufferMotionVectors);
+            renderGraph.ReadTexture(g_RG_DepthTexture);
+            renderGraph.ReadTexture(g_RG_ExposureTexture);
+        }
 
         return true;
     }
@@ -188,12 +188,20 @@ public:
     {
         Renderer* renderer = Renderer::GetInstance();
 
+        nvrhi::TextureHandle outputTex = renderGraph.GetTexture(g_RG_TAAOutput, RGResourceAccessMode::Write);
+
+        if (!renderer->m_bTAAEnabled)
+        {
+            nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(g_RG_HDRColor, RGResourceAccessMode::Read);
+            commandList->copyTexture(outputTex, nvrhi::TextureSlice{}, hdrColor, nvrhi::TextureSlice{});
+            return;
+        }
+
         // Retrieve textures
         nvrhi::TextureHandle colorTex    = renderGraph.GetTexture(g_RG_HDRColor,             RGResourceAccessMode::Read);
         nvrhi::TextureHandle motionTex   = renderGraph.GetTexture(g_RG_GBufferMotionVectors, RGResourceAccessMode::Read);
         nvrhi::TextureHandle depthTex    = renderGraph.GetTexture(g_RG_DepthTexture,         RGResourceAccessMode::Read);
         nvrhi::TextureHandle exposureTex = renderGraph.GetTexture(g_RG_ExposureTexture,      RGResourceAccessMode::Read);
-        nvrhi::TextureHandle outputTex   = renderGraph.GetTexture(g_RG_TAAOutput,            RGResourceAccessMode::Write);
 
         // Transition output to UAV state for FSR3
         commandList->setTextureState(outputTex, nvrhi::AllSubresources, nvrhi::ResourceStates::UnorderedAccess);

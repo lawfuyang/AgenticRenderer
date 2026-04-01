@@ -218,11 +218,7 @@ void Camera::FillPlanarViewConstants(srrhi::PlanarViewConstants& constants, floa
     XMMATRIX invViewProj = XMMatrixInverse(&det, viewProj);
 
     XMStoreFloat4x4(&constants.m_MatWorldToView, view);
-    XMStoreFloat4x4(&constants.m_MatViewToClip, proj);
-    XMStoreFloat4x4(&constants.m_MatWorldToClip, viewProj);
-    XMStoreFloat4x4(&constants.m_MatClipToView, invProj);
     XMStoreFloat4x4(&constants.m_MatViewToWorld, invView);
-    XMStoreFloat4x4(&constants.m_MatClipToWorld, invViewProj);
 
     // Jittered versions — only apply sub-pixel jitter when TAA is enabled.
     // When TAA is off the "jittered" matrices are identical to the non-jittered

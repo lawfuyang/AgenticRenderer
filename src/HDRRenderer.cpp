@@ -5,8 +5,6 @@
 
 #include "shaders/srrhi/cpp/HDR.h"
 
-extern RGTextureHandle g_RG_HDRColor;
-extern RGTextureHandle g_RG_BloomUpPyramid;
 extern RGTextureHandle g_RG_TAAOutput;
 extern RGTextureHandle g_RG_ExposureTexture;
 
@@ -65,20 +63,7 @@ public:
             m_ReadbackInitialized = true;
         }
         
-        if (renderer->m_EnableBloom && renderer->m_Mode != RenderingMode::ReferencePathTracer)
-        {
-            renderGraph.ReadTexture(g_RG_BloomUpPyramid);
-        }
-
-        if (renderer->m_bTAAEnabled)
-        {
-            renderGraph.WriteTexture(g_RG_TAAOutput);
-        }
-        else
-        {
-            renderGraph.ReadTexture(g_RG_HDRColor);
-        }
-
+        renderGraph.ReadTexture(g_RG_TAAOutput);
         renderGraph.WriteTexture(g_RG_ExposureTexture);
         
         return true;
@@ -93,8 +78,8 @@ public:
 
         nvrhi::BufferHandle luminanceHistogram = renderer->m_EnableAutoExposure ? renderGraph.GetBuffer(m_RG_LuminanceHistogram, RGResourceAccessMode::Write) : nullptr;
         nvrhi::BufferHandle exposureBuffer = renderGraph.GetBuffer(m_RG_ExposureBuffer, RGResourceAccessMode::Write);
-        nvrhi::TextureHandle hdrColor = renderGraph.GetTexture(renderer->m_bTAAEnabled ? g_RG_TAAOutput : g_RG_HDRColor, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle bloomUpPyramid = (renderer->m_EnableBloom && renderer->m_Mode != RenderingMode::ReferencePathTracer) ? renderGraph.GetTexture(g_RG_BloomUpPyramid, RGResourceAccessMode::Read) : nullptr;
+
+        nvrhi::TextureHandle sceneColor = renderGraph.GetTexture(g_RG_TAAOutput, RGResourceAccessMode::Read);
 
         // 1. Histogram Pass
         if (renderer->m_EnableAutoExposure)
@@ -110,7 +95,7 @@ public:
             inputs.m_HistogramConstants.SetMinLogLuminance(kMinLogLuminance);
             inputs.m_HistogramConstants.SetMaxLogLuminance(kMaxLogLuminance);
 
-            inputs.SetHDRColor(hdrColor);
+            inputs.SetHDRColor(sceneColor);
             inputs.SetHistogram(luminanceHistogram ? luminanceHistogram : CommonResources::GetInstance().DummyUAVStructuredBuffer);
 
             nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
@@ -200,13 +185,9 @@ public:
             srrhi::TonemappingInputs inputs;
             inputs.m_TonemapConstants.SetWidth(renderer->m_RHI->m_SwapchainExtent.x);
             inputs.m_TonemapConstants.SetHeight(renderer->m_RHI->m_SwapchainExtent.y);
-            inputs.m_TonemapConstants.SetBloomIntensity(renderer->m_BloomIntensity);
-            inputs.m_TonemapConstants.SetEnableBloom((renderer->m_EnableBloom && bloomUpPyramid) ? 1 : 0);
-            inputs.m_TonemapConstants.SetDebugBloom((renderer->m_DebugBloom) ? 1 : 0);
 
-            inputs.SetHDRColorInput(hdrColor);
+            inputs.SetHDRColorInput(sceneColor);
             inputs.SetExposureInput(exposureBuffer);
-            inputs.SetBloomInput(bloomUpPyramid ? bloomUpPyramid : CommonResources::GetInstance().DefaultTextureBlack);
 
             nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
 

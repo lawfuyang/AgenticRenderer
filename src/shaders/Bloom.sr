@@ -41,3 +41,16 @@ srinput BloomUpsampleInputs
     Texture2D<float3> SourceTexture;
     Texture2D<float3> BloomTexture;
 };
+
+cbuffer BloomCompositeConstants
+{
+    float m_BloomIntensity;
+};
+
+srinput BloomCompositeInputs
+{
+    [push_constant]
+    BloomCompositeConstants m_CompositeConstants;
+
+    Texture2D<float3> BloomTexture;
+};

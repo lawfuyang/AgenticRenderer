@@ -514,8 +514,6 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer)
-            return false;
 
         BasePassResources& res = m_BasePassResources;
         res.DeclareResources(renderGraph, GetName());
@@ -618,7 +616,6 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = m_BasePassResources;
         res.DeclareResources(renderGraph, GetName());
@@ -707,7 +704,6 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
 
         BasePassResources& res = m_BasePassResources;
         res.DeclareResources(renderGraph, GetName());
@@ -830,7 +826,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         Renderer* renderer = Renderer::GetInstance();
-        if (!renderer->m_EnableOcclusionCulling || renderer->m_Mode == RenderingMode::ReferencePathTracer) return false;
+        if (!renderer->m_EnableOcclusionCulling) return false;
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.WriteTexture(g_RG_HZBTexture);
