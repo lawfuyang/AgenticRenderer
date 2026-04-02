@@ -112,7 +112,7 @@ void Camera::Update()
 
     // Movement in local space
     Vector forward = DirectX::XMVectorSet(0, 0, 1, 0);
-    Vector right = DirectX::XMVectorSet(-1, 0, 0, 0);
+    Vector right = DirectX::XMVectorSet(1, 0, 0, 0);
 
     // Construct rotation from yaw/pitch
     Vector rot = DirectX::XMQuaternionRotationRollPitchYaw(m_Pitch, m_Yaw, 0.0f);
