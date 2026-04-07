@@ -101,7 +101,7 @@ static Quaternion json_get_quat(const JsonContext& ctx, int tokenIdx)
 	return Quaternion(json_get_float(ctx, tokenIdx + 1), json_get_float(ctx, tokenIdx + 2), json_get_float(ctx, tokenIdx + 3), json_get_float(ctx, tokenIdx + 4));
 }
 
-// Convert quaternion to forward direction vector (applies rotation to default forward -Z axis)
+// Convert quaternion to forward direction vector (applies rotation to default forward +Z axis)
 static Vector3 QuaternionToDirection(const Quaternion& q)
 {
 	// Create rotation matrix from quaternion and apply to forward direction [0, 0, 1]
@@ -119,11 +119,12 @@ static Vector3 QuaternionToDirection(const Quaternion& q)
 	return result;
 }
 
-// Convert direction vector to quaternion rotation (rotates default forward [0,0,-1] to target direction)
+// Convert direction vector to quaternion rotation (rotates default forward [0,0,1] to target direction)
 static Quaternion DirectionToQuaternion(const Vector3& direction)
 {
 	DirectX::XMVECTOR dirVec = DirectX::XMLoadFloat3(&direction);
-	DirectX::XMVECTOR forward = DirectX::XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
+	// After glTF RH->LH Z-negation conversion, the camera's -Z forward becomes +Z in LH space
+	DirectX::XMVECTOR forward = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 	DirectX::XMVECTOR axis = DirectX::XMVector3Cross(forward, dirVec);
 	float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(forward, dirVec));
 	float angle = std::atan2(DirectX::XMVectorGetX(DirectX::XMVector3Length(axis)), dot);
@@ -339,6 +340,8 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 				else if (json_strcmp(ctx, t, "translation"))
 				{
 					newNode.m_Translation = json_get_vec3(ctx, t + 1);
+					// Convert RH (glTF) -> LH (D3D): negate Z of translation, negate X and Y of quaternion
+					newNode.m_Translation.z *= -1.0f;
 				}
 				else if (json_strcmp(ctx, t, "rotation"))
 				{
@@ -1047,27 +1050,31 @@ void SceneLoader::SortLightsAddDefaultDirectionalLight(Scene& scene)
 {
 	std::sort(scene.m_Lights.begin(), scene.m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
 		{
-			return a.m_Type < b.m_Type; // Directional < Point < Spot
+			return a.m_Type > b.m_Type; // Spot < Point < Directional
 		});
 
-	if (scene.m_Lights.empty() || (scene.m_Lights[0].m_Type != Scene::Light::Directional))
+	if (scene.m_Lights.empty() || (scene.m_Lights.back().m_Type != Scene::Light::Directional))
 	{
 		Scene::Light light;
 		light.m_Name = "Default Directional";
 		light.m_Type = Scene::Light::Directional;
 		light.m_Color = Vector3{ 1.0f, 1.0f, 1.0f };
 		light.m_Intensity = 1.0f;
-		scene.m_Lights.insert(scene.m_Lights.begin(), std::move(light));
+		scene.m_Lights.push_back(std::move(light));
 
-		scene.m_Lights[0].m_NodeIndex = (int)scene.m_Nodes.size();
+		scene.m_Lights.back().m_NodeIndex = (int)scene.m_Nodes.size();
 		Scene::Node& lightNode = scene.m_Nodes.emplace_back();
-		lightNode.m_LightIndex = 0;
+		lightNode.m_LightIndex = (int)scene.m_Lights.size() - 1;
 
 		// Use default sun angles from DirectionalLight defaults
 		constexpr float defaultPitch = DirectX::XM_PIDIV4; // 45 degrees
 		constexpr float defaultYaw   = 0.0f;
-		const Vector quat = DirectX::XMQuaternionRotationRollPitchYaw(-defaultPitch, defaultYaw, 0.0f);
+		Vector quat = DirectX::XMQuaternionRotationRollPitchYaw(defaultPitch, defaultYaw, 0.0f);
 		DirectX::XMStoreFloat4(&lightNode.m_Rotation, quat);
+
+		// GLTF to LH
+		lightNode.m_Rotation.x *= -1.0f;
+		lightNode.m_Rotation.y *= -1.0f;
 
 		const DirectX::XMMATRIX localM = DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&lightNode.m_Rotation));
 		DirectX::XMStoreFloat4x4(&lightNode.m_LocalTransform, localM);
@@ -2040,7 +2047,7 @@ void SceneLoader::ProcessNodesAndHierarchy(const cgltf_data* data, Scene& scene,
 			t3.z = -t3.z;
 			node.m_Translation = t3;
 			DirectX::XMFLOAT4 q4; DirectX::XMStoreFloat4(&q4, rot);
-			q4.x = -q4.x; q4.y = -q4.y;
+				q4.x = -q4.x; q4.y = -q4.y;
 			node.m_Rotation = q4;
 			DirectX::XMStoreFloat3(&node.m_Scale, scale);
 			// Rebuild local matrix from converted TRS

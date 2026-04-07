@@ -258,7 +258,7 @@ public:
     // Convention: returns the direction TOWARD the sun (local +Z of the light node).
     Vector3 GetSunDirection() const
     {
-        const Light& dirLight = m_Lights.at(0);
+        const Light& dirLight = m_Lights.back();
         SDL_assert(dirLight.m_Type == Light::Directional && dirLight.m_NodeIndex >= 0);
         const Node& node = m_Nodes.at(dirLight.m_NodeIndex);
         DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(&node.m_WorldTransform);
