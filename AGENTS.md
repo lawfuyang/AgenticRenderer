@@ -1,83 +1,49 @@
-# Build Pipeline Rules
+# Build Pipeline
 
-## SRRHI Generation
-Trigger condition:
-- Any `.sr` file is added or modified
+**SRRHI**
 
-Required action:
-- Run: `build_srrhi`
+* Trigger: `.sr` added/modified
+* Run: `build_srrhi`
+* Outputs:
 
-Outputs:
-- C++ headers: `src/shaders/srrhi/cpp`
-- HLSL headers: `src/shaders/srrhi/hlsl`
-- NEVER edit these files manually
+  * C++ → `src/shaders/srrhi/cpp`
+  * HLSL → `src/shaders/srrhi/hlsl`
+* ❗ Never edit generated files
+* Include:
 
-Integration requirements:
-- C++ source files must `#include` generated headers from `cpp`
-- Shader source files must `#include` generated headers from `hlsl`
+  * C++ → from `cpp`
+  * Shaders → from `hlsl`
+* Ref: `external/srrhi/README.md`
+* Order: **must run before C++ + shader compilation**
 
-Reference:
-- See: `external/srrhi/README.md`
+**Shaders**
 
-Ordering constraint:
-- `build_srrhi` MUST run before:
-  - C++ compilation
-  - Shader compilation
+* Cmd: `build_shaders` (CMake)
+* Depends on: `build_srrhi` (auto)
 
-
-## Shader Compilation
-Command:
-- `build_shaders` (CMake target)
-
-Dependency:
-- Must run AFTER `build_srrhi`
-- Enforced via CMake dependency (automatic)
-
+---
 
 # Coding Conventions
 
-## Naming
+**Types**: `UpperCamelCase` (nouns)
+→ `Raster`, `ImageSprite`
 
-### Types (Classes, Structs)
-- Format: `UpperCamelCase`
-- Use nouns
-- Examples:
-  - `Raster`
-  - `ImageSprite`
+**Functions**: `UpperCamelCase` (nouns)
 
-### Functions / Methods
-- Format: `UpperCamelCase`
-- Use nouns
+**bool**: `b` prefix
+→ `bIsCorrect`
 
-### bools
-- always prefix with 'b'
-- Example:
-  - `bool bisCorrect = true`
+**Local vars**: `lowerCamelCase`
+→ `i`, `myWidth`
 
-### Local Variables (stack)
-- Format: `lowerCamelCase`
-- Examples:
-  - `i`
-  - `c`
-  - `myWidth`
+**Members**: `m_UpperCamelCase`
+→ `m_Width`, `m_bIsTrue`
 
-### Class member variables
-- Format: `m_UpperCamelCase`
-- Examples:
-  - `m_Width`
-  - `m_bIsTrue`
+**Constants**:
 
-### Constants
-- Allowed formats:
-  - `SCREAMING_SNAKE_CASE`
-  - Prefix with `k` (lowerCamelCase after prefix)
+* `SCREAMING_SNAKE_CASE` OR
+* `kLowerCamelCase`
+  → `MAX_LOD_COUNT`, `kThreadsPerGroup`
 
-- Examples:
-  - `MAX_LOD_COUNT`
-  - `kThreadsPerGroup`
-
-### Global Variables
-- Format: `g_UpperCamelCase`
-
-### Static Global Variables
-- Format: `gs_UpperCamelCase`
+**Globals**: `g_UpperCamelCase`
+**Static globals**: `gs_UpperCamelCase`
