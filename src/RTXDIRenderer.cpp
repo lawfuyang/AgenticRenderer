@@ -604,7 +604,6 @@ public:
         CreateRTXDIContext();
 
         // Initialize ReSTIR GI parameter structs to library defaults
-        g_ReSTIRGI_Enabled           = false;
         g_ReSTIRGI_ResamplingMode    = rtxdi::ReSTIRGI_ResamplingMode::TemporalAndSpatial;
         g_ReSTIRGI_TemporalParams    = rtxdi::GetDefaultReSTIRGITemporalResamplingParams();
         g_ReSTIRGI_BoilingParams     = rtxdi::GetDefaultReSTIRGIBoilingFilterParams();
@@ -1962,7 +1961,8 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // RELAX denoising        // ------------------------------------------------------------------
+        // RELAX denoising
+        // ------------------------------------------------------------------
         if (bDenoise)
         {
             // linearDepthTex was already written by GenerateViewZ above (unconditional)

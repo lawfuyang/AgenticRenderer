@@ -243,26 +243,26 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
         secondaryGBufferData.diffuseAlbedo = Pack_R11G11B10_UFLOAT(secondarySurface.diffuseAlbedo);
         secondaryGBufferData.specularAndRoughness = Pack_R8G8B8A8_Gamma_UFLOAT(float4(secondarySurface.specularF0, secondarySurface.roughness));
 
-        if (false) // ReSTIR GI not implemented
+        // ReSTIR GI path: store emission and PDF for ShadeSecondarySurfaces.
+        // For non-delta surfaces, throughput is stored without BRDF_over_PDF because
+        // that factor is applied after GI reservoir resampling.
+        if (isSpecularRay && isDeltaSurface)
         {
-            if (isSpecularRay && isDeltaSurface)
-            {
-                // Special case for specular rays on delta surfaces: they bypass ReSTIR GI and are shaded
-                // entirely in the ShadeSecondarySurfaces pass, so they need the right throughput here.
-            }
-            else
-            {
-                // BRDF_over_PDF will be multiplied after resampling GI reservoirs.
-                secondaryGBufferData.throughputAndFlags = Pack_R16G16B16A16_FLOAT(float4(payload.throughput, 0));
-            }
-
-            // The emission from the secondary surface needs to be added when creating the initial
-            // GI reservoir sample in ShadeSecondarySurface.hlsl. It need to be stored separately.
-            secondaryGBufferData.emission = radiance;
-            radiance = 0;
-
-            secondaryGBufferData.pdf = overall_PDF;
+            // Special case for specular rays on delta surfaces: they bypass ReSTIR GI and are shaded
+            // entirely in the ShadeSecondarySurfaces pass, so they need the right throughput here.
         }
+        else
+        {
+            // BRDF_over_PDF will be multiplied after resampling GI reservoirs.
+            secondaryGBufferData.throughputAndFlags = Pack_R16G16B16A16_FLOAT(float4(payload.throughput, 0));
+        }
+
+        // The emission from the secondary surface needs to be added when creating the initial
+        // GI reservoir sample in ShadeSecondarySurface.hlsl. It needs to be stored separately.
+        secondaryGBufferData.emission = radiance;
+        radiance = 0;
+
+        secondaryGBufferData.pdf = overall_PDF;
 
         uint flags = 0;
         if (isSpecularRay) flags |= kSecondaryGBuffer_IsSpecularRay;
