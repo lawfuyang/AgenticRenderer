@@ -124,6 +124,8 @@ external/agilitysdk
 external/NRD
 external/MathLib
 external/FSR_SDK
+external/doctest
+external/doctest.h
 src/shaders/NRDShaders.cfg
 src/shaders/NRD.hlsli
 src/shaders/NRDConfig.hlsli
