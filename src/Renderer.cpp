@@ -121,7 +121,8 @@ void Renderer::LoadShaders()
                 struct Constant { std::string name, value; };
                 std::vector<Constant> constants;
 
-                if (!entry.definesStr.empty())
+                const bool bHasDefines = strlen(entry.definesStr) > 0;
+                if (bHasDefines)
                 {
                     std::string_view remaining = entry.definesStr;
                     while (!remaining.empty())
@@ -171,8 +172,7 @@ void Renderer::LoadShaders()
                 continue;
             }
 
-            SDL_Log("[Init] Loaded shader id=%u  key=%.*s",
-                    id, static_cast<int>(entry.key.size()), entry.key.data());
+            SDL_Log("[Init] Loaded shader id=%u  key=%s", id, entry.key);
             ++loadedCount;
         }
     }
