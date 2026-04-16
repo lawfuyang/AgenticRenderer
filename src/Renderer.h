@@ -97,6 +97,7 @@ struct Renderer
     void InitializeForTests(); // Headless init for --run-tests: RHI + CommonResources, no scene/renderers
     void Run();
     void Shutdown();
+    void ScheduleAndRunAllRenderers();
 
     // Command List Management
     nvrhi::CommandListHandle AcquireCommandList(bool bImmediatelyQueue = true);

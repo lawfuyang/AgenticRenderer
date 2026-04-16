@@ -614,56 +614,7 @@ void Renderer::Run()
             scopedCmd->beginTimerQuery(m_GPUQueries[writeIndex]);
         }
 
-        for (const std::shared_ptr<IRenderer>& renderer : m_Renderers)
-        {
-            renderer->m_bPassEnabled = false;
-        }
-        
-        m_RenderGraph.Reset();
-
-        extern IRenderer* g_TLASRenderer;
-        extern IRenderer* g_ClearRenderer;
-        extern IRenderer* g_OpaqueRenderer;
-        extern IRenderer* g_MaskedPassRenderer;
-        extern IRenderer* g_HZBGeneratorPhase2;
-        extern IRenderer* g_RTXDIRenderer;
-        extern IRenderer* g_DeferredRenderer;
-        extern IRenderer* g_SkyRenderer;
-        extern IRenderer* g_TransparentPassRenderer;
-        extern IRenderer* g_BloomRenderer;
-        extern IRenderer* g_TAARenderer;
-        extern IRenderer* g_HDRRenderer;
-        extern IRenderer* g_ImGuiRenderer;
-        extern IRenderer* g_PathTracerRenderer;
-
-        m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
-
-        if (m_Mode == RenderingMode::ReferencePathTracer)
-        {
-            m_RenderGraph.ScheduleRenderer(g_PathTracerRenderer);
-        }
-        else
-        {
-            m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
-            m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
-            m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
-            m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
-            m_RenderGraph.ScheduleRenderer(g_RTXDIRenderer);
-            m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
-            m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
-            m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
-            m_RenderGraph.ScheduleRenderer(g_TAARenderer);
-            m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
-        }
-
-        m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
-        m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
-
-        // Compile render graph: compute lifetimes and allocate resources
-        m_RenderGraph.Compile();
-
-        // Wait for all render passes to finish recording
-        m_TaskScheduler->ExecuteAllScheduledTasks();
+        ScheduleAndRunAllRenderers();
 
         // GPU query for frame timer is super expensive on the CPU for some reason. i give up using it
         if constexpr (false)
@@ -766,6 +717,60 @@ void Renderer::Shutdown()
 
     SDL_Quit();
     SDL_Log("[Shutdown] Clean exit");
+}
+
+void Renderer::ScheduleAndRunAllRenderers()
+{
+    for (const std::shared_ptr<IRenderer>& renderer : m_Renderers)
+    {
+        renderer->m_bPassEnabled = false;
+    }
+
+    m_RenderGraph.Reset();
+
+    extern IRenderer* g_TLASRenderer;
+    extern IRenderer* g_ClearRenderer;
+    extern IRenderer* g_OpaqueRenderer;
+    extern IRenderer* g_MaskedPassRenderer;
+    extern IRenderer* g_HZBGeneratorPhase2;
+    extern IRenderer* g_RTXDIRenderer;
+    extern IRenderer* g_DeferredRenderer;
+    extern IRenderer* g_SkyRenderer;
+    extern IRenderer* g_TransparentPassRenderer;
+    extern IRenderer* g_BloomRenderer;
+    extern IRenderer* g_TAARenderer;
+    extern IRenderer* g_HDRRenderer;
+    extern IRenderer* g_ImGuiRenderer;
+    extern IRenderer* g_PathTracerRenderer;
+
+    m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
+
+    if (m_Mode == RenderingMode::ReferencePathTracer)
+    {
+        m_RenderGraph.ScheduleRenderer(g_PathTracerRenderer);
+    }
+    else
+    {
+        m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
+        m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
+        m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+        m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
+        m_RenderGraph.ScheduleRenderer(g_RTXDIRenderer);
+        m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
+        m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
+        m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
+        m_RenderGraph.ScheduleRenderer(g_TAARenderer);
+        m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+    }
+
+    m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
+    m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
+
+    // Compile render graph: compute lifetimes and allocate resources
+    m_RenderGraph.Compile();
+
+    // Wait for all render passes to finish recording
+    m_TaskScheduler->ExecuteAllScheduledTasks();
 }
 
 void Renderer::SetCameraFromSceneCamera(const Scene::Camera& sceneCam)

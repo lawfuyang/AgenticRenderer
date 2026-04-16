@@ -179,14 +179,6 @@ MinimalSceneFixture::~MinimalSceneFixture()
 
 bool RunOneFrame()
 {
-    for (const auto& r : g_Renderer.m_Renderers)
-    {
-        SDL_assert(r);
-        r->m_bPassEnabled = false;
-    }
-
-    g_Renderer.m_RenderGraph.Reset();
-
     // Update camera view constants (required by culling shaders)
     int windowW = 0, windowH = 0;
     SDL_GetWindowSize(g_Renderer.m_Window, &windowW, &windowH);
@@ -196,39 +188,7 @@ bool RunOneFrame()
         static_cast<float>(windowW),
         static_cast<float>(windowH));
 
-    // External renderer pointers (defined via REGISTER_RENDERER macros)
-    extern IRenderer* g_ClearRenderer;
-    extern IRenderer* g_OpaqueRenderer;
-    extern IRenderer* g_MaskedPassRenderer;
-    extern IRenderer* g_HZBGeneratorPhase2;
-    extern IRenderer* g_TLASRenderer;
-    extern IRenderer* g_DeferredRenderer;
-    extern IRenderer* g_SkyRenderer;
-    extern IRenderer* g_TransparentPassRenderer;
-    extern IRenderer* g_BloomRenderer;
-    extern IRenderer* g_TAARenderer;
-    extern IRenderer* g_HDRRenderer;
-    extern IRenderer* g_ImGuiRenderer;
-
-    // Schedule the standard Normal-mode pipeline
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TAARenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
-    g_Renderer.m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
-
-    // Compile resource lifetimes and allocate transient memory
-    g_Renderer.m_RenderGraph.Compile();
-
-    // Record all command lists (may run on task scheduler threads)
-    g_Renderer.m_TaskScheduler->ExecuteAllScheduledTasks();
+    g_Renderer.ScheduleAndRunAllRenderers();
 
     // Submit to GPU and wait for completion
     g_Renderer.ExecutePendingCommandLists();
