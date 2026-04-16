@@ -19,3 +19,21 @@
 #include "../Config.h"
 #include "../Utilities.h"
 #include "../Renderer.h"
+
+// ============================================================================
+// Helper: tiny RAII wrapper that resets Config to defaults after a test
+// ============================================================================
+struct ConfigGuard
+{
+    // Snapshot the current singleton state
+    Config snapshot = Config::Get();
+
+    ~ConfigGuard()
+    {
+        // Restore via the private s_Instance — we access it through ParseCommandLine
+        // with a no-op argv so we just re-assign the snapshot directly.
+        // Since Config::s_Instance is inline and accessible via the header we
+        // reach it through the public Get() reference cast.
+        const_cast<Config&>(Config::Get()) = snapshot;
+    }
+};

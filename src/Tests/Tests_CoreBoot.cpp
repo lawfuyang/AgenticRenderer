@@ -4,7 +4,6 @@
 // Setup required: None (CPU-only, no GPU/RHI)
 //
 // Run with: HobbyRenderer --run-tests=*CoreBoot*
-//           HobbyRenderer --run-tests=*Phase1*
 // ============================================================================
 
 // TestFixtures.h includes doctest.h (without DOCTEST_CONFIG_IMPLEMENT) and
@@ -12,27 +11,9 @@
 #include "TestFixtures.h"
 
 // ============================================================================
-// Helper: tiny RAII wrapper that resets Config to defaults after a test
+// TEST SUITE: TaskScheduler
 // ============================================================================
-struct ConfigGuard
-{
-    // Snapshot the current singleton state
-    Config snapshot = Config::Get();
-
-    ~ConfigGuard()
-    {
-        // Restore via the private s_Instance — we access it through ParseCommandLine
-        // with a no-op argv so we just re-assign the snapshot directly.
-        // Since Config::s_Instance is inline and accessible via the header we
-        // reach it through the public Get() reference cast.
-        const_cast<Config&>(Config::Get()) = snapshot;
-    }
-};
-
-// ============================================================================
-// TEST SUITE: Phase1_TaskScheduler
-// ============================================================================
-TEST_SUITE("Phase1_TaskScheduler")
+TEST_SUITE("TaskScheduler")
 {
     // ------------------------------------------------------------------
     // TC-TS-01: Default construction creates kRuntimeThreadCount workers
@@ -201,9 +182,9 @@ TEST_SUITE("Phase1_TaskScheduler")
 }
 
 // ============================================================================
-// TEST SUITE: Phase1_Config
+// TEST SUITE: Config
 // ============================================================================
-TEST_SUITE("Phase1_Config")
+TEST_SUITE("Config")
 {
     // ------------------------------------------------------------------
     // TC-CFG-01: Default config values are sane
@@ -341,9 +322,9 @@ TEST_SUITE("Phase1_Config")
 }
 
 // ============================================================================
-// TEST SUITE: Phase1_Timer
+// TEST SUITE: Timer
 // ============================================================================
-TEST_SUITE("Phase1_Timer")
+TEST_SUITE("Timer")
 {
     // ------------------------------------------------------------------
     // TC-TMR-01: SimpleTimer TotalSeconds is non-negative immediately after construction
@@ -423,9 +404,9 @@ TEST_SUITE("Phase1_Timer")
 }
 
 // ============================================================================
-// TEST SUITE: Phase1_Math
+// TEST SUITE: Math
 // ============================================================================
-TEST_SUITE("Phase1_Math")
+TEST_SUITE("Math")
 {
     // ------------------------------------------------------------------
     // TC-MATH-01: NextLowerPow2 — basic cases
