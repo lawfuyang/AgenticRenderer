@@ -114,14 +114,6 @@ struct Renderer
     nvrhi::ComputePipelineHandle GetOrCreateComputePipeline(nvrhi::ShaderHandle shader, const nvrhi::BindingLayoutVector& bindingLayouts);
 
     // Rendering Helpers
-    void DrawFullScreenPass(
-        nvrhi::CommandListHandle commandList,
-        const nvrhi::FramebufferHandle& framebuffer,
-        std::string_view shaderName,
-        const nvrhi::BindingSetDesc& bindingSetDesc,
-        const void* pushConstants = nullptr,
-        size_t pushConstantsSize = 0);
-
     struct ComputeDispatchParams
     {
         uint32_t x = 0, y = 0, z = 0; // For direct dispatch

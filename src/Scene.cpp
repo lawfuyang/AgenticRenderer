@@ -315,7 +315,7 @@ void Scene::FinalizeLoadedScene()
             inst.m_Center = node.m_Center;
             inst.m_Radius = node.m_Radius;
 
-            uint32_t alphaMode = m_Materials[prim.m_MaterialIndex].m_AlphaMode;
+            uint32_t alphaMode = prim.m_MaterialIndex >= 0 ? m_Materials[prim.m_MaterialIndex].m_AlphaMode : srrhi::CommonConsts::ALPHA_MODE_OPAQUE;
             bool isDynamic = node.m_IsDynamic;
 
             if (alphaMode == srrhi::CommonConsts::ALPHA_MODE_OPAQUE) {
@@ -353,6 +353,7 @@ void Scene::FinalizeLoadedScene()
     PushInstances(transparentStatic);
 	PushInstances(transparentDynamic);
 
+	m_SceneBoundingSphere = DirectX::BoundingSphere{};
 	for (const Scene::Node& node : m_Nodes)
 	{
 		const DirectX::BoundingSphere nodeSphere(node.m_Center, node.m_Radius);
@@ -628,5 +629,38 @@ void Scene::UpdateNodeBoundingSphere(int nodeIndex)
         localSphere.Transform(worldSphere, DirectX::XMLoadFloat4x4(&node.m_WorldTransform));
         node.m_Center = worldSphere.Center;
         node.m_Radius = worldSphere.Radius;
+    }
+}
+
+void Scene::EnsureDefaultDirectionalLight()
+{
+    // Sort so directional lights come last (Spot < Point < Directional by enum value).
+    std::sort(m_Lights.begin(), m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
+    {
+        return a.m_Type > b.m_Type;
+    });
+
+    if (m_Lights.empty() || m_Lights.back().m_Type != Scene::Light::Directional)
+    {
+        Scene::Light light;
+        light.m_Name      = "Default Directional";
+        light.m_Type      = Scene::Light::Directional;
+        light.m_Color     = Vector3{ 1.0f, 1.0f, 1.0f };
+        light.m_Intensity = 1.0f;
+        m_Lights.push_back(std::move(light));
+
+        m_Lights.back().m_NodeIndex = (int)m_Nodes.size();
+        Scene::Node& lightNode = m_Nodes.emplace_back();
+        lightNode.m_LightIndex = (int)m_Lights.size() - 1;
+
+        // Default sun angles: 45° pitch pointing downward along +Z in LH space.
+        constexpr float defaultPitch = DirectX::XM_PIDIV4; // 45 degrees
+        constexpr float defaultYaw   = 0.0f;
+        DirectX::XMVECTOR quat = DirectX::XMQuaternionRotationRollPitchYaw(defaultPitch, defaultYaw, 0.0f);
+        DirectX::XMStoreFloat4(&lightNode.m_Rotation, quat);
+
+        const DirectX::XMMATRIX localM = DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&lightNode.m_Rotation));
+        DirectX::XMStoreFloat4x4(&lightNode.m_LocalTransform, localM);
+        lightNode.m_WorldTransform = lightNode.m_LocalTransform;
     }
 }

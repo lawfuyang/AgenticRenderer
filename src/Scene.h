@@ -329,4 +329,10 @@ public:
     void SaveToCache(const std::string& cachePath, const std::vector<uint32_t>& allIndices, const std::vector<srrhi::VertexQuantized>& allVerticesQuantized);
 
     void UpdateNodeBoundingSphere(int nodeIndex);
+
+    // Ensures the scene always has at least one directional light at the back of m_Lights.
+    // Sorts lights so directional lights come last, then adds a default directional light
+    // (with a 45° pitch node) if none is present.  Safe to call on an empty scene.
+    // This is the common implementation shared by SceneLoader and test fixtures.
+    void EnsureDefaultDirectionalLight();
 };

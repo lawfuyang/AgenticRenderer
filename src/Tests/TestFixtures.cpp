@@ -111,3 +111,256 @@ IRenderer* FindRendererByName(const char* name)
             return r.get();
     return nullptr;
 }
+
+// ============================================================================
+// MinimalSceneFixture
+// ============================================================================
+
+MinimalSceneFixture::MinimalSceneFixture()
+{
+    // Shut down any previously loaded scene so we start from a clean slate.
+    if (DEV())
+        DEV()->waitForIdle();
+    g_Renderer.m_Scene.Shutdown();
+
+    // Minimal valid glTF 2.0: a single triangle with 3 POSITION vertices.
+    // All buffer data is embedded as a base64 data URI so no file I/O is needed.
+    // The scene has no lights — SceneLoader::LoadGLTFSceneFromMemory will call
+    // EnsureDefaultDirectionalLight to inject the default directional light.
+    static constexpr const char k_MinimalGltf[] = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [ { "nodes": [ 0 ] } ],
+  "nodes": [ { "mesh": 0 } ],
+  "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+  "accessors": [ {
+    "bufferView": 0, "byteOffset": 0,
+    "componentType": 5126, "count": 3, "type": "VEC3",
+    "max": [ 1.0, 1.0, 0.0 ], "min": [ 0.0, 0.0, 0.0 ]
+  } ],
+  "bufferViews": [ {
+    "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962
+  } ],
+  "buffers": [ {
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA",
+    "byteLength": 36
+  } ]
+})";
+
+    std::vector<srrhi::VertexQuantized> vertices;
+    std::vector<uint32_t> indices;
+
+    const bool ok = SceneLoader::LoadGLTFSceneFromMemory(
+        g_Renderer.m_Scene,
+        k_MinimalGltf, sizeof(k_MinimalGltf) - 1, // exclude null terminator
+        {},   // no sceneDir — all data is embedded
+        vertices, indices);
+
+    SDL_assert(ok && "MinimalSceneFixture: failed to load hardcoded glTF from memory");
+
+    g_Renderer.m_Scene.FinalizeLoadedScene();
+    SceneLoader::LoadTexturesFromImages(g_Renderer.m_Scene, {});
+    SceneLoader::UpdateMaterialsAndCreateConstants(g_Renderer.m_Scene);
+    SceneLoader::CreateAndUploadGpuBuffers(g_Renderer.m_Scene, vertices, indices);
+    SceneLoader::CreateAndUploadLightBuffer(g_Renderer.m_Scene);
+    g_Renderer.m_Scene.BuildAccelerationStructures();
+
+    for (const auto& r : g_Renderer.m_Renderers)
+        if (r) r->PostSceneLoad();
+    g_Renderer.ExecutePendingCommandLists();
+}
+
+MinimalSceneFixture::~MinimalSceneFixture()
+{
+    if (DEV())
+        DEV()->waitForIdle();
+    g_Renderer.m_Scene.Shutdown();
+}
+
+bool RunOneFrame()
+{
+    for (const auto& r : g_Renderer.m_Renderers)
+    {
+        SDL_assert(r);
+        r->m_bPassEnabled = false;
+    }
+
+    g_Renderer.m_RenderGraph.Reset();
+
+    // Update camera view constants (required by culling shaders)
+    int windowW = 0, windowH = 0;
+    SDL_GetWindowSize(g_Renderer.m_Window, &windowW, &windowH);
+    g_Renderer.m_Scene.m_ViewPrev = g_Renderer.m_Scene.m_View;
+    g_Renderer.m_Scene.m_Camera.FillPlanarViewConstants(
+        g_Renderer.m_Scene.m_View,
+        static_cast<float>(windowW),
+        static_cast<float>(windowH));
+
+    // External renderer pointers (defined via REGISTER_RENDERER macros)
+    extern IRenderer* g_ClearRenderer;
+    extern IRenderer* g_OpaqueRenderer;
+    extern IRenderer* g_MaskedPassRenderer;
+    extern IRenderer* g_HZBGeneratorPhase2;
+    extern IRenderer* g_TLASRenderer;
+    extern IRenderer* g_DeferredRenderer;
+    extern IRenderer* g_SkyRenderer;
+    extern IRenderer* g_TransparentPassRenderer;
+    extern IRenderer* g_BloomRenderer;
+    extern IRenderer* g_TAARenderer;
+    extern IRenderer* g_HDRRenderer;
+    extern IRenderer* g_ImGuiRenderer;
+
+    // Schedule the standard Normal-mode pipeline
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_OpaqueRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_MaskedPassRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_HZBGeneratorPhase2);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TLASRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_DeferredRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_SkyRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TransparentPassRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_TAARenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_BloomRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
+    g_Renderer.m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
+
+    // Compile resource lifetimes and allocate transient memory
+    g_Renderer.m_RenderGraph.Compile();
+
+    // Record all command lists (may run on task scheduler threads)
+    g_Renderer.m_TaskScheduler->ExecuteAllScheduledTasks();
+
+    // Submit to GPU and wait for completion
+    g_Renderer.ExecutePendingCommandLists();
+
+    ++g_Renderer.m_FrameNumber;
+
+    return true;
+}
+
+float ReadbackTexelFloat(nvrhi::TextureHandle tex, uint32_t x, uint32_t y)
+{
+    if (!tex) return -1.0f;
+
+    nvrhi::IDevice* device = DEV();
+    const nvrhi::TextureDesc& d = tex->getDesc();
+
+    // Create a 1x1 staging texture (CPU-readable) with the same format
+    nvrhi::TextureDesc stagingDesc = d;
+    stagingDesc.width = 1;
+    stagingDesc.height = 1;
+    stagingDesc.mipLevels = 1;
+    stagingDesc.isRenderTarget = false;
+    stagingDesc.isUAV = false;
+    stagingDesc.isShaderResource = false;
+    stagingDesc.initialState = nvrhi::ResourceStates::Common;
+    stagingDesc.keepInitialState = false;
+    stagingDesc.debugName = "ReadbackStaging";
+
+    nvrhi::StagingTextureHandle staging = device->createStagingTexture(
+        stagingDesc, nvrhi::CpuAccessMode::Read);
+    if (!staging) return -1.0f;
+
+    nvrhi::CommandListHandle cmd = g_Renderer.AcquireCommandList();
+    cmd->open();
+
+    nvrhi::TextureSlice srcSlice;
+    srcSlice.x = x;
+    srcSlice.y = y;
+    srcSlice.width = 1;
+    srcSlice.height = 1;
+    srcSlice.mipLevel = 0;
+    srcSlice.arraySlice = 0;
+
+    nvrhi::TextureSlice dstSlice;
+    dstSlice.x = 0;
+    dstSlice.y = 0;
+    dstSlice.width = 1;
+    dstSlice.height = 1;
+    dstSlice.mipLevel = 0;
+    dstSlice.arraySlice = 0;
+
+    cmd->copyTexture(staging, dstSlice, tex, srcSlice);
+    cmd->close();
+    device->executeCommandList(cmd);
+    device->waitForIdle();
+
+    // Map and read
+    size_t rowPitch = 0;
+    void* mapped = device->mapStagingTexture(staging, dstSlice, nvrhi::CpuAccessMode::Read, &rowPitch);
+    if (!mapped) return -1.0f;
+
+    float value = 0.0f;
+    if (d.format == nvrhi::Format::R32_FLOAT)
+    {
+        value = *reinterpret_cast<const float*>(mapped);
+    }
+    else if (d.format == nvrhi::Format::R16_FLOAT)
+    {
+        // Simple half-to-float conversion
+        const uint16_t h = *reinterpret_cast<const uint16_t*>(mapped);
+        const uint32_t sign = (h >> 15) & 0x1;
+        const uint32_t exponent = (h >> 10) & 0x1F;
+        const uint32_t mantissa = h & 0x3FF;
+        uint32_t f32 = 0;
+        if (exponent == 0)
+            f32 = (sign << 31) | (mantissa << 13);
+        else if (exponent == 31)
+            f32 = (sign << 31) | (0xFF << 23) | (mantissa << 13);
+        else
+            f32 = (sign << 31) | ((exponent + 112) << 23) | (mantissa << 13);
+        std::memcpy(&value, &f32, sizeof(float));
+    }
+
+    device->unmapStagingTexture(staging);
+    return value;
+}
+
+uint32_t ReadbackTexelRGBA8(nvrhi::TextureHandle tex, uint32_t x, uint32_t y)
+{
+    if (!tex) return 0xDEADBEEF;
+
+    nvrhi::IDevice* device = DEV();
+    const nvrhi::TextureDesc& d = tex->getDesc();
+
+    nvrhi::TextureDesc stagingDesc = d;
+    stagingDesc.width = 1;
+    stagingDesc.height = 1;
+    stagingDesc.mipLevels = 1;
+    stagingDesc.isRenderTarget = false;
+    stagingDesc.isUAV = false;
+    stagingDesc.isShaderResource = false;
+    stagingDesc.initialState = nvrhi::ResourceStates::Common;
+    stagingDesc.keepInitialState = false;
+    stagingDesc.debugName = "ReadbackStagingRGBA8";
+
+    nvrhi::StagingTextureHandle staging = device->createStagingTexture(
+        stagingDesc, nvrhi::CpuAccessMode::Read);
+    if (!staging) return 0xDEADBEEF;
+
+    nvrhi::CommandListHandle cmd = g_Renderer.AcquireCommandList();
+    cmd->open();
+
+    nvrhi::TextureSlice srcSlice;
+    srcSlice.x = x; srcSlice.y = y;
+    srcSlice.width = 1; srcSlice.height = 1;
+    srcSlice.mipLevel = 0; srcSlice.arraySlice = 0;
+
+    nvrhi::TextureSlice dstSlice;
+    dstSlice.x = 0; dstSlice.y = 0;
+    dstSlice.width = 1; dstSlice.height = 1;
+    dstSlice.mipLevel = 0; dstSlice.arraySlice = 0;
+
+    cmd->copyTexture(staging, dstSlice, tex, srcSlice);
+    cmd->close();
+    device->executeCommandList(cmd);
+    device->waitForIdle();
+
+    size_t rowPitch = 0;
+    void* mapped = device->mapStagingTexture(staging, dstSlice, nvrhi::CpuAccessMode::Read, &rowPitch);
+    if (!mapped) return 0xDEADBEEF;
+
+    uint32_t value = *reinterpret_cast<const uint32_t*>(mapped);
+    device->unmapStagingTexture(staging);
+    return value;
+}

@@ -537,7 +537,7 @@ bool SceneLoader::LoadJSONScene(Scene& scene, const std::string& scenePath, std:
 		}
 	}
 
-	SortLightsAddDefaultDirectionalLight(scene);
+	scene.EnsureDefaultDirectionalLight();
 
 	// 3. Parse JSON animations (after graph is built so node/material references can be resolved)
 	if (animationsTokenIdx != -1 && tokens[animationsTokenIdx].type == JSMN_ARRAY)
@@ -1055,38 +1055,6 @@ const char* SceneLoader::cgltf_result_tostring(cgltf_result result)
 	case cgltf_result_out_of_memory: return "out_of_memory";
 	case cgltf_result_legacy_gltf: return "legacy_gltf";
 	default: return "unknown";
-	}
-}
-
-void SceneLoader::SortLightsAddDefaultDirectionalLight(Scene& scene)
-{
-	std::sort(scene.m_Lights.begin(), scene.m_Lights.end(), [](const Scene::Light& a, const Scene::Light& b)
-		{
-			return a.m_Type > b.m_Type; // Spot < Point < Directional
-		});
-
-	if (scene.m_Lights.empty() || (scene.m_Lights.back().m_Type != Scene::Light::Directional))
-	{
-		Scene::Light light;
-		light.m_Name = "Default Directional";
-		light.m_Type = Scene::Light::Directional;
-		light.m_Color = Vector3{ 1.0f, 1.0f, 1.0f };
-		light.m_Intensity = 1.0f;
-		scene.m_Lights.push_back(std::move(light));
-
-		scene.m_Lights.back().m_NodeIndex = (int)scene.m_Nodes.size();
-		Scene::Node& lightNode = scene.m_Nodes.emplace_back();
-		lightNode.m_LightIndex = (int)scene.m_Lights.size() - 1;
-
-		// Use default sun angles: 45° pitch pointing downward along +Z in LH space
-		constexpr float defaultPitch = DirectX::XM_PIDIV4; // 45 degrees
-		constexpr float defaultYaw   = 0.0f;
-		Vector quat = DirectX::XMQuaternionRotationRollPitchYaw(defaultPitch, defaultYaw, 0.0f);
-		DirectX::XMStoreFloat4(&lightNode.m_Rotation, quat);
-
-		const DirectX::XMMATRIX localM = DirectX::XMMatrixRotationQuaternion(DirectX::XMLoadFloat4(&lightNode.m_Rotation));
-		DirectX::XMStoreFloat4x4(&lightNode.m_LocalTransform, localM);
-		lightNode.m_WorldTransform = lightNode.m_LocalTransform;
 	}
 }
 
@@ -2346,26 +2314,27 @@ void SceneLoader::CreateAndUploadLightBuffer(Scene& scene)
 	}
 }
 
-bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene)
+bool SceneLoader::ProcessParsedGLTF(
+	cgltf_data* data,
+	Scene& scene,
+	const std::string& bufferBasePath,
+	const std::filesystem::path& sceneDir,
+	std::vector<srrhi::VertexQuantized>& allVerticesQuantized,
+	std::vector<uint32_t>& allIndices,
+	bool ensureDirectionalLight)
 {
-	const cgltf_options options{};
-	cgltf_data* data = nullptr;
-	cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
-	if (res != cgltf_result_success || !data)
-	{
-		SDL_LOG_ASSERT_FAIL("glTF parse failed", "[Scene] Failed to parse glTF file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
-		return false;
-	}
+	cgltf_options options{};
 
-	res = cgltf_validate(data);
+	cgltf_result res = cgltf_validate(data);
 	if (res != cgltf_result_success)
 	{
-		SDL_LOG_ASSERT_FAIL("glTF validation failed", "[Scene] glTF validation failed for file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
+		SDL_LOG_ASSERT_FAIL("glTF validation failed", "[Scene] glTF validation failed (result: %s)", cgltf_result_tostring(res));
 		cgltf_free(data);
 		return false;
 	}
 
-	res = cgltf_load_buffers(&options, data, scenePath.c_str());
+	// Pass an empty base path for embedded data URIs; cgltf resolves them without a file path.
+	res = cgltf_load_buffers(&options, data, bufferBasePath.c_str());
 	if (res != cgltf_result_success)
 	{
 		SDL_LOG_ASSERT_FAIL("glTF buffer load failed", "[Scene] Failed to load glTF buffers (result: %s)", cgltf_result_tostring(res));
@@ -2381,15 +2350,13 @@ bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std:
 		return false;
 	}
 
-	const std::filesystem::path sceneDir = std::filesystem::path(scenePath).parent_path();
-
 	SceneOffsets offsets;
-	offsets.nodeOffset = (int)scene.m_Nodes.size();
-	offsets.meshOffset = (int)scene.m_Meshes.size();
+	offsets.nodeOffset     = (int)scene.m_Nodes.size();
+	offsets.meshOffset     = (int)scene.m_Meshes.size();
 	offsets.materialOffset = (int)scene.m_Materials.size();
-	offsets.textureOffset = (int)scene.m_Textures.size();
-	offsets.cameraOffset = (int)scene.m_Cameras.size();
-	offsets.lightOffset = (int)scene.m_Lights.size();
+	offsets.textureOffset  = (int)scene.m_Textures.size();
+	offsets.cameraOffset   = (int)scene.m_Cameras.size();
+	offsets.lightOffset    = (int)scene.m_Lights.size();
 
 	scene.m_Nodes.resize(offsets.nodeOffset + data->nodes_count);
 	ProcessMaterialsAndImages(data, scene, sceneDir, offsets);
@@ -2398,14 +2365,45 @@ bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std:
 	ProcessAnimations(data, scene, offsets);
 	ProcessMeshes(data, scene, allVerticesQuantized, allIndices, offsets);
 
-	// only do this if not loading gltf from JSON scene, as JSON scene may already have a directional light baked in and we don't want to add another one on top of it
-	if (!bFromJSONScene)
-	{
-		SortLightsAddDefaultDirectionalLight(scene);
-	}
+	if (ensureDirectionalLight)
+		scene.EnsureDefaultDirectionalLight();
 
 	ProcessNodesAndHierarchy(data, scene, offsets);
 
 	cgltf_free(data);
 	return true;
+}
+
+bool SceneLoader::LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene)
+{
+	const cgltf_options options{};
+	cgltf_data* data = nullptr;
+	cgltf_result res = cgltf_parse_file(&options, scenePath.c_str(), &data);
+	if (res != cgltf_result_success || !data)
+	{
+		SDL_LOG_ASSERT_FAIL("glTF parse failed", "[Scene] Failed to parse glTF file: %s (result: %s)", scenePath.c_str(), cgltf_result_tostring(res));
+		return false;
+	}
+
+	const std::filesystem::path sceneDir = std::filesystem::path(scenePath).parent_path();
+	// only ensure a directional light if not loading from a JSON scene, as the JSON scene
+	// may already have one baked in and we don't want to add another on top of it
+	return ProcessParsedGLTF(data, scene, scenePath, sceneDir, allVerticesQuantized, allIndices, !bFromJSONScene);
+}
+
+bool SceneLoader::LoadGLTFSceneFromMemory(Scene& scene, const char* jsonData, size_t jsonSize, const std::filesystem::path& sceneDir, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices)
+{
+	cgltf_options options{};
+	cgltf_data* data = nullptr;
+	cgltf_result res = cgltf_parse(&options, jsonData, jsonSize, &data);
+	if (res != cgltf_result_success || !data)
+	{
+		SDL_LOG_ASSERT_FAIL("glTF memory parse failed", "[Scene] Failed to parse glTF from memory (result: %s)", cgltf_result_tostring(res));
+		return false;
+	}
+
+	// Pass an empty base path — embedded data URIs (data:...) are resolved by cgltf
+	// without needing a file path.  External file references will fail gracefully.
+	const std::string basePath = sceneDir.empty() ? "" : (sceneDir.string() + "/");
+	return ProcessParsedGLTF(data, scene, basePath, sceneDir, allVerticesQuantized, allIndices, /*ensureDirectionalLight=*/true);
 }

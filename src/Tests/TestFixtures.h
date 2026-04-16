@@ -108,3 +108,63 @@ nvrhi::TextureHandle CreateTestTexture2D(uint32_t width, uint32_t height, nvrhi:
 
 // Find a renderer by name (returns nullptr if not found).
 IRenderer* FindRendererByName(const char* name);
+
+// -----------------------------------------------------------------------
+// RunOneFrame — executes a single full rendering frame using the actual
+// Renderer pipeline against the hidden test swapchain.
+//
+// The caller is responsible for having a valid scene loaded (or not, for
+// empty-scene frames).  The function:
+//   1. Resets all renderer pass-enabled flags
+//   2. Resets the RenderGraph
+//   3. Schedules the standard Normal-mode renderer chain
+//   4. Compiles the RenderGraph
+//   5. Executes all scheduled tasks (records command lists)
+//   6. Flushes pending command lists to the GPU
+//   7. Waits for GPU idle
+//
+// Returns true if no exception was thrown.
+// -----------------------------------------------------------------------
+bool RunOneFrame();
+
+// -----------------------------------------------------------------------
+// ReadbackTexelFloat — reads a single texel from a GPU texture via a
+// staging texture.  Returns the R-channel value as a float.
+// Only valid for single-channel float formats (R32_FLOAT, R16_FLOAT, …).
+// -----------------------------------------------------------------------
+float ReadbackTexelFloat(nvrhi::TextureHandle tex, uint32_t x, uint32_t y);
+
+// -----------------------------------------------------------------------
+// ReadbackTexelRGBA8 — reads a single RGBA8_UNORM texel.
+// Returns the packed uint32 (R in bits 0-7, G in 8-15, B in 16-23, A in 24-31).
+// -----------------------------------------------------------------------
+uint32_t ReadbackTexelRGBA8(nvrhi::TextureHandle tex, uint32_t x, uint32_t y);
+
+// ============================================================================
+// MinimalSceneFixture — doctest fixture for tests that call RunOneFrame.
+//
+// Sets up a minimal, valid Scene + Graphic state before each test and tears
+// it down cleanly afterwards.  Use with TEST_CASE_FIXTURE:
+//
+//   TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-FF-01 ...")
+//   {
+//       CHECK_NOTHROW(RunOneFrame());
+//   }
+//
+// What the fixture guarantees:
+//   - Any previously loaded scene is shut down (GPU idle + Shutdown()).
+//   - g_Renderer.m_Scene is in a clean, empty state.
+//   - Exactly one directional light exists in the scene (via
+//     Scene::EnsureDefaultDirectionalLight) so renderers that read
+//     m_Lights.back() do not crash on an empty light list.
+//   - On destruction the scene is shut down again (GPU idle + Shutdown()).
+// ============================================================================
+struct MinimalSceneFixture
+{
+    MinimalSceneFixture();
+    ~MinimalSceneFixture();
+
+    // Non-copyable
+    MinimalSceneFixture(const MinimalSceneFixture&) = delete;
+    MinimalSceneFixture& operator=(const MinimalSceneFixture&) = delete;
+};

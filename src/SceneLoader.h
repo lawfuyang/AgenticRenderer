@@ -23,6 +23,10 @@ public:
 
     // Main GLTF loading function
     static bool LoadGLTFScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool bFromJSONScene);
+    // Load a glTF scene from an in-memory JSON string (embedded data URIs are supported;
+    // external file references are not resolved).  sceneDir is used only for texture
+    // path resolution — pass an empty path when all data is embedded.
+    static bool LoadGLTFSceneFromMemory(Scene& scene, const char* jsonData, size_t jsonSize, const std::filesystem::path& sceneDir, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
     static bool LoadJSONScene(Scene& scene, const std::string& scenePath, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices);
 
     // Helper functions for processing GLTF data
@@ -40,10 +44,13 @@ public:
     static void CreateAndUploadLightBuffer(Scene& scene);
 
 private:
+    // Shared post-parse pipeline used by both LoadGLTFScene and LoadGLTFSceneFromMemory.
+    // Takes ownership of `data` (always calls cgltf_free before returning).
+    static bool ProcessParsedGLTF(cgltf_data* data, Scene& scene, const std::string& bufferBasePath, const std::filesystem::path& sceneDir, std::vector<srrhi::VertexQuantized>& allVerticesQuantized, std::vector<uint32_t>& allIndices, bool ensureDirectionalLight);
+
     // Utility functions
     static void SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, const cgltf_data* data, int textureOffset);
     static void ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matrix& parent);
     static cgltf_result decompressMeshopt(cgltf_data* data);
     static const char* cgltf_result_tostring(cgltf_result result);
-    static void SortLightsAddDefaultDirectionalLight(Scene& scene);
 };
