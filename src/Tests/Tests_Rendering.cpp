@@ -73,15 +73,6 @@ namespace
                 ++count;
         return count;
     }
-
-    // Find a renderer by name (returns nullptr if not found).
-    IRenderer* FindRendererByName(const char* name)
-    {
-        for (const auto& r : g_Renderer.m_Renderers)
-            if (r && std::string_view(r->GetName()) == name)
-                return r.get();
-        return nullptr;
-    }
 } // anonymous namespace
 
 // ============================================================================

@@ -105,3 +105,6 @@ std::filesystem::path ReferenceImagePath(const char* filename);
 // Helper: create a minimal GPU texture from raw RGBA8 pixel data (CPU-only path).
 // Returns a valid nvrhi::TextureHandle or nullptr on failure.
 nvrhi::TextureHandle CreateTestTexture2D(uint32_t width, uint32_t height, nvrhi::Format format, const void* initialData, size_t rowPitch, const char* debugName = "TestTexture");
+
+// Find a renderer by name (returns nullptr if not found).
+IRenderer* FindRendererByName(const char* name);

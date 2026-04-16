@@ -103,3 +103,11 @@ nvrhi::TextureHandle CreateTestTexture2D(
 
     return tex;
 }
+
+IRenderer* FindRendererByName(const char* name)
+{
+    for (const auto& r : g_Renderer.m_Renderers)
+        if (r && std::string_view(r->GetName()) == name)
+            return r.get();
+    return nullptr;
+}
