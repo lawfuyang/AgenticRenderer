@@ -1506,6 +1506,12 @@ nvrhi::BindingSetDesc Renderer::CreateBindingSetDesc(std::span<const srrhi::Reso
 
     for (const srrhi::ResourceEntry& entry : resources)
     {
+        if (entry.type != srrhi::ResourceType::PushConstants && !entry.pResource)
+        {
+            SDL_Log("Null resource entry found in CreateBindingSetDesc: %s", entry.resourceName);
+            SDL_assert(false && "Null resource entry found in CreateBindingSetDesc");
+        }
+
         // Build texture subresource set from the mip/slice fields.
         // -1 values map to AllMipLevels / AllArraySlices.
         const nvrhi::TextureSubresourceSet subresources{
