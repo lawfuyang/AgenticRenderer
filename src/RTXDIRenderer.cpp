@@ -676,6 +676,9 @@ public:
             {
                 const srrhi::PerInstanceData& inst = scene.m_InstanceData[instanceIdx];
 
+                if (inst.m_MaterialIndex == UINT32_MAX)
+                    continue; // no material — skip
+
                 const Scene::Material& cpuMat = scene.m_Materials[inst.m_MaterialIndex];
                 const Vector3& emissive = cpuMat.m_EmissiveFactor;
                 const bool hasEmissiveTexture = (cpuMat.m_EmissiveTexture >= 0);

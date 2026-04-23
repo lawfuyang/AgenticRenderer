@@ -1423,16 +1423,16 @@ void SceneLoader::UpdateMaterialsAndCreateConstants(Scene& scene)
 		materialConstants.push_back(MaterialConstantsFromMaterial(mat, scene.m_Textures));
 	}
 
+	nvrhi::BufferDesc matBufDesc = nvrhi::BufferDesc()
+		.setByteSize(std::max(sizeof(srrhi::MaterialConstants), materialConstants.size() * sizeof(srrhi::MaterialConstants)))
+		.setStructStride(sizeof(srrhi::MaterialConstants))
+		.setInitialState(nvrhi::ResourceStates::ShaderResource)
+		.setKeepInitialState(true)
+		.setDebugName("MaterialConstantsBuffer");
+	scene.m_MaterialConstantsBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(matBufDesc);
+
 	if (!materialConstants.empty())
 	{
-		nvrhi::BufferDesc matBufDesc = nvrhi::BufferDesc()
-			.setByteSize(materialConstants.size() * sizeof(srrhi::MaterialConstants))
-			.setStructStride(sizeof(srrhi::MaterialConstants))
-			.setInitialState(nvrhi::ResourceStates::ShaderResource)
-			.setKeepInitialState(true)
-			.setDebugName("MaterialConstantsBuffer");
-		scene.m_MaterialConstantsBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(matBufDesc);
-
 		nvrhi::CommandListHandle cmd = g_Renderer.AcquireCommandList();
 		ScopedCommandList scopedCmd{ cmd, "Upload MaterialConstants" };
 		scopedCmd->writeBuffer(scene.m_MaterialConstantsBuffer, materialConstants.data(), materialConstants.size() * sizeof(srrhi::MaterialConstants));
@@ -2132,109 +2132,95 @@ void SceneLoader::CreateAndUploadGpuBuffers(Scene& scene, const std::vector<srrh
 	}
 
 	// Create index buffer
+
+	size_t ibytes = std::max<size_t>(sizeof(uint32_t), allIndices.size() * sizeof(uint32_t));
+	nvrhi::BufferDesc desc{};
+	desc.byteSize = (uint32_t)ibytes;
+	desc.structStride = sizeof(uint32_t);
+	desc.isIndexBuffer = true;
+	desc.initialState = nvrhi::ResourceStates::IndexBuffer;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_IndexBuffer";
+	desc.isAccelStructBuildInput = true;
+	scene.m_IndexBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
+
 	if (!allIndices.empty())
 	{
-		size_t ibytes = allIndices.size() * sizeof(uint32_t);
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)ibytes;
-		desc.structStride = sizeof(uint32_t);
-		desc.isIndexBuffer = true;
-		desc.initialState = nvrhi::ResourceStates::IndexBuffer;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_IndexBuffer";
-		desc.isAccelStructBuildInput = true;
-		scene.m_IndexBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-
 		cmd->writeBuffer(scene.m_IndexBuffer, allIndices.data(), ibytes, 0);
 	}
 
 	// Create mesh data buffer
+	desc.byteSize = std::max<size_t>(sizeof(srrhi::MeshData), scene.m_MeshData.size() * sizeof(srrhi::MeshData));
+	desc.structStride = sizeof(srrhi::MeshData);
+	desc.initialState = nvrhi::ResourceStates::ShaderResource;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_MeshDataBuffer";
+	scene.m_MeshDataBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
+
 	if (!scene.m_MeshData.empty())
 	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_MeshData.size() * sizeof(srrhi::MeshData));
-		desc.structStride = sizeof(srrhi::MeshData);
-		desc.initialState = nvrhi::ResourceStates::ShaderResource;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_MeshDataBuffer";
-		scene.m_MeshDataBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-
 		cmd->writeBuffer(scene.m_MeshDataBuffer, scene.m_MeshData.data(), scene.m_MeshData.size() * sizeof(srrhi::MeshData), 0);
 	}
 
 	// Create meshlet buffers
+	desc.byteSize = std::max<size_t>(sizeof(srrhi::Meshlet), scene.m_Meshlets.size() * sizeof(srrhi::Meshlet));
+	desc.structStride = sizeof(srrhi::Meshlet);
+	desc.initialState = nvrhi::ResourceStates::ShaderResource;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_MeshletBuffer";
+	scene.m_MeshletBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
+
 	if (!scene.m_Meshlets.empty())
 	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_Meshlets.size() * sizeof(srrhi::Meshlet));
-		desc.structStride = sizeof(srrhi::Meshlet);
-		desc.initialState = nvrhi::ResourceStates::ShaderResource;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_MeshletBuffer";
-		scene.m_MeshletBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-
 		cmd->writeBuffer(scene.m_MeshletBuffer, scene.m_Meshlets.data(), scene.m_Meshlets.size() * sizeof(srrhi::Meshlet), 0);
 	}
 
+	desc.byteSize = (uint32_t)std::max<size_t>(sizeof(uint32_t), scene.m_MeshletVertices.size() * sizeof(uint32_t));
+	desc.structStride = sizeof(uint32_t);
+	desc.initialState = nvrhi::ResourceStates::ShaderResource;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_MeshletVerticesBuffer";
+	scene.m_MeshletVerticesBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
+
 	if (!scene.m_MeshletVertices.empty())
 	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_MeshletVertices.size() * sizeof(uint32_t));
-		desc.structStride = sizeof(uint32_t);
-		desc.initialState = nvrhi::ResourceStates::ShaderResource;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_MeshletVerticesBuffer";
-		scene.m_MeshletVerticesBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-
 		cmd->writeBuffer(scene.m_MeshletVerticesBuffer, scene.m_MeshletVertices.data(), scene.m_MeshletVertices.size() * sizeof(uint32_t), 0);
 	}
 
+	desc.byteSize = (uint32_t)std::max<size_t>(sizeof(uint32_t), scene.m_MeshletTriangles.size() * sizeof(uint32_t));
+	desc.structStride = sizeof(uint32_t);
+	desc.initialState = nvrhi::ResourceStates::ShaderResource;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_MeshletTrianglesBuffer";
+	scene.m_MeshletTrianglesBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
+
 	if (!scene.m_MeshletTriangles.empty())
 	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_MeshletTriangles.size() * sizeof(uint32_t));
-		desc.structStride = sizeof(uint32_t);
-		desc.initialState = nvrhi::ResourceStates::ShaderResource;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_MeshletTrianglesBuffer";
-		scene.m_MeshletTrianglesBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-
 		cmd->writeBuffer(scene.m_MeshletTrianglesBuffer, scene.m_MeshletTriangles.data(), scene.m_MeshletTriangles.size() * sizeof(uint32_t), 0);
 	}
 
 	// Create instance data buffer
-	if (!scene.m_InstanceData.empty())
-	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData));
-		desc.structStride = sizeof(srrhi::PerInstanceData);
-		desc.canHaveUAVs = true; // TLASPatch_CS writes m_LODIndex each frame
-		desc.initialState = nvrhi::ResourceStates::ShaderResource;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_InstanceDataBuffer";
-		scene.m_InstanceDataBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-	}
+	desc.byteSize = (uint32_t)std::max<size_t>(sizeof(srrhi::PerInstanceData), scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData));
+	desc.structStride = sizeof(srrhi::PerInstanceData);
+	desc.canHaveUAVs = true; // TLASPatch_CS writes m_LODIndex each frame
+	desc.initialState = nvrhi::ResourceStates::ShaderResource;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_InstanceDataBuffer";
+	scene.m_InstanceDataBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
 
 	// Create per-instance LOD index buffer: instanceLOD[instanceIndex] = lodIndex.
 	// Written each frame by the GPU culling passes; read by TLASRenderer to patch BLAS addresses.
-	if (!scene.m_InstanceData.empty())
-	{
-		nvrhi::BufferDesc desc{};
-		desc.byteSize = (uint32_t)(scene.m_InstanceData.size() * sizeof(uint32_t));
-		desc.structStride = sizeof(uint32_t);
-		desc.canHaveUAVs = true;
-		desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-		desc.keepInitialState = true;
-		desc.debugName = "Scene_InstanceLODBuffer";
-		scene.m_InstanceLODBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
-	}
+	desc.byteSize = (uint32_t)std::max<size_t>(sizeof(uint32_t), scene.m_InstanceData.size() * sizeof(uint32_t));
+	desc.structStride = sizeof(uint32_t);
+	desc.canHaveUAVs = true;
+	desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+	desc.keepInitialState = true;
+	desc.debugName = "Scene_InstanceLODBuffer";
+	scene.m_InstanceLODBuffer = g_Renderer.m_RHI->m_NvrhiDevice->createBuffer(desc);
 
 	// Upload instance data
-	if (scene.m_InstanceDataBuffer)
-	{
-		if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
-			cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData), 0);
-	}
+	if (scene.m_InstanceDataBuffer && !scene.m_InstanceData.empty())
+		cmd->writeBuffer(scene.m_InstanceDataBuffer, scene.m_InstanceData.data(), scene.m_InstanceData.size() * sizeof(srrhi::PerInstanceData), 0);
 
 	// print buffers memory stats
 	// SDL_Log("[Scene] GPU Buffers Uploaded:\n"

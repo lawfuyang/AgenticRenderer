@@ -179,6 +179,8 @@ MinimalSceneFixture::~MinimalSceneFixture()
 
 bool RunOneFrame()
 {
+    DEV()->runGarbageCollection();
+
     // Update camera view constants (required by culling shaders)
     int windowW = 0, windowH = 0;
     SDL_GetWindowSize(g_Renderer.m_Window, &windowW, &windowH);
@@ -193,6 +195,7 @@ bool RunOneFrame()
     // Submit to GPU and wait for completion
     g_Renderer.ExecutePendingCommandLists();
 
+    g_Renderer.m_FrameTime = 16.6f; // assume 60 FPS for testing purposes
     ++g_Renderer.m_FrameNumber;
 
     return true;

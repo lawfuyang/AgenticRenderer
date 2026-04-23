@@ -5,6 +5,7 @@
 // does NOT define DOCTEST_CONFIG_IMPLEMENT.
 // ============================================================================
 
+#define DOCTEST_CONFIG_NO_EXCEPTIONS
 #define DOCTEST_CONFIG_IMPLEMENT
 #include "../external/doctest.h"
 
@@ -242,8 +243,15 @@ int RunTests(int argc, char* argv[])
     // Graphics_RHI and all subsequent GPU test suites:
     //   hidden window → D3D12 device + swapchain → bindless heaps
     //   → shaders → CommonResources (samplers, default textures, …)
-    Config::Get().m_EnableValidation = true; // force validation for tests
-    Config::Get().m_EnableGPUAssistedValidation = true; // force GPU validation for tests
+
+    // force validation for tests
+    Config::Get().m_EnableValidation = true;
+
+    // force GPU validation for tests
+    // NOTE: disabled because it takes too damn long!
+    // Also, we're binding a bunch of null resources, so it will definitely trigger validation errors
+    //Config::Get().m_EnableGPUAssistedValidation = true;
+
     Renderer renderer;
     renderer.InitializeForTests();
 

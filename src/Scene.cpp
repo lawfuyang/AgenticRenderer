@@ -162,7 +162,7 @@ void Scene::BuildAccelerationStructures()
     {
 		const srrhi::PerInstanceData& instData = m_InstanceData[instanceID];
 		Primitive* primitive = meshDataToPrimitive.at(instData.m_MeshDataIndex);
-		const uint32_t alphaMode = m_Materials.at(primitive->m_MaterialIndex).m_AlphaMode;
+		const uint32_t alphaMode = primitive->m_MaterialIndex != -1 ? m_Materials.at(primitive->m_MaterialIndex).m_AlphaMode : srrhi::CommonConsts::ALPHA_MODE_OPAQUE;
 
         nvrhi::rt::InstanceDesc& instanceDesc = m_RTInstanceDescs.emplace_back();
 

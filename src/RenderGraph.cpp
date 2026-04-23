@@ -730,6 +730,11 @@ void RenderGraph::Compile()
     m_IsCompiled = true;
 }
 
+void RenderGraph::PostRender()
+{
+    m_IsCompiled = false;
+}
+
 // ============================================================================
 // RenderGraph - Aliasing Barriers
 // ============================================================================
@@ -1069,6 +1074,8 @@ void RenderGraph::AllocateResourcesInternal(bool bIsBuffer, std::function<void(u
 
 nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle, RGResourceAccessMode access) const
 {
+    SDL_assert(m_IsCompiled && "GetTexture cannot be called before Compile() or after PostRender()");
+
     if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
     {
         SDL_assert(false && "Invalid texture handle");
@@ -1117,6 +1124,8 @@ nvrhi::TextureHandle RenderGraph::GetTexture(RGTextureHandle handle, RGResourceA
 
 nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAccessMode access) const
 {
+    SDL_assert(m_IsCompiled && "GetBuffer cannot be called before Compile() or after PostRender()");
+
     if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
     {
         SDL_assert(false && "Invalid buffer handle");
@@ -1160,6 +1169,36 @@ nvrhi::BufferHandle RenderGraph::GetBuffer(RGBufferHandle handle, RGResourceAcce
     SDL_assert(buffer.m_PhysicalBuffer);
     SDL_assert(buffer.m_IsAllocated && "Buffer not allocated");
     
+    return buffer.m_PhysicalBuffer;
+}
+
+nvrhi::TextureHandle RenderGraph::GetTextureRaw(RGTextureHandle handle) const
+{
+    if (!handle.IsValid() || handle.m_Index >= m_Textures.size())
+    {
+        SDL_assert(false && "Invalid texture handle");
+        return nullptr;
+    }
+    const TransientTexture& texture = m_Textures[handle.m_Index];
+
+    SDL_assert(texture.m_PhysicalTexture);
+    SDL_assert(texture.m_IsAllocated && "Texture not allocated");
+    
+    return texture.m_PhysicalTexture;
+}
+
+nvrhi::BufferHandle RenderGraph::GetBufferRaw(RGBufferHandle handle) const
+{
+    if (!handle.IsValid() || handle.m_Index >= m_Buffers.size())
+    {
+        SDL_assert(false && "Invalid buffer handle");
+        return nullptr;
+    }
+    const TransientBuffer& buffer = m_Buffers[handle.m_Index];
+
+    SDL_assert(buffer.m_PhysicalBuffer);
+    SDL_assert(buffer.m_IsAllocated && "Buffer not allocated");
+
     return buffer.m_PhysicalBuffer;
 }
 

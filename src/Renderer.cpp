@@ -771,6 +771,8 @@ void Renderer::ScheduleAndRunAllRenderers()
 
     // Wait for all render passes to finish recording
     m_TaskScheduler->ExecuteAllScheduledTasks();
+
+    m_RenderGraph.PostRender();
 }
 
 void Renderer::SetCameraFromSceneCamera(const Scene::Camera& sceneCam)

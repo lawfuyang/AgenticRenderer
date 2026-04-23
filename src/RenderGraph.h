@@ -169,10 +169,15 @@ public:
     void ScheduleRenderer(class IRenderer* pRenderer);
     
     void Compile();
+    void PostRender();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)
     nvrhi::TextureHandle GetTexture(RGTextureHandle handle, RGResourceAccessMode access) const;
     nvrhi::BufferHandle GetBuffer(RGBufferHandle handle, RGResourceAccessMode access) const;
+
+    // Raw retrieval without access validation (only for internal use by render loop or unit tests, not safe for general use)
+    nvrhi::TextureHandle GetTextureRaw(RGTextureHandle handle) const;
+    nvrhi::BufferHandle GetBufferRaw(RGBufferHandle handle) const;
     
     // Set the current active pass for validation (used during Render phase)
     void SetActivePass(uint16_t passIndex);
