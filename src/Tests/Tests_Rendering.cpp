@@ -36,6 +36,8 @@
 #include "GraphicsTestUtils.h"
 #include "../BasePassCommon.h"
 
+#include "shaders/srrhi/cpp/GPUCulling.h"
+
 // External renderer pointers (defined via REGISTER_RENDERER macros)
 extern IRenderer* g_ClearRenderer;
 extern IRenderer* g_OpaqueRenderer;
@@ -1643,15 +1645,13 @@ TEST_SUITE("Rendering_PipelineCache")
         nvrhi::ShaderHandle shader = g_Renderer.GetShaderHandle(ShaderID::GPUCULLING_CULLING_CSMAIN);
         REQUIRE(shader != nullptr);
 
-        // Build a minimal binding layout for the compute shader
-        nvrhi::BindingLayoutDesc layoutDesc;
-        layoutDesc.visibility = nvrhi::ShaderType::Compute;
-        nvrhi::BindingLayoutHandle layout = DEV()->createBindingLayout(layoutDesc);
-        REQUIRE(layout != nullptr);
-
+        srrhi::GPUCullingInputs inputs{};
+        nvrhi::BindingSetDesc setDesc = Renderer::CreateBindingSetDesc(inputs);
+        const nvrhi::BindingLayoutHandle layout = g_Renderer.GetOrCreateBindingLayoutFromBindingSetDesc(setDesc);
         nvrhi::BindingLayoutVector layouts = { layout };
-        nvrhi::ComputePipelineHandle pipeline =
-            g_Renderer.GetOrCreateComputePipeline(shader, layouts);
+        layouts.push_back(g_Renderer.GetStaticTextureBindingLayout());
+        layouts.push_back(g_Renderer.GetStaticSamplerBindingLayout());
+        nvrhi::ComputePipelineHandle pipeline = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
 
         CHECK(pipeline != nullptr);
     }
@@ -1666,12 +1666,12 @@ TEST_SUITE("Rendering_PipelineCache")
         nvrhi::ShaderHandle shader = g_Renderer.GetShaderHandle(ShaderID::GPUCULLING_CULLING_CSMAIN);
         REQUIRE(shader != nullptr);
 
-        nvrhi::BindingLayoutDesc layoutDesc;
-        layoutDesc.visibility = nvrhi::ShaderType::Compute;
-        nvrhi::BindingLayoutHandle layout = DEV()->createBindingLayout(layoutDesc);
-        REQUIRE(layout != nullptr);
-
+        srrhi::GPUCullingInputs inputs{};
+        nvrhi::BindingSetDesc setDesc = Renderer::CreateBindingSetDesc(inputs);
+        const nvrhi::BindingLayoutHandle layout = g_Renderer.GetOrCreateBindingLayoutFromBindingSetDesc(setDesc);
         nvrhi::BindingLayoutVector layouts = { layout };
+        layouts.push_back(g_Renderer.GetStaticTextureBindingLayout());
+        layouts.push_back(g_Renderer.GetStaticSamplerBindingLayout());
 
         nvrhi::ComputePipelineHandle p1 = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
         nvrhi::ComputePipelineHandle p2 = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
