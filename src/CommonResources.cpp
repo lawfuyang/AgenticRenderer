@@ -232,7 +232,7 @@ void CommonResources::Initialize()
         DefaultTexture3DWhite = createDefaultTexture("Default3DWhite", nvrhi::TextureDimension::Texture3D);
         DefaultTextureGray = createDefaultTexture("DefaultGray");
         DefaultTextureNormal = createDefaultTexture("DefaultNormal");
-        DefaultTexturePBR = createDefaultTexture("DefaultPBR", nvrhi::TextureDimension::Texture2D, nvrhi::Format::RG8_UNORM); // RM: Roughness=1, Metallic=0
+        DefaultTexturePBR = createDefaultTexture("DefaultPBR", nvrhi::TextureDimension::Texture2D, nvrhi::Format::RGBA8_UNORM); // ORM: Occlusion = 1, Metallic=0, Roughness=1
 
         // Create dummy UAV texture
         DummyUAVTexture = createDefaultTexture("DummyUAV", nvrhi::TextureDimension::Texture2D, nvrhi::Format::R32_FLOAT, true);
@@ -417,9 +417,9 @@ void CommonResources::Initialize()
         uint32_t normalPixel = 0xFFFF8080; // RGBA(128,128,255,255) - note: ABGR order in memory
         commandList->writeTexture(DefaultTextureNormal, 0, 0, &normalPixel, sizeof(uint32_t), 0);
 
-        // PBR texture (RM: Roughness=1, Metallic=0)
-        uint16_t pbrPixel = 0xFFFF; // RG(0,255) - R=Metallic(0), G=Roughness(255)
-        commandList->writeTexture(DefaultTexturePBR, 0, 0, &pbrPixel, sizeof(uint16_t), 0);
+        // PBR texture (ORM: Occlusion=1, Roughness=1, Metallic=0)
+        uint16_t pbrPixel = 0xFF00; // RGBA(255,0,255,255) in RG8, note: ABGR order in memory - Occlusion=1 (R=255), Metallic=0 (G=0), Roughness=1 (B=255)
+        commandList->writeTexture(DefaultTexturePBR, 0, 0, &pbrPixel, sizeof(uint32_t), 0);
 
         commandList->setPermanentTextureState(DefaultTextureBlack, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(DefaultTextureWhite, nvrhi::ResourceStates::ShaderResource);

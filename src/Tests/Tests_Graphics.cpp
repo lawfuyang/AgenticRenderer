@@ -497,13 +497,13 @@ TEST_SUITE("Graphics_DefaultTextures")
     }
 
     // ------------------------------------------------------------------
-    // TC-TEX-06: DefaultTexturePBR is RG8_UNORM (Roughness/Metallic)
+    // TC-TEX-06: DefaultTexturePBR is RGBA8_UNORM (Occlusion/Roughness/Metallic)
     // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-06 DefaultTextures — PBR is RG8_UNORM")
+    TEST_CASE("TC-TEX-06 DefaultTextures — PBR is RGBA8_UNORM")
     {
         REQUIRE(CR().DefaultTexturePBR != nullptr);
         const nvrhi::TextureDesc& desc = CR().DefaultTexturePBR->getDesc();
-        CHECK(desc.format == nvrhi::Format::RG8_UNORM);
+        CHECK(desc.format == nvrhi::Format::RGBA8_UNORM);
     }
 
     // ------------------------------------------------------------------

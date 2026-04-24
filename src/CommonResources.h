@@ -63,7 +63,7 @@ public:
     nvrhi::TextureHandle DefaultTexture3DWhite;      // 1x1x1 RGBA(1,1,1,1)
     nvrhi::TextureHandle DefaultTextureGray;         // RGBA(0.5,0.5,0.5,1)
     nvrhi::TextureHandle DefaultTextureNormal;       // RGBA(0.5,0.5,1,1) - neutral normal map
-    nvrhi::TextureHandle DefaultTexturePBR;          // RG(0,1) - ORM: Metallic=0, Roughness=1
+    nvrhi::TextureHandle DefaultTexturePBR;          // RGB(1, 0,1) - ORM: Occlusion = 1, Metallic=0, Roughness=1
     nvrhi::TextureHandle DummyUAVTexture;            // 1x1 UAV texture for filling slots
     nvrhi::TextureHandle DummySRVTexture;            // 1x1 SRV texture for filling slots
     nvrhi::TextureHandle BRDF_LUT;                   // BRDF integration LUT for IBL
