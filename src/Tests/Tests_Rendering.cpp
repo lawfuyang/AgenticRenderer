@@ -35,6 +35,9 @@
 #include "TestFixtures.h"
 #include "GraphicsTestUtils.h"
 #include "../BasePassCommon.h"
+#include "CommonResources.h"
+
+#include "shaders/srrhi/cpp/GPUCulling.h"
 
 // External renderer pointers (defined via REGISTER_RENDERER macros)
 extern IRenderer* g_ClearRenderer;
@@ -282,20 +285,13 @@ TEST_SUITE("Rendering_GBufferFormats")
         REQUIRE(sh > 0u);
 
         // Retrieve physical textures from the compiled RenderGraph
-        nvrhi::TextureHandle albedo = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_GBufferAlbedo, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle normals = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_GBufferNormals, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle orm = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_GBufferORM, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle emissive = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_GBufferEmissive, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle motion = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_GBufferMotionVectors, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle depth = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_DepthTexture, RGResourceAccessMode::Read);
-        nvrhi::TextureHandle hdr = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_HDRColor, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle albedo = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_GBufferAlbedo);
+        nvrhi::TextureHandle normals = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_GBufferNormals);
+        nvrhi::TextureHandle orm = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_GBufferORM);
+        nvrhi::TextureHandle emissive = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_GBufferEmissive);
+        nvrhi::TextureHandle motion = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_GBufferMotionVectors);
+        nvrhi::TextureHandle depth = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_DepthTexture);
+        nvrhi::TextureHandle hdr = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_HDRColor);
 
         REQUIRE(albedo   != nullptr);
         REQUIRE(normals  != nullptr);
@@ -489,7 +485,7 @@ TEST_SUITE("Rendering_RenderGraph")
 
         // After Compile, GetTexture must return non-null for all G-buffer handles
         auto getRead = [](RGTextureHandle h) {
-            return g_Renderer.m_RenderGraph.GetTexture(h, RGResourceAccessMode::Read);
+            return g_Renderer.m_RenderGraph.GetTextureRaw(h);
         };
 
         CHECK(getRead(g_RG_DepthTexture)          != nullptr);
@@ -595,8 +591,7 @@ TEST_SUITE("Rendering_FullFrame")
         // The depth texture is D24S8 — we cannot directly read it as R32_FLOAT.
         // Instead verify the physical texture exists and has the correct clear value
         // by checking the descriptor's clear value (set by ClearRenderer).
-        nvrhi::TextureHandle depth = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_DepthTexture, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle depth = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_DepthTexture);
         REQUIRE(depth != nullptr);
 
         const nvrhi::TextureDesc& d = depth->getDesc();
@@ -616,8 +611,7 @@ TEST_SUITE("Rendering_FullFrame")
 
         CHECK_NOTHROW(RunOneFrame());
 
-        nvrhi::TextureHandle hdr = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_HDRColor, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle hdr = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_HDRColor);
         REQUIRE(hdr != nullptr);
 
         const nvrhi::TextureDesc& d = hdr->getDesc();
@@ -1274,8 +1268,7 @@ TEST_SUITE("Rendering_HZB")
 
         CHECK(g_RG_HZBTexture.IsValid());
 
-        nvrhi::TextureHandle hzb = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_HZBTexture, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle hzb = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_HZBTexture);
         REQUIRE(hzb != nullptr);
 
         const nvrhi::TextureDesc& d = hzb->getDesc();
@@ -1298,8 +1291,7 @@ TEST_SUITE("Rendering_HZB")
 
         CHECK_NOTHROW(RunOneFrame());
 
-        nvrhi::TextureHandle hzb = g_Renderer.m_RenderGraph.GetTexture(
-            g_RG_HZBTexture, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle hzb = g_Renderer.m_RenderGraph.GetTextureRaw(g_RG_HZBTexture);
         REQUIRE(hzb != nullptr);
 
         const nvrhi::TextureDesc& d = hzb->getDesc();
@@ -1643,15 +1635,30 @@ TEST_SUITE("Rendering_PipelineCache")
         nvrhi::ShaderHandle shader = g_Renderer.GetShaderHandle(ShaderID::GPUCULLING_CULLING_CSMAIN);
         REQUIRE(shader != nullptr);
 
-        // Build a minimal binding layout for the compute shader
-        nvrhi::BindingLayoutDesc layoutDesc;
-        layoutDesc.visibility = nvrhi::ShaderType::Compute;
-        nvrhi::BindingLayoutHandle layout = DEV()->createBindingLayout(layoutDesc);
-        REQUIRE(layout != nullptr);
+        const nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::CullingConstants), "DeferredCB", 1);
+        const nvrhi::BufferHandle cb = DEV()->createBuffer(cbd);
 
+        srrhi::GPUCullingInputs inputs{};
+        inputs.SetCullingCB(cb);
+        inputs.SetInstanceData(CommonResources::GetInstance().DummySRVStructuredBuffer);
+        inputs.SetHZB(CommonResources::GetInstance().DummySRVTexture);
+        inputs.SetMeshData(CommonResources::GetInstance().DummySRVStructuredBuffer);
+        inputs.SetVisibleArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetVisibleCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetOccludedIndices(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetOccludedCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetDispatchIndirectArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletJobs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletJobCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletIndirectArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetInstanceLOD(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+
+        nvrhi::BindingSetDesc setDesc = Renderer::CreateBindingSetDesc(inputs);
+        const nvrhi::BindingLayoutHandle layout = g_Renderer.GetOrCreateBindingLayoutFromBindingSetDesc(setDesc);
         nvrhi::BindingLayoutVector layouts = { layout };
-        nvrhi::ComputePipelineHandle pipeline =
-            g_Renderer.GetOrCreateComputePipeline(shader, layouts);
+        layouts.push_back(g_Renderer.GetStaticTextureBindingLayout());
+        layouts.push_back(g_Renderer.GetStaticSamplerBindingLayout());
+        nvrhi::ComputePipelineHandle pipeline = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
 
         CHECK(pipeline != nullptr);
     }
@@ -1666,12 +1673,29 @@ TEST_SUITE("Rendering_PipelineCache")
         nvrhi::ShaderHandle shader = g_Renderer.GetShaderHandle(ShaderID::GPUCULLING_CULLING_CSMAIN);
         REQUIRE(shader != nullptr);
 
-        nvrhi::BindingLayoutDesc layoutDesc;
-        layoutDesc.visibility = nvrhi::ShaderType::Compute;
-        nvrhi::BindingLayoutHandle layout = DEV()->createBindingLayout(layoutDesc);
-        REQUIRE(layout != nullptr);
+        const nvrhi::BufferDesc cbd = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::CullingConstants), "DeferredCB", 1);
+        const nvrhi::BufferHandle cb = DEV()->createBuffer(cbd);
 
+        srrhi::GPUCullingInputs inputs{};
+        inputs.SetCullingCB(cb);
+        inputs.SetInstanceData(CommonResources::GetInstance().DummySRVStructuredBuffer);
+        inputs.SetHZB(CommonResources::GetInstance().DummySRVTexture);
+        inputs.SetMeshData(CommonResources::GetInstance().DummySRVStructuredBuffer);
+        inputs.SetVisibleArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetVisibleCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetOccludedIndices(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetOccludedCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetDispatchIndirectArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletJobs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletJobCount(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetMeshletIndirectArgs(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        inputs.SetInstanceLOD(CommonResources::GetInstance().DummyUAVStructuredBuffer);
+        
+        nvrhi::BindingSetDesc setDesc = Renderer::CreateBindingSetDesc(inputs);
+        const nvrhi::BindingLayoutHandle layout = g_Renderer.GetOrCreateBindingLayoutFromBindingSetDesc(setDesc);
         nvrhi::BindingLayoutVector layouts = { layout };
+        layouts.push_back(g_Renderer.GetStaticTextureBindingLayout());
+        layouts.push_back(g_Renderer.GetStaticSamplerBindingLayout());
 
         nvrhi::ComputePipelineHandle p1 = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
         nvrhi::ComputePipelineHandle p2 = g_Renderer.GetOrCreateComputePipeline(shader, layouts);
@@ -1823,7 +1847,7 @@ TEST_SUITE("Rendering_CommandList")
         // Return it by executing (open/close/execute)
         cmd->open();
         cmd->close();
-        DEV()->executeCommandList(cmd);
+        g_Renderer.ExecutePendingCommandLists();
         DEV()->waitForIdle();
     }
 
@@ -1844,8 +1868,7 @@ TEST_SUITE("Rendering_CommandList")
             cmds.push_back(cmd);
         }
 
-        for (auto& cmd : cmds)
-            DEV()->executeCommandList(cmd);
+        g_Renderer.ExecutePendingCommandLists();
 
         DEV()->waitForIdle();
     }

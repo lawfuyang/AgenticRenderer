@@ -9,25 +9,18 @@ class RenderGraph;
 // Resource Handles (opaque indices)
 // ============================================================================
 
-struct RGTextureHandle
+struct RGResourceHandleBase
 {
     uint32_t m_Index = UINT32_MAX;
     
     bool IsValid() const { return m_Index != UINT32_MAX; }
     void Invalidate() { m_Index = UINT32_MAX; }
-    bool operator==(const RGTextureHandle& other) const { return m_Index == other.m_Index; }
-    bool operator!=(const RGTextureHandle& other) const { return m_Index != other.m_Index; }
+    bool operator==(const RGResourceHandleBase& other) const { return m_Index == other.m_Index; }
+    bool operator!=(const RGResourceHandleBase& other) const { return m_Index != other.m_Index; }
 };
 
-struct RGBufferHandle
-{
-    uint32_t m_Index = UINT32_MAX;
-    
-    bool IsValid() const { return m_Index != UINT32_MAX; }
-    void Invalidate() { m_Index = UINT32_MAX; }
-    bool operator==(const RGBufferHandle& other) const { return m_Index == other.m_Index; }
-    bool operator!=(const RGBufferHandle& other) const { return m_Index != other.m_Index; }
-};
+struct RGTextureHandle : public RGResourceHandleBase {};
+struct RGBufferHandle : public RGResourceHandleBase {};
 
 // ============================================================================
 // Resource Descriptors
@@ -169,10 +162,15 @@ public:
     void ScheduleRenderer(class IRenderer* pRenderer);
     
     void Compile();
+    void PostRender();
     
     // Resource Retrieval (only valid after Compile and before Cleanup)
     nvrhi::TextureHandle GetTexture(RGTextureHandle handle, RGResourceAccessMode access) const;
     nvrhi::BufferHandle GetBuffer(RGBufferHandle handle, RGResourceAccessMode access) const;
+
+    // Raw retrieval without access validation (only for internal use by render loop or unit tests, not safe for general use)
+    nvrhi::TextureHandle GetTextureRaw(RGTextureHandle handle) const;
+    nvrhi::BufferHandle GetBufferRaw(RGBufferHandle handle) const;
     
     // Set the current active pass for validation (used during Render phase)
     void SetActivePass(uint16_t passIndex);
@@ -264,6 +262,6 @@ private:
     bool m_AliasingEnabled = true;
     bool m_IsCompiled = false;
     uint16_t m_CurrentPassIndex = 0;
-    uint64_t m_FrameIndex = 0;
+    bool m_bForceInvalidateAllResources = false;
 };
 
