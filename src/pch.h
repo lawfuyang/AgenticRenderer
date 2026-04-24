@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <queue>
 #include <span>
 #include <sstream>
 #include <string_view>
