@@ -253,10 +253,12 @@ void Scene::LoadScene()
 
 	const std::filesystem::path sceneFilePath(scenePath);
 	const std::filesystem::path sceneDir = sceneFilePath.parent_path();
+	const uint32_t baseMeshCount = (uint32_t)m_Meshes.size();
+	const uint32_t baseMeshDataCount = (uint32_t)m_MeshData.size();
+	const uint32_t baseMeshletVerticesCount = (uint32_t)m_MeshletVertices.size();
 
-	// Geometry vertex/index data is no longer accumulated on the main thread;
-	// all primitives are loaded asynchronously via AsyncMeshQueue.
-	// These vectors remain empty for the async path (gltfFilePath != "").
+	// Geometry data is produced synchronously unless async mesh loading is enabled.
+	// In async mode these vectors remain empty (placeholder cube path).
 	std::vector<srrhi::VertexQuantized> allVerticesQuantized;
 	std::vector<uint32_t> allIndices;
 
@@ -277,6 +279,46 @@ void Scene::LoadScene()
 	if (!success)
 	{
 		SDL_LOG_ASSERT_FAIL("Scene load failed", "[Scene] Failed to load scene: %s", scenePath.c_str());
+	}
+
+	if (!Config::Get().m_EnableAsyncMeshLoading)
+	{
+		// Sync mesh generation builds indices/offsets as if geometry starts at 0.
+		// Rebase to account for the preloaded default cube occupying the beginning
+		// of the shared scene GPU buffers.
+		const uint32_t baseVertexOffset = m_VertexBufferUsed;
+		const uint32_t baseIndexOffset = m_IndexBufferUsed;
+		if (baseVertexOffset > 0 || baseIndexOffset > 0)
+		{
+			for (uint32_t i = 0; i < (uint32_t)allIndices.size(); ++i)
+			{
+				allIndices[i] += baseVertexOffset;
+			}
+
+			for (uint32_t mi = baseMeshCount; mi < (uint32_t)m_Meshes.size(); ++mi)
+			{
+				for (Scene::Primitive& prim : m_Meshes[mi].m_Primitives)
+				{
+					prim.m_VertexOffset += baseVertexOffset;
+				}
+			}
+
+			for (uint32_t mdi = baseMeshDataCount; mdi < (uint32_t)m_MeshData.size(); ++mdi)
+			{
+				srrhi::MeshData& md = m_MeshData[mdi];
+				for (uint32_t lod = 0; lod < md.m_LODCount; ++lod)
+				{
+					md.m_IndexOffsets[lod] += baseIndexOffset;
+				}
+			}
+
+			for (uint32_t mvi = baseMeshletVerticesCount; mvi < (uint32_t)m_MeshletVertices.size(); ++mvi)
+			{
+				m_MeshletVertices[mvi] += baseVertexOffset;
+			}
+		}
+
+		UploadGeometryBuffers(allVerticesQuantized, allIndices);
 	}
 
 	FinalizeLoadedScene();

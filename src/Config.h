@@ -14,6 +14,12 @@ struct Config
     // Skip loading textures from scene
     bool m_SkipTextures = false;
 
+    // Enable async texture loading (disabled by default)
+    bool m_EnableAsyncTextureLoading = false;
+
+    // Enable async mesh loading (disabled by default)
+    bool m_EnableAsyncMeshLoading = false;
+
     bool ExecutePerPass = false;
     bool ExecutePerPassAndWait = false;
 

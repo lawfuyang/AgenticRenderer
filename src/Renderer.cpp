@@ -383,8 +383,14 @@ void Renderer::Initialize()
         return;
     }
 
-    m_AsyncTextureQueue.Start("AsyncTextureQueue");
-    m_AsyncMeshQueue.Start("AsyncMeshQueue");
+    if (Config::Get().m_EnableAsyncTextureLoading)
+    {
+        m_AsyncTextureQueue.Start("AsyncTextureQueue");
+    }
+    if (Config::Get().m_EnableAsyncMeshLoading)
+    {
+        m_AsyncMeshQueue.Start("AsyncMeshQueue");
+    }
 
     // Estimate scene geometry size to preallocate GPU buffers conservatively
     // (quick parse — no binary data loaded), then initialise the default cube
@@ -687,8 +693,14 @@ void Renderer::Shutdown()
 {
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
 
-    m_AsyncMeshQueue.Stop("AsyncMeshQueue");
-    m_AsyncTextureQueue.Stop("AsyncTextureQueue");
+    if (Config::Get().m_EnableAsyncMeshLoading)
+    {
+        m_AsyncMeshQueue.Stop("AsyncMeshQueue");
+    }
+    if (Config::Get().m_EnableAsyncTextureLoading)
+    {
+        m_AsyncTextureQueue.Stop("AsyncTextureQueue");
+    }
 
     MicroProfileShutdown();
 
