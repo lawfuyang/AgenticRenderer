@@ -890,7 +890,17 @@ void Scene::ApplyPendingUpdates()
 	}
 	{
 		std::lock_guard<std::mutex> lk(m_PendingMeshMutex);
-		localMeshes.swap(m_PendingMeshUpdates);
+		if (!m_PendingMeshUpdates.empty())
+		{
+			static const uint32_t kMaxMeshUpdatesPerFrame = 100;
+
+			for (uint32_t i = 0; i < kMaxMeshUpdatesPerFrame && !m_PendingMeshUpdates.empty(); ++i)
+			{
+				localMeshes.push_back(std::move(m_PendingMeshUpdates[0]));
+				std::swap(m_PendingMeshUpdates[0], m_PendingMeshUpdates.back());
+				m_PendingMeshUpdates.pop_back();
+			}
+		}
 	}
 
 	if (!localTexture.m_Data && localMeshes.empty())
