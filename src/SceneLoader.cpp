@@ -1155,7 +1155,7 @@ void SceneLoader::ComputeWorldTransforms(Scene& scene, int nodeIndex, const Matr
 // --- Helper pieces extracted from Scene::LoadScene for clarity ---
 void SceneLoader::SetTextureAndSampler(const cgltf_texture* tex, int& textureIndex, const cgltf_data* data, int textureOffset)
 {
-    if (tex && !Config::Get().m_SkipTextures)
+	if (tex)
     {
         textureIndex = static_cast<int>(cgltf_texture_index(data, tex)) + textureOffset;
     }
@@ -1307,11 +1307,6 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 
 void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sceneDir)
 {
-	if (Config::Get().m_SkipTextures)
-	{
-		return;
-	}
-
 	if (!Config::Get().m_EnableAsyncTextureLoading)
 	{
 		const uint32_t threadCount = g_Renderer.m_TaskScheduler->GetThreadCount() + 1;

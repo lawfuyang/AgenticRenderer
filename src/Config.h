@@ -11,8 +11,6 @@ struct Config
     std::string m_ScenePath = "";
     // Path to the KhronosGroup/glTF-Sample-Assets repository root (for tests)
     std::string m_GltfSamplesPath = "";
-    // Skip loading textures from scene
-    bool m_SkipTextures = false;
 
     // Enable async texture loading (disabled by default)
     bool m_EnableAsyncTextureLoading = false;

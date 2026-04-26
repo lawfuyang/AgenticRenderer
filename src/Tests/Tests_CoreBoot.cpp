@@ -187,14 +187,6 @@ TEST_SUITE("TaskScheduler")
 TEST_SUITE("Config")
 {
     // ------------------------------------------------------------------
-    // TC-CFG-03: Default skip-textures is false
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFG-03 Default config - skip-textures is false")
-    {
-        CHECK_FALSE(Config::Get().m_SkipTextures);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CFG-05: Default render-graph aliasing is enabled
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFG-05 Default config - render graph aliasing enabled")
@@ -213,19 +205,6 @@ TEST_SUITE("Config")
         Config::ParseCommandLine(2, const_cast<char**>(argv));
 
         CHECK(Config::Get().m_EnableValidation);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CFG-07: ParseCommandLine sets --skip-textures
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFG-07 ParseCommandLine - --skip-textures sets flag")
-    {
-        ConfigGuard guard;
-
-        const char* argv[] = { "HobbyRenderer", "--skip-textures" };
-        Config::ParseCommandLine(2, const_cast<char**>(argv));
-
-        CHECK(Config::Get().m_SkipTextures);
     }
 
     // ------------------------------------------------------------------
@@ -981,15 +960,15 @@ TEST_SUITE("Config_Extended")
     }
 
     // ------------------------------------------------------------------
-    // TC-CFGX-02: ParseCommandLine with two flags simultaneously
+    // TC-CFGX-02: ParseCommandLine with async texture loading flag
     // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-02 ParseCommandLine - --skip-textures sets flag")
+    TEST_CASE("TC-CFGX-02 ParseCommandLine - --enable-async-texture-loading sets flag")
     {
         ConfigGuard guard;
-        const char* argv[] = { "HobbyRenderer", "--skip-textures" };
+        const char* argv[] = { "HobbyRenderer", "--enable-async-texture-loading" };
         Config::ParseCommandLine(2, const_cast<char**>(argv));
 
-        CHECK(Config::Get().m_SkipTextures);
+        CHECK(Config::Get().m_EnableAsyncTextureLoading);
     }
 
     // ------------------------------------------------------------------
@@ -1015,15 +994,15 @@ TEST_SUITE("Config_Extended")
     }
 
     // ------------------------------------------------------------------
-    // TC-CFGX-06: --skip-textures and --disable-rendergraph-aliasing together
+    // TC-CFGX-06: --enable-async-texture-loading and --disable-rendergraph-aliasing together
     // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-06 ParseCommandLine - --skip-textures and --disable-rga together")
+    TEST_CASE("TC-CFGX-06 ParseCommandLine - --enable-async-texture-loading and --disable-rga together")
     {
         ConfigGuard guard;
-        const char* argv[] = { "HobbyRenderer", "--skip-textures", "--disable-rendergraph-aliasing" };
+        const char* argv[] = { "HobbyRenderer", "--enable-async-texture-loading", "--disable-rendergraph-aliasing" };
         Config::ParseCommandLine(3, const_cast<char**>(argv));
 
-        CHECK(Config::Get().m_SkipTextures);
+        CHECK(Config::Get().m_EnableAsyncTextureLoading);
         CHECK_FALSE(Config::Get().m_EnableRenderGraphAliasing);
     }
 
@@ -1032,14 +1011,14 @@ TEST_SUITE("Config_Extended")
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFGX-07 ConfigGuard - restores state correctly")
     {
-        const bool originalSkipTextures = Config::Get().m_SkipTextures;
+        const bool originalAsyncTexture = Config::Get().m_EnableAsyncTextureLoading;
         {
             ConfigGuard guard;
-            const_cast<Config&>(Config::Get()).m_SkipTextures = !originalSkipTextures;
-            CHECK(Config::Get().m_SkipTextures == !originalSkipTextures);
+            const_cast<Config&>(Config::Get()).m_EnableAsyncTextureLoading = !originalAsyncTexture;
+            CHECK(Config::Get().m_EnableAsyncTextureLoading == !originalAsyncTexture);
         }
         // Guard destructor should have restored the value.
-        CHECK(Config::Get().m_SkipTextures == originalSkipTextures);
+        CHECK(Config::Get().m_EnableAsyncTextureLoading == originalAsyncTexture);
     }
 }
 
