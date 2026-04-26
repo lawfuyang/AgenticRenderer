@@ -960,18 +960,6 @@ TEST_SUITE("Config_Extended")
     }
 
     // ------------------------------------------------------------------
-    // TC-CFGX-02: ParseCommandLine with async texture loading flag
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-02 ParseCommandLine - --enable-async-texture-loading sets flag")
-    {
-        ConfigGuard guard;
-        const char* argv[] = { "HobbyRenderer", "--enable-async-texture-loading" };
-        Config::ParseCommandLine(2, const_cast<char**>(argv));
-
-        CHECK(Config::Get().m_EnableAsyncTextureLoading);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CFGX-03: m_GltfSamplesPath default is empty string
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFGX-03 DefaultConfig - m_GltfSamplesPath default is empty")
@@ -994,31 +982,18 @@ TEST_SUITE("Config_Extended")
     }
 
     // ------------------------------------------------------------------
-    // TC-CFGX-06: --enable-async-texture-loading and --disable-rendergraph-aliasing together
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-06 ParseCommandLine - --enable-async-texture-loading and --disable-rga together")
-    {
-        ConfigGuard guard;
-        const char* argv[] = { "HobbyRenderer", "--enable-async-texture-loading", "--disable-rendergraph-aliasing" };
-        Config::ParseCommandLine(3, const_cast<char**>(argv));
-
-        CHECK(Config::Get().m_EnableAsyncTextureLoading);
-        CHECK_FALSE(Config::Get().m_EnableRenderGraphAliasing);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CFGX-07: ConfigGuard restores state after modification
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFGX-07 ConfigGuard - restores state correctly")
     {
-        const bool originalAsyncTexture = Config::Get().m_EnableAsyncTextureLoading;
+        const bool originalAsyncMesh = Config::Get().m_EnableAsyncMeshLoading;
         {
             ConfigGuard guard;
-            const_cast<Config&>(Config::Get()).m_EnableAsyncTextureLoading = !originalAsyncTexture;
-            CHECK(Config::Get().m_EnableAsyncTextureLoading == !originalAsyncTexture);
+            const_cast<Config&>(Config::Get()).m_EnableAsyncMeshLoading = !originalAsyncMesh;
+            CHECK(Config::Get().m_EnableAsyncMeshLoading == !originalAsyncMesh);
         }
         // Guard destructor should have restored the value.
-        CHECK(Config::Get().m_EnableAsyncTextureLoading == originalAsyncTexture);
+        CHECK(Config::Get().m_EnableAsyncMeshLoading == originalAsyncMesh);
     }
 }
 

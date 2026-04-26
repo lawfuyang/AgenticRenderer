@@ -383,10 +383,7 @@ void Renderer::Initialize()
         return;
     }
 
-    if (Config::Get().m_EnableAsyncTextureLoading)
-    {
-        m_AsyncTextureQueue.Start("AsyncTextureQueue");
-    }
+    m_AsyncTextureQueue.Start("AsyncTextureQueue");
     if (Config::Get().m_EnableAsyncMeshLoading)
     {
         m_AsyncMeshQueue.Start("AsyncMeshQueue");
@@ -697,10 +694,7 @@ void Renderer::Shutdown()
     {
         m_AsyncMeshQueue.Stop("AsyncMeshQueue");
     }
-    if (Config::Get().m_EnableAsyncTextureLoading)
-    {
-        m_AsyncTextureQueue.Stop("AsyncTextureQueue");
-    }
+    m_AsyncTextureQueue.Stop("AsyncTextureQueue");
 
     MicroProfileShutdown();
 

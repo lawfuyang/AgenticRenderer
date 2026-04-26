@@ -12,9 +12,6 @@ struct Config
     // Path to the KhronosGroup/glTF-Sample-Assets repository root (for tests)
     std::string m_GltfSamplesPath = "";
 
-    // Enable async texture loading (disabled by default)
-    bool m_EnableAsyncTextureLoading = false;
-
     // Enable async mesh loading (disabled by default)
     bool m_EnableAsyncMeshLoading = false;
 

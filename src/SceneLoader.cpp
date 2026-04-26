@@ -1307,69 +1307,6 @@ void SceneLoader::ProcessMaterialsAndImages(const cgltf_data* data, Scene& scene
 
 void SceneLoader::LoadTexturesFromImages(Scene& scene, const std::filesystem::path& sceneDir)
 {
-	if (!Config::Get().m_EnableAsyncTextureLoading)
-	{
-		const uint32_t threadCount = g_Renderer.m_TaskScheduler->GetThreadCount() + 1;
-		std::vector<nvrhi::CommandListHandle> threadCommandLists(threadCount);
-		for (uint32_t i = 0; i < threadCount; ++i)
-		{
-			threadCommandLists[i] = g_Renderer.AcquireCommandList();
-			threadCommandLists[i]->open();
-		}
-
-		g_Renderer.m_TaskScheduler->ParallelFor(static_cast<uint32_t>(scene.m_Textures.size()), [&](uint32_t i, uint32_t threadIndex)
-		{
-			Scene::Texture& tex = scene.m_Textures[i];
-			if (tex.m_Uri.empty())
-			{
-				SDL_LOG_ASSERT_FAIL("Texture URI missing", "[Scene] Texture %u has no URI, skipping (embedded images not yet supported)", i);
-			}
-
-			std::string decodedUri = tex.m_Uri;
-			cgltf_decode_uri(decodedUri.data());
-			decodedUri = decodedUri.c_str();
-
-			const std::filesystem::path fullPath = sceneDir / decodedUri;
-
-			if (!std::filesystem::exists(fullPath))
-			{
-				SDL_LOG_ASSERT_FAIL("Texture file not found", "[Scene] Texture file not found: %s", fullPath.string().c_str());
-			}
-
-			SDL_Log("[Scene] Loading texture: %s", fullPath.string().c_str());
-
-			nvrhi::TextureDesc desc;
-			std::unique_ptr<MemoryMappedDataReader> imgData;
-			if (!LoadTexture(fullPath.string(), desc, imgData))
-			{
-				SDL_LOG_ASSERT_FAIL("Texture load failed", "[Scene] Failed to load texture: %s", fullPath.string().c_str());
-			}
-
-			desc.debugName = fullPath.string();
-			tex.m_Handle = g_Renderer.m_RHI->m_NvrhiDevice->createTexture(desc);
-
-			nvrhi::CommandListHandle& cmd = threadCommandLists[threadIndex];
-			UploadTexture(cmd, tex.m_Handle, desc, imgData->GetData(), imgData->GetSize());
-		});
-
-		for (uint32_t i = 0; i < threadCount; ++i)
-		{
-			threadCommandLists[i]->close();
-		}
-
-		for (size_t ti = 0; ti < scene.m_Textures.size(); ++ti)
-		{
-			SDL_assert(scene.m_Textures[ti].m_Handle);
-			scene.m_Textures[ti].m_BindlessIndex = g_Renderer.RegisterTexture(scene.m_Textures[ti].m_Handle);
-			if (scene.m_Textures[ti].m_BindlessIndex == UINT32_MAX)
-			{
-				SDL_LOG_ASSERT_FAIL("Bindless texture registration failed", "[Scene] Bindless texture registration failed for %s", scene.m_Textures[ti].m_Uri.c_str());
-			}
-		}
-
-		return;
-	}
-
 	AsyncTextureQueue& q = g_Renderer.m_AsyncTextureQueue;
 
 	for (uint32_t i = 0; i < (uint32_t)scene.m_Textures.size(); ++i)
