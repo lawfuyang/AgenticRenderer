@@ -994,9 +994,9 @@ void Scene::ApplyPendingUpdates()
 					mesh.m_Center = Vector3(merged.Center.x, merged.Center.y, merged.Center.z);
 					mesh.m_Radius = merged.Radius;
 				}
-				SDL_Log("[Scene] Async BV mesh[%d] prim[%d]: center=(%.3f, %.3f, %.3f) radius=%.4f",
-					ap.first, ap.second,
-					mesh.m_Center.x, mesh.m_Center.y, mesh.m_Center.z, mesh.m_Radius);
+				// SDL_Log("[Scene] Async BV mesh[%d] prim[%d]: center=(%.3f, %.3f, %.3f) radius=%.4f",
+				// 	ap.first, ap.second,
+				// 	mesh.m_Center.x, mesh.m_Center.y, mesh.m_Center.z, mesh.m_Radius);
 			}
 
 			// Single node scan: patch m_MeshDataIndex and propagate updated BV.

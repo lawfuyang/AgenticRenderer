@@ -272,6 +272,9 @@ static void ProcessSinglePrimitiveFromMapped(const uint8_t* bufData, const Pendi
             cmd.m_Meshlets.push_back(gpuMeshlet);
         }
     }
+
+    // SDL_Log("[AsyncMeshQueue] Processed primitive: %zu LODs, %zu vertices, %zu indices, %zu meshlets",
+    //     cmd.m_MeshData.m_LODCount, cmd.m_Vertices.size(), cmd.m_Indices.size(), cmd.m_Meshlets.size());
 }
 
 PendingLoadID AsyncMeshQueue::EnqueueLoad(PendingAsyncMeshInfo info, OnLoadedCallback callback)
