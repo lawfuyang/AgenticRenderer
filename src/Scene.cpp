@@ -877,29 +877,24 @@ void Scene::Update(float deltaTime)
 void Scene::ApplyPendingUpdates()
 {
 	// ── Drain pending queues ────────────────────────────────────────────────
-	std::vector<TextureUpdateCommand> localTextures;
+	TextureUpdateCommand localTexture;
 	std::vector<MeshUpdateCommand>    localMeshes;
 	{
 		std::lock_guard<std::mutex> lk(m_PendingTextureMutex);
-		localTextures.swap(m_PendingTextureUpdates);
+		if (!m_PendingTextureUpdates.empty())
+		{
+			localTexture = std::move(m_PendingTextureUpdates[0]);
+			std::swap(m_PendingTextureUpdates[0], m_PendingTextureUpdates.back());
+			m_PendingTextureUpdates.pop_back();
+		}
 	}
 	{
 		std::lock_guard<std::mutex> lk(m_PendingMeshMutex);
 		localMeshes.swap(m_PendingMeshUpdates);
 	}
 
-	if (localTextures.empty() && localMeshes.empty())
+	if (!localTexture.m_Data && localMeshes.empty())
 		return;
-
-	SimpleTimer timer;
-	if (!localMeshes.empty())
-	{
-		SDL_Log("[Scene] Applying %zu pending mesh updates", localMeshes.size());
-	}
-	if (!localTextures.empty())
-	{
-		SDL_Log("[Scene] Applying %zu pending texture updates", localTextures.size());
-	}
 
 	nvrhi::IDevice* device = g_Renderer.m_RHI->m_NvrhiDevice;
 
@@ -908,26 +903,22 @@ void Scene::ApplyPendingUpdates()
 	ScopedCommandList scopedCmd{ cl, "ApplyPendingUpdates" };
 
 	// ── Texture updates ────────────────────────────────────────────────────────
-	bool bAnyTextureUpdated = false;
-	for (TextureUpdateCommand& cmd : localTextures)
+	bool bDoTextureUpdate = !!localTexture.m_Data;
+	bDoTextureUpdate &= !localTexture.m_bCancelled;
+	bDoTextureUpdate &= (localTexture.m_TextureIndex < (uint32_t)m_Textures.size());
+	if (bDoTextureUpdate)
 	{
-		if (cmd.m_bCancelled || !cmd.m_Data) continue;
-		if (cmd.m_TextureIndex >= (uint32_t)m_Textures.size()) continue;
+		Scene::Texture& tex = m_Textures[localTexture.m_TextureIndex];
 
-		Scene::Texture& tex = m_Textures[cmd.m_TextureIndex];
+		tex.m_Handle = device->createTexture(localTexture.m_Desc);
+		SDL_assert(tex.m_Handle && "Failed to create texture for update");
 
-		tex.m_Handle = device->createTexture(cmd.m_Desc);
-		if (!tex.m_Handle) continue;
-
-		UploadTexture(cl, tex.m_Handle, cmd.m_Desc, cmd.m_Data->GetData(), cmd.m_Data->GetSize());
+		UploadTexture(cl, tex.m_Handle, localTexture.m_Desc, localTexture.m_Data->GetData(), localTexture.m_Data->GetSize());
 
 		tex.m_BindlessIndex = g_Renderer.RegisterTexture(tex.m_Handle);
-		bAnyTextureUpdated  = true;
-	}
-
-	if (bAnyTextureUpdated)
-	{
+	
 		// Re-resolve all material texture indices and re-upload material constants.
+		// TODO: this is inefficient for just one texture update; we should track which materials reference the updated texture and only update those.  For now we expect few texture updates, so this is simpler.
 		for (Material& mat : m_Materials)
 		{
 			if (mat.m_BaseColorTexture != -1)
@@ -1113,11 +1104,6 @@ void Scene::ApplyPendingUpdates()
 	{
 		// BVH build uses its own command list (may need different queue requirements).
 		BuildAccelerationStructures(cl);
-	}
-
-	if (!localMeshes.empty() || !localTextures.empty())
-	{
-		SDL_Log("[Scene] Finished applying pending updates in %.2f ms", timer.TotalMilliseconds());
 	}
 }
 
