@@ -31,11 +31,6 @@ void Config::ParseCommandLine(int argc, char* argv[])
                 SDL_LOG_ASSERT_FAIL("Missing value for --scene", "[Config] Missing value for --scene");
             }
         }
-        else if (std::strcmp(arg, "--enable-async-mesh-loading") == 0)
-        {
-            s_Instance.m_EnableAsyncMeshLoading = true;
-            SDL_Log("[Config] Async mesh loading enabled via command line");
-        }
         else if (std::strcmp(arg, "--gltf-samples") == 0)
         {
             if (i + 1 < argc)
@@ -138,7 +133,6 @@ void Config::ParseCommandLine(int argc, char* argv[])
             SDL_Log("  --execute-per-pass-and-wait      Wait for idle after each pass execution");
             SDL_Log("  --disable-rendergraph-aliasing   Disable render graph aliasing");
             SDL_Log("  --scene <path>                   Load the specified scene file");
-            SDL_Log("  --enable-async-mesh-loading     Enable async mesh loading");
             SDL_Log("  --gltf-samples <path>            Path to KhronosGroup/glTF-Sample-Assets repo root (for tests)");
             SDL_Log("  --irradiance <path>              Path to irradiance cubemap texture (DDS)");
             SDL_Log("  --radiance <path>                Path to radiance cubemap texture (DDS)");

@@ -1555,7 +1555,7 @@ void SceneLoader::ProcessMeshes(const cgltf_data* data, Scene& scene, std::vecto
 	// cube (MeshData slot 0) as a stand-in for every primitive. Real geometry is
 	// loaded on a background thread via AsyncMeshQueue and arrives through
 	// ApplyPendingUpdates().
-	if (!gltfFilePath.empty() && Config::Get().m_EnableAsyncMeshLoading)
+	if (!gltfFilePath.empty())
 	{
 		// Cube vertex count — safe fallback to 24 if the scene isn't pre-populated.
 		const uint32_t cubeVertexCount =

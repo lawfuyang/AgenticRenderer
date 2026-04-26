@@ -986,14 +986,14 @@ TEST_SUITE("Config_Extended")
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFGX-07 ConfigGuard - restores state correctly")
     {
-        const bool originalAsyncMesh = Config::Get().m_EnableAsyncMeshLoading;
+        const bool originalValidation = Config::Get().m_EnableValidation;
         {
             ConfigGuard guard;
-            const_cast<Config&>(Config::Get()).m_EnableAsyncMeshLoading = !originalAsyncMesh;
-            CHECK(Config::Get().m_EnableAsyncMeshLoading == !originalAsyncMesh);
+            const_cast<Config&>(Config::Get()).m_EnableValidation = !originalValidation;
+            CHECK(Config::Get().m_EnableValidation == !originalValidation);
         }
         // Guard destructor should have restored the value.
-        CHECK(Config::Get().m_EnableAsyncMeshLoading == originalAsyncMesh);
+        CHECK(Config::Get().m_EnableValidation == originalValidation);
     }
 }
 

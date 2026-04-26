@@ -247,6 +247,7 @@ struct Renderer
     // ReSTIR DI settings
     bool m_EnableReSTIRDI = true;
     bool m_EnableReSTIRDIRelaxDenoising = true;
+    bool m_bRestoreReSTIRDIAfterAsyncMeshLoad = false;
 
     // bloom
     float m_BloomKnee = 0.1f;

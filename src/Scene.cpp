@@ -40,6 +40,25 @@ static nvrhi::BufferHandle AppendToGpuBuffer(
     return newBuf;
 }
 
+// Placeholder cube instances intentionally ignore node scaling so temporary
+// stand-ins do not inherit extreme authored root scales.
+static Matrix BuildInstanceWorldTransform(const Matrix& nodeWorld, bool bUsesPlaceholderCube)
+{
+	if (!bUsesPlaceholderCube)
+		return nodeWorld;
+
+	DirectX::XMVECTOR scale;
+	DirectX::XMVECTOR rot;
+	DirectX::XMVECTOR trans;
+	DirectX::XMMatrixDecompose(&scale, &rot, &trans, DirectX::XMLoadFloat4x4(&nodeWorld));
+
+	Matrix out{};
+	const DirectX::XMMATRIX m = DirectX::XMMatrixRotationQuaternion(rot) *
+		DirectX::XMMatrixTranslationFromVector(trans);
+	DirectX::XMStoreFloat4x4(&out, m);
+	return out;
+}
+
 void Scene::InitializeDefaultCube(uint32_t vertexCapacity, uint32_t indexCapacity)
 {
 	SDL_assert(m_Meshes.empty() && "InitializeDefaultCube must be called on an empty scene");
@@ -257,8 +276,8 @@ void Scene::LoadScene()
 	const uint32_t baseMeshDataCount = (uint32_t)m_MeshData.size();
 	const uint32_t baseMeshletVerticesCount = (uint32_t)m_MeshletVertices.size();
 
-	// Geometry data is produced synchronously unless async mesh loading is enabled.
-	// In async mode these vectors remain empty (placeholder cube path).
+	// Runtime scene loading uses async placeholder meshes; these arrays remain
+	// empty in this path (background mesh updates append real geometry later).
 	std::vector<srrhi::VertexQuantized> allVerticesQuantized;
 	std::vector<uint32_t> allIndices;
 
@@ -281,45 +300,11 @@ void Scene::LoadScene()
 		SDL_LOG_ASSERT_FAIL("Scene load failed", "[Scene] Failed to load scene: %s", scenePath.c_str());
 	}
 
-	if (!Config::Get().m_EnableAsyncMeshLoading)
-	{
-		// Sync mesh generation builds indices/offsets as if geometry starts at 0.
-		// Rebase to account for the preloaded default cube occupying the beginning
-		// of the shared scene GPU buffers.
-		const uint32_t baseVertexOffset = m_VertexBufferUsed;
-		const uint32_t baseIndexOffset = m_IndexBufferUsed;
-		if (baseVertexOffset > 0 || baseIndexOffset > 0)
-		{
-			for (uint32_t i = 0; i < (uint32_t)allIndices.size(); ++i)
-			{
-				allIndices[i] += baseVertexOffset;
-			}
-
-			for (uint32_t mi = baseMeshCount; mi < (uint32_t)m_Meshes.size(); ++mi)
-			{
-				for (Scene::Primitive& prim : m_Meshes[mi].m_Primitives)
-				{
-					prim.m_VertexOffset += baseVertexOffset;
-				}
-			}
-
-			for (uint32_t mdi = baseMeshDataCount; mdi < (uint32_t)m_MeshData.size(); ++mdi)
-			{
-				srrhi::MeshData& md = m_MeshData[mdi];
-				for (uint32_t lod = 0; lod < md.m_LODCount; ++lod)
-				{
-					md.m_IndexOffsets[lod] += baseIndexOffset;
-				}
-			}
-
-			for (uint32_t mvi = baseMeshletVerticesCount; mvi < (uint32_t)m_MeshletVertices.size(); ++mvi)
-			{
-				m_MeshletVertices[mvi] += baseVertexOffset;
-			}
-		}
-
-		UploadGeometryBuffers(allVerticesQuantized, allIndices);
-	}
+	(void)baseMeshCount;
+	(void)baseMeshDataCount;
+	(void)baseMeshletVerticesCount;
+	(void)allVerticesQuantized;
+	(void)allIndices;
 
 	FinalizeLoadedScene();
 
@@ -585,7 +570,7 @@ void Scene::FinalizeLoadedScene()
     std::vector<InstInfo> maskedStatic, maskedDynamic;
     std::vector<InstInfo> transparentStatic, transparentDynamic;
 
-    for (int ni = 0; ni < (int)m_Nodes.size(); ++ni)
+	for (int ni = 0; ni < (int)m_Nodes.size(); ++ni)
     {
         const Node& node = m_Nodes[ni];
         if (node.m_MeshIndex < 0) continue;
@@ -593,8 +578,9 @@ void Scene::FinalizeLoadedScene()
         for (const Primitive& prim : mesh.m_Primitives)
         {
             srrhi::PerInstanceData inst{};
-            inst.m_World = node.m_WorldTransform;
-            inst.m_PrevWorld = node.m_WorldTransform;
+			const bool bUsesPlaceholderCube = (prim.m_MeshDataIndex == 0);
+			inst.m_World = BuildInstanceWorldTransform(node.m_WorldTransform, bUsesPlaceholderCube);
+			inst.m_PrevWorld = inst.m_World;
             inst.m_MaterialIndex = prim.m_MaterialIndex;
             inst.m_MeshDataIndex = prim.m_MeshDataIndex;
             inst.m_Center = node.m_Center;
@@ -845,7 +831,8 @@ void Scene::Update(float deltaTime)
 			// Sync instances
 			for (uint32_t instIdx : node.m_InstanceIndices)
 			{
-				m_InstanceData[instIdx].m_World = node.m_WorldTransform;
+				const bool bUsesPlaceholderCube = (m_InstanceData[instIdx].m_MeshDataIndex == 0);
+				m_InstanceData[instIdx].m_World = BuildInstanceWorldTransform(node.m_WorldTransform, bUsesPlaceholderCube);
 				m_InstanceData[instIdx].m_Center = node.m_Center;
 				m_InstanceData[instIdx].m_Radius = node.m_Radius;
 
@@ -853,7 +840,7 @@ void Scene::Update(float deltaTime)
 				m_InstanceDirtyRange.second = std::max(m_InstanceDirtyRange.second, instIdx);
 
 				// Update RT instance transform
-				const Matrix& world = node.m_WorldTransform;
+				const Matrix& world = m_InstanceData[instIdx].m_World;
 				nvrhi::rt::AffineTransform transform;
 				transform[0] = world._11; transform[1] = world._21; transform[2] = world._31; transform[3] = world._41;
 				transform[4] = world._12; transform[5] = world._22; transform[6] = world._32; transform[7] = world._42;
@@ -1052,7 +1039,17 @@ void Scene::ApplyPendingUpdates()
 				{
 					const uint32_t instIdx = node.m_InstanceIndices[ap.second];
 					if (instIdx < (uint32_t)m_InstanceData.size())
+					{
+						const bool bWasPlaceholderCube = (m_InstanceData[instIdx].m_MeshDataIndex == 0);
 						m_InstanceData[instIdx].m_MeshDataIndex = globalMeshDataOffset;
+
+						if (bWasPlaceholderCube)
+						{
+							m_InstanceData[instIdx].m_World = BuildInstanceWorldTransform(node.m_WorldTransform, false);
+							m_InstanceDirtyRange.first  = std::min(m_InstanceDirtyRange.first,  instIdx);
+							m_InstanceDirtyRange.second = std::max(m_InstanceDirtyRange.second, instIdx);
+						}
+					}
 				}
 
 				if (bHasSphere)

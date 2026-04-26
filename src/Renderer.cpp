@@ -384,10 +384,7 @@ void Renderer::Initialize()
     }
 
     m_AsyncTextureQueue.Start("AsyncTextureQueue");
-    if (Config::Get().m_EnableAsyncMeshLoading)
-    {
         m_AsyncMeshQueue.Start("AsyncMeshQueue");
-    }
 
     // Estimate scene geometry size to preallocate GPU buffers conservatively
     // (quick parse — no binary data loaded), then initialise the default cube
@@ -625,6 +622,23 @@ void Renderer::Run()
         m_Scene.m_ViewPrev = m_Scene.m_View;
         m_Scene.m_Camera.FillPlanarViewConstants(m_Scene.m_View, (float)windowW, (float)windowH);
 
+        {
+            const uint32_t pendingMeshLoads = m_AsyncMeshQueue.GetPendingCount();
+            if (pendingMeshLoads > 0)
+            {
+                if (m_EnableReSTIRDI)
+                {
+                    m_EnableReSTIRDI = false;
+                    m_bRestoreReSTIRDIAfterAsyncMeshLoad = true;
+                }
+            }
+            else if (m_bRestoreReSTIRDIAfterAsyncMeshLoad)
+            {
+                m_EnableReSTIRDI = true;
+                m_bRestoreReSTIRDIAfterAsyncMeshLoad = false;
+            }
+        }
+
         const int readIndex = m_FrameNumber % 2;
         const int writeIndex = (m_FrameNumber + 1) % 2;
 
@@ -690,10 +704,7 @@ void Renderer::Shutdown()
 {
     ScopedTimerLog shutdownScope{"[Timing] Shutdown phase:"};
 
-    if (Config::Get().m_EnableAsyncMeshLoading)
-    {
-        m_AsyncMeshQueue.Stop("AsyncMeshQueue");
-    }
+    m_AsyncMeshQueue.Stop("AsyncMeshQueue");
     m_AsyncTextureQueue.Stop("AsyncTextureQueue");
 
     MicroProfileShutdown();
