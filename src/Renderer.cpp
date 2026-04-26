@@ -1011,7 +1011,7 @@ bool Renderer::RegisterTextureAtIndex(uint32_t index, nvrhi::TextureHandle textu
         SDL_LOG_ASSERT_FAIL("Failed to register texture in static descriptor table", "[Renderer] Failed to register texture at index %u", index);
         return false;
     }
-    SDL_Log("[Renderer] Registered texture (%s) at index %u", texture->getDesc().debugName.c_str(), index);
+    //SDL_Log("[Renderer] Registered texture (%s) at index %u", texture->getDesc().debugName.c_str(), index);
     return true;
 }
 
@@ -1060,7 +1060,7 @@ bool Renderer::RegisterSamplerAtIndex(uint32_t index, nvrhi::SamplerHandle sampl
         SDL_LOG_ASSERT_FAIL("Failed to register sampler in global descriptor table", "[Renderer] Failed to register sampler at index %u", index);
         return false;
     }
-    SDL_Log("[Renderer] Registered sampler at index %u", index);
+    //SDL_Log("[Renderer] Registered sampler at index %u", index);
     return true;
 }
 
