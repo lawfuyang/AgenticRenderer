@@ -767,6 +767,12 @@ void Scene::Update(float deltaTime)
 			anim.m_CurrentTime = fmodf(anim.m_CurrentTime, anim.m_Duration);
 	}
 
+	// Reset dirty ranges before evaluating channels.
+	// NOTE: This reset only runs when animations are non-empty.  If the dirty
+	// range was set manually (e.g. by a scene mutation outside of Update()) and
+	// there are no animations, the range will NOT be reset here.  In that case
+	// the caller (Renderer::ScheduleAndRunAllRenderers) is responsible for
+	// resetting it after uploading the dirty instances.
 	m_InstanceDirtyRange = { UINT32_MAX, 0 };
 	m_MaterialDirtyRange = { UINT32_MAX, 0 };
 

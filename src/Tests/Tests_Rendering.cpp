@@ -499,8 +499,7 @@ TEST_SUITE("Rendering_RenderGraph")
     }
 
     // ------------------------------------------------------------------
-    // TC-RG-10: HZB texture is persistent — handle survives across two
-    //           consecutive frames
+    // TC-RG-10: HZB texture is persistent — handle survives across consecutive frames.
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RG-10 RenderGraph - HZB persistent texture survives across frames")
     {
@@ -518,7 +517,6 @@ TEST_SUITE("Rendering_RenderGraph")
         CHECK(hzbAfterFrame1 == hzbAfterFrame2);
     }
 }
-
 // ============================================================================
 // TEST SUITE: Rendering_FullFrame
 // ============================================================================

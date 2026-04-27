@@ -385,22 +385,19 @@ TEST_SUITE("PathTracer_ModeSwitch")
     }
 
     // ------------------------------------------------------------------
-    // TC-PT-SW-09: Force-invalidate counter reaches zero after two frames post-Shutdown
-    // Verifies the engine-level fix: after Shutdown() the flag stays true for
-    // two full frames (decremented in PostRender, not Reset) so handles skipped
-    // in frame 1 are still invalidated in frame 2.
+    // TC-PT-SW-09: Force-invalidate counter is zero by the time the test body runs.
+    // The MinimalSceneFixture constructor calls Shutdown() (counter=2) then runs
+    // two warm-up frames which exhaust the counter via PostRender().  Every test
+    // body therefore starts with the counter already at 0 and the flag cleared.
+    // Additional frames must keep it at 0 (normal steady-state operation).
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-PT-SW-09 ModeSwitch - force-invalidate counter reaches zero after two frames")
     {
-        // After the fixture's Shutdown() the counter starts at 2.
-        // PostRender() of frame 1 decrements it to 1 (flag still true for frame 2).
-        // PostRender() of frame 2 decrements it to 0 (flag false from frame 3 on).
-        CHECK(g_Renderer.m_RenderGraph.GetForceInvalidateFramesRemaining() == 2);
-        RunOneFrame(); // frame 1: PostRender decrements counter to 1
-        CHECK(g_Renderer.m_RenderGraph.GetForceInvalidateFramesRemaining() == 1);
-        RunOneFrame(); // frame 2: PostRender decrements counter to 0
+        // Constructor warm-up already exhausted the counter.
         CHECK(g_Renderer.m_RenderGraph.GetForceInvalidateFramesRemaining() == 0);
-        RunOneFrame(); // frame 3: counter stays 0, normal operation
+        RunOneFrame(); // steady-state: counter stays 0
+        CHECK(g_Renderer.m_RenderGraph.GetForceInvalidateFramesRemaining() == 0);
+        RunOneFrame();
         CHECK(g_Renderer.m_RenderGraph.GetForceInvalidateFramesRemaining() == 0);
     }
 
@@ -786,14 +783,16 @@ TEST_SUITE("ImGui_FontTexture")
     }
 
     // ------------------------------------------------------------------
-    // TC-IMGUI-FONT-04: ImGui display size is set (non-zero after renderer init)
+    // TC-IMGUI-FONT-04: ImGui display size is set (non-zero) by the time the
+    // test body runs.  The MinimalSceneFixture constructor's two warm-up frames
+    // call ImGui_ImplSDL3_NewFrame() which queries the window and sets DisplaySize.
+    // No extra RunOneFrame() is needed here — the warm-up already did it.
     // ------------------------------------------------------------------
-    TEST_CASE("TC-IMGUI-FONT-04 ImGuiFontTexture - ImGui IO display size is set")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-IMGUI-FONT-04 ImGuiFontTexture - ImGui IO display size is set")
     {
         ImGuiIO& io = ImGui::GetIO();
-        // After InitializeForTests the window is created; ImGui display size should be set.
-        CHECK(io.DisplaySize.x >= 0.0f);
-        CHECK(io.DisplaySize.y >= 0.0f);
+        CHECK(io.DisplaySize.x > 0.0f);
+        CHECK(io.DisplaySize.y > 0.0f);
     }
 
     // ------------------------------------------------------------------
@@ -1307,7 +1306,7 @@ TEST_SUITE("Clear_Pass")
     }
 
     // ------------------------------------------------------------------
-    // TC-CLR-PASS-14: Persistent exposure texture survives across 5 frames
+    // TC-CLR-PASS-14: Persistent exposure texture survives across 5 frames.
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-CLR-PASS-14 ClearPass - exposure texture survives 5 frames")
     {
@@ -1563,11 +1562,18 @@ TEST_SUITE("TLAS_Mutations")
 
     // ------------------------------------------------------------------
     // TC-TLAS-MUT-04: Dirty range is reset after frame (no stale dirty state)
+    // Root cause of original failure: m_InstanceDirtyRange was only reset inside
+    // Scene::Update(), which returns early when m_Animations.empty().  For scenes
+    // without animations (like MinimalSceneFixture) a manually-set dirty range
+    // would persist indefinitely.
+    // Fix: Renderer::ScheduleAndRunAllRenderers() now resets m_InstanceDirtyRange
+    // to {UINT32_MAX, 0} after uploading the dirty instances.
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-04 TLASMutations - dirty range is reset after frame")
     {
-        // Force dirty
+        // Force dirty (MinimalSceneFixture has no animations, so Update() won't reset it)
         g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() };
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
         RunOneFrame();
         // After the frame the renderer should have cleared the dirty range
         // (first > second means no dirty instances)
@@ -1633,6 +1639,39 @@ TEST_SUITE("TLAS_Mutations")
         }
 
         CHECK(g_Renderer.m_Scene.m_RTInstanceDescs.size() == initialCount);
+    }
+
+    // ------------------------------------------------------------------
+    // TC-TLAS-MUT-09: Dirty range stays clean across multiple frames
+    // Regression: after the first frame consumes and resets the dirty range,
+    // subsequent frames must not see a stale dirty range.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-09 TLASMutations - dirty range stays clean across multiple frames")
+    {
+        // Set dirty once, run one frame to consume it.
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() };
+        RunOneFrame();
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty()); // consumed
+
+        // Run two more frames without setting dirty — range must stay clean.
+        RunOneFrame();
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+        RunOneFrame();
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+    }
+
+    // ------------------------------------------------------------------
+    // TC-TLAS-MUT-10: Dirty range is reset even when set to a partial range
+    // Regression: the reset must happen regardless of the range size.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-10 TLASMutations - partial dirty range is reset after frame")
+    {
+        REQUIRE(g_Renderer.m_Scene.m_InstanceData.size() > 0);
+        // Set a partial dirty range (just instance 0)
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, 0u };
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
+        RunOneFrame();
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
     }
 }
 

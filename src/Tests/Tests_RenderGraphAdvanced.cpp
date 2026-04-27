@@ -450,11 +450,11 @@ TEST_SUITE("RGAdv_PersistentResources")
     // TC-RGA-P01: Persistent texture slot is stable when the same handle
     //             is re-declared across frames.
     //
-    //   By design, callers must hold the RGTextureHandle in a member variable
-    //   and pass it back to DeclarePersistentTexture every frame.  DeclareTexture
-    //   takes the "valid handle" fast-path, re-marking the existing slot without
-    //   allocating a new one.  This test verifies that slot index is unchanged
-    //   after two frame cycles.
+    //   Callers hold the RGTextureHandle in a member variable and pass it
+    //   back to DeclarePersistentTexture every frame.  DeclareTexture takes
+    //   the "valid handle" fast-path, re-marking the existing slot without
+    //   allocating a new one.
+    //
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-P01 PersistentResources - persistent texture same handle across frames")
     {
@@ -472,7 +472,7 @@ TEST_SUITE("RGAdv_PersistentResources")
         g_Renderer.m_RenderGraph.EndSetup(true);
         REQUIRE(h.IsValid());
         const uint32_t firstIdx = h.m_Index;
-        RunOneFrame(); // Reset() clears m_IsDeclaredThisFrame; slot survives in vector
+        RunOneFrame();
 
         // Frame 2: re-declare with SAME handle → fast-path reuse, same slot.
         g_Renderer.m_RenderGraph.BeginSetup();
@@ -516,10 +516,6 @@ TEST_SUITE("RGAdv_PersistentResources")
         CHECK(h.m_Index == firstIdx);
     }
 }
-
-// ============================================================================
-// TEST SUITE: RGAdv_GBufferHandles
-// ============================================================================
 TEST_SUITE("RGAdv_GBufferHandles")
 {
     // ------------------------------------------------------------------

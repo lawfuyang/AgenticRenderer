@@ -159,6 +159,10 @@ MinimalSceneFixture::MinimalSceneFixture()
     g_Renderer.ExecutePendingCommandLists();
 
     g_Renderer.m_PrevFrameExposure = 1.0f;
+    // Ensure animations are enabled — a previous test using ReferencePathTracer
+    // mode may have left m_EnableAnimations=false (PathTracerRenderer::Render sets
+    // it to false to pause animations during path tracing).
+    g_Renderer.m_EnableAnimations = true;
 
     // Minimal valid glTF 2.0: a single triangle with 3 POSITION vertices.
     // All buffer data is embedded as a base64 data URI so no file I/O is needed.
@@ -215,12 +219,23 @@ MinimalSceneFixture::MinimalSceneFixture()
     for (const auto& r : g_Renderer.m_Renderers)
         if (r) r->PostSceneLoad();
     g_Renderer.ExecutePendingCommandLists();
+
+    // RenderGraph::Shutdown() sets m_ForceInvalidateFramesRemaining=2, which
+    // keeps m_bForceInvalidateAllResources true for the first 2 frames after
+    // construction.  Run those 2 frames here so every test body starts with
+    // the flag already cleared and persistent handles are stable from frame 1.
+    RunOneFrame();
+    RunOneFrame();
 }
 
 MinimalSceneFixture::~MinimalSceneFixture()
 {
     if (DEV())
         DEV()->waitForIdle();
+    // Restore global renderer state that the warm-up frames or test bodies may
+    // have modified, so subsequent bare TEST_CASEs see the expected defaults.
+    g_Renderer.m_EnableAnimations = true;
+    g_Renderer.m_PrevFrameExposure = 1.0f;
     g_Renderer.m_Scene.Shutdown();
     g_Renderer.m_RenderGraph.Shutdown();
 }

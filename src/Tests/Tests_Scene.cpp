@@ -893,9 +893,19 @@ TEST_SUITE("Scene_Animations")
         REQUIRE(scope.loaded);
 
         REQUIRE(g_Renderer.m_Scene.m_Animations.size() > 0);
+
+        // Root cause of original failure: calling RunOneFrame() passes deltaTime =
+        // m_FrameTime / 1000.0, but m_FrameTime is 0 on the very first frame (it is
+        // set to 16.6 *after* ScheduleAndRunAllRenderers returns).  So deltaTime=0
+        // and m_CurrentTime never changes.
+        // Fix: call Scene::Update() directly with a known non-zero delta, exactly as
+        // the dedicated animation tests (TC-AUPD-02 etc.) do.
         const float timeBefore = g_Renderer.m_Scene.m_Animations[0].m_CurrentTime;
 
+        const bool prevAnim = g_Renderer.m_EnableAnimations;
+        g_Renderer.m_EnableAnimations = true;
         g_Renderer.m_Scene.Update(0.1f);
+        g_Renderer.m_EnableAnimations = prevAnim;
 
         const float timeAfter = g_Renderer.m_Scene.m_Animations[0].m_CurrentTime;
         // After advancing 0.1s, current time should have changed

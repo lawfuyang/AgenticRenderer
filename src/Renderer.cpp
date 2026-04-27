@@ -551,6 +551,12 @@ void Renderer::Run()
                         count * sizeof(nvrhi::rt::InstanceDesc),
                         startIdx * sizeof(nvrhi::rt::InstanceDesc));
                 }
+
+                // Reset dirty range after upload so it doesn't appear dirty next frame.
+                // Scene::Update() resets it at the top of each animation evaluation pass,
+                // but when the dirty range is set manually (e.g. by tests or scene mutations
+                // outside of Update()) it would otherwise persist indefinitely.
+                m_Scene.m_InstanceDirtyRange = { UINT32_MAX, 0 };
             }
         }
 
