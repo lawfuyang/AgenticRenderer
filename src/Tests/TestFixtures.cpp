@@ -158,6 +158,8 @@ MinimalSceneFixture::MinimalSceneFixture()
     g_Renderer.m_Scene.InitializeDefaultCube(0, 0);
     g_Renderer.ExecutePendingCommandLists();
 
+    g_Renderer.m_PrevFrameExposure = 1.0f;
+
     // Minimal valid glTF 2.0: a single triangle with 3 POSITION vertices.
     // All buffer data is embedded as a base64 data URI so no file I/O is needed.
     // The scene has no lights — SceneLoader::LoadGLTFSceneFromMemory will call

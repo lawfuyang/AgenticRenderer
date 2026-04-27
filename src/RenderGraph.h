@@ -171,6 +171,12 @@ public:
     // Raw retrieval without access validation (only for internal use by render loop or unit tests, not safe for general use)
     nvrhi::TextureHandle GetTextureRaw(RGTextureHandle handle) const;
     nvrhi::BufferHandle GetBufferRaw(RGBufferHandle handle) const;
+
+    // Returns the 1-based pass index for the named pass as recorded during the last frame's
+    // Setup/ScheduleRenderer phase, or 0 if no enabled pass with that name was found.
+    // Pass names come directly from IRenderer::GetName(), so they match the renderer's name.
+    // Only valid after at least one frame has been rendered (i.e. after ScheduleAndRunAllRenderers).
+    uint16_t GetPassIndex(const char* passName) const;
     
     // Set the current active pass for validation (used during Render phase)
     void SetActivePass(uint16_t passIndex);
