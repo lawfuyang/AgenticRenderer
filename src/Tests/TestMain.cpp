@@ -108,6 +108,10 @@ struct SDLLogListener : public doctest::IReporter
     // Accumulates the names of every test case that had at least one failure.
     inline static std::vector<std::string> ms_FailedTests;
 
+    // Accumulates per-test durations for the top-N slowest test report.
+    struct TestDuration { std::string name; double seconds; };
+    inline static std::vector<TestDuration> ms_TestDurations;
+
     explicit SDLLogListener(const doctest::ContextOptions& in) : opt(in) {}
 
     void report_query(const doctest::QueryData&) override {}
@@ -125,6 +129,19 @@ struct SDLLogListener : public doctest::IReporter
         SDL_Log("[Tests]   Failed           : %u", stats.numTestCasesFailed);
         SDL_Log("[Tests]   Total asserts    : %d", stats.numAsserts);
         SDL_Log("[Tests]   Failed asserts   : %d", stats.numAssertsFailed);
+
+        // Print the top 5 slowest tests.
+        if (!ms_TestDurations.empty())
+        {
+            std::vector<TestDuration> sorted = ms_TestDurations;
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const TestDuration& a, const TestDuration& b) { return a.seconds > b.seconds; });
+
+            const size_t topN = std::min<size_t>(5, sorted.size());
+            SDL_Log("[Tests] ===== Top %zu slowest test(s) =====", topN);
+            for (size_t i = 0; i < topN; ++i)
+                SDL_Log("[Tests]   [%zu] %.3fs  %s", i + 1, sorted[i].seconds, sorted[i].name.c_str());
+        }
     }
 
     void test_case_start(const doctest::TestCaseData& in) override
@@ -147,6 +164,9 @@ struct SDLLogListener : public doctest::IReporter
                 const std::lock_guard<std::mutex> lock(mutex);
                 ms_FailedTests.push_back(tc->m_name);
             }
+
+            const std::lock_guard<std::mutex> lock(mutex);
+            ms_TestDurations.push_back({ tc->m_name, stats.seconds });
         }
     }
 
