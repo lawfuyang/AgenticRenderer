@@ -456,8 +456,32 @@ void Scene::BuildAccelerationStructures(nvrhi::CommandListHandle cmdList)
 
         nvrhi::rt::InstanceDesc& instanceDesc = m_RTInstanceDescs.emplace_back();
 
-		// Copy transform (transpose of row-vector matrix)
+		// Copy transform (transpose of row-vector matrix).
+		// DirectX row-vector convention: _ij = row i, col j.
+		// RT AffineTransform is row-major 3×4: [row0|row1|row2], translation in last column.
+		//   t[3]  = _41 = Tx,  t[7]  = _42 = Ty,  t[11] = _43 = Tz
+		// Note: glTF RH→LH conversion negates Z, so Tz = -glTF_Tz (this is intentional).
 		const Matrix& world = instData.m_World;
+
+		// Assert: world matrix must be finite (no NaN / Inf from broken animation or bad glTF data).
+		SDL_assert(std::isfinite(world._11) && std::isfinite(world._12) && std::isfinite(world._13) && std::isfinite(world._14) &&
+		           std::isfinite(world._21) && std::isfinite(world._22) && std::isfinite(world._23) && std::isfinite(world._24) &&
+		           std::isfinite(world._31) && std::isfinite(world._32) && std::isfinite(world._33) && std::isfinite(world._34) &&
+		           std::isfinite(world._41) && std::isfinite(world._42) && std::isfinite(world._43) && std::isfinite(world._44) &&
+		           "BuildAccelerationStructures: instance world matrix contains NaN or Inf");
+
+		// Assert: scale diagonal must be non-zero (a zero-scale matrix collapses geometry and produces a degenerate BLAS).
+		SDL_assert((world._11 != 0.0f || world._22 != 0.0f || world._33 != 0.0f) &&
+		           "BuildAccelerationStructures: instance world matrix has zero-scale diagonal — degenerate BLAS");
+
+		// Assert: MeshDataIndex must be in-range.
+		SDL_assert(instData.m_MeshDataIndex < (uint32_t)m_MeshData.size() &&
+		           "BuildAccelerationStructures: PerInstanceData.m_MeshDataIndex out of range");
+
+		// Assert: primitive must have at least one BLAS (LOD 0).
+		SDL_assert(!primitive->m_BLAS.empty() && primitive->m_BLAS[0] != nullptr &&
+		           "BuildAccelerationStructures: primitive has no LOD-0 BLAS — BuildAccelerationStructures must be called first");
+
 		nvrhi::rt::AffineTransform transform;
 		transform[0] = world._11; transform[1] = world._21; transform[2] = world._31; transform[3] = world._41;
 		transform[4] = world._12; transform[5] = world._22; transform[6] = world._32; transform[7] = world._42;
