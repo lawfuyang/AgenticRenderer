@@ -114,8 +114,8 @@ set(CGLTF_SRC_DIR "${CGLTF_INSTALL_DIR}/${CGLTF_SUBDIR}")
 # ----------------------------------------------------------------------------
 # DirectX Shader Compiler (DXC) - downloaded into external/dxc
 # ----------------------------------------------------------------------------
-set(DXC_VERSION "v1.9.2602")
-set(DXC_URL "https://github.com/microsoft/DirectXShaderCompiler/releases/download/${DXC_VERSION}/dxc_2026_02_20.zip")
+set(DXC_VERSION "v1.10.2605.2")
+set(DXC_URL "https://github.com/microsoft/DirectXShaderCompiler/releases/download/${DXC_VERSION}/dxc_preview_2026_04_22.zip")
 download_library("dxc" "${DXC_VERSION}" "${DXC_URL}" "dxc_*")
 set(DXC_INSTALL_DIR "${CMAKE_SOURCE_DIR}/external/dxc")
 set(DXC_EXE "${DXC_INSTALL_DIR}/bin/x64/dxc.exe")
