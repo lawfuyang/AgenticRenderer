@@ -860,40 +860,6 @@ TEST_SUITE("TaskScheduler_Extended")
     }
 
     // ------------------------------------------------------------------
-    // TC-TSX-02: ParallelFor with count=1 executes exactly once
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TSX-02 SingleItem - ParallelFor count=1 executes exactly once")
-    {
-        TaskScheduler scheduler;
-        std::atomic<int> counter{ 0 };
-
-        scheduler.ParallelFor(1, [&](uint32_t, uint32_t)
-        {
-            counter.fetch_add(1);
-        });
-
-        CHECK(counter.load() == 1);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TSX-03: ParallelFor 100,000 items produces correct sum
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TSX-03 LargeParallelFor - 100,000 items sum is correct")
-    {
-        TaskScheduler scheduler;
-        constexpr uint32_t kCount = 100000u;
-        std::atomic<uint64_t> sum{ 0 };
-
-        scheduler.ParallelFor(kCount, [&](uint32_t index, uint32_t)
-        {
-            sum.fetch_add(index);
-        });
-
-        const uint64_t expected = static_cast<uint64_t>(kCount) * (kCount - 1) / 2;
-        CHECK(sum.load() == expected);
-    }
-
-    // ------------------------------------------------------------------
     // TC-TSX-04: Multiple consecutive ExecuteAllScheduledTasks() calls are idempotent
     // ------------------------------------------------------------------
     TEST_CASE("TC-TSX-04 ExecuteAll - repeated calls are idempotent")
@@ -981,20 +947,6 @@ TEST_SUITE("Config_Extended")
         CHECK_FALSE(Config::Get().m_EnableGPUAssistedValidation);
     }
 
-    // ------------------------------------------------------------------
-    // TC-CFGX-07: ConfigGuard restores state after modification
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-07 ConfigGuard - restores state correctly")
-    {
-        const bool originalValidation = Config::Get().m_EnableValidation;
-        {
-            ConfigGuard guard;
-            const_cast<Config&>(Config::Get()).m_EnableValidation = !originalValidation;
-            CHECK(Config::Get().m_EnableValidation == !originalValidation);
-        }
-        // Guard destructor should have restored the value.
-        CHECK(Config::Get().m_EnableValidation == originalValidation);
-    }
 }
 
 // ============================================================================

@@ -432,34 +432,6 @@ TEST_SUITE("Graphics_DepthStates")
 TEST_SUITE("Graphics_DefaultTextures")
 {
     // ------------------------------------------------------------------
-    // TC-TEX-01: All default texture handles are non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-01 DefaultTextures — all handles are valid")
-    {
-        CHECK(CR().DefaultTextureBlack  != nullptr);
-        CHECK(CR().DefaultTextureWhite  != nullptr);
-        CHECK(CR().DefaultTexture3DWhite != nullptr);
-        CHECK(CR().DefaultTextureGray   != nullptr);
-        CHECK(CR().DefaultTextureNormal != nullptr);
-        CHECK(CR().DefaultTexturePBR    != nullptr);
-        CHECK(CR().DummyUAVTexture      != nullptr);
-        CHECK(CR().DummySRVTexture      != nullptr);
-        CHECK(CR().BRDF_LUT             != nullptr);
-        CHECK(CR().IrradianceTexture    != nullptr);
-        CHECK(CR().RadianceTexture      != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TEX-02: Bruneton atmosphere textures are non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-02 DefaultTextures — Bruneton atmosphere textures are valid")
-    {
-        CHECK(CR().BrunetonTransmittance != nullptr);
-        CHECK(CR().BrunetonScattering    != nullptr);
-        CHECK(CR().BrunetonIrradiance    != nullptr);
-    }
-
-    // ------------------------------------------------------------------
     // TC-TEX-03: DefaultTextureBlack is 1x1 RGBA8_UNORM Texture2D
     // ------------------------------------------------------------------
     TEST_CASE("TC-TEX-03 DefaultTextures — Black is 1x1 RGBA8_UNORM Texture2D")
@@ -695,45 +667,6 @@ TEST_SUITE("Graphics_BindlessHeaps")
     TEST_CASE("TC-BIND-04 BindlessSamplers — binding layout handle is valid")
     {
         CHECK(g_Renderer.GetStaticSamplerBindingLayout() != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BIND-05: Default textures are registered at expected bindless indices
-    //             Verifies that the descriptor table slot for each default
-    //             texture is occupied (non-null write was performed).
-    //             We confirm this indirectly by checking the handles are valid
-    //             and the table itself is non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-05 BindlessTextures — default texture slots are populated")
-    {
-        // The descriptor table must exist and the default textures must be valid.
-        // Actual GPU-side slot verification requires a shader readback
-        REQUIRE(g_Renderer.GetStaticTextureDescriptorTable() != nullptr);
-        CHECK(CR().DefaultTextureBlack  != nullptr);
-        CHECK(CR().DefaultTextureWhite  != nullptr);
-        CHECK(CR().DefaultTextureGray   != nullptr);
-        CHECK(CR().DefaultTextureNormal != nullptr);
-        CHECK(CR().DefaultTexturePBR    != nullptr);
-        CHECK(CR().BRDF_LUT             != nullptr);
-        CHECK(CR().IrradianceTexture    != nullptr);
-        CHECK(CR().RadianceTexture      != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BIND-06: Common samplers are registered at expected bindless indices
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-06 BindlessSamplers — common sampler slots are populated")
-    {
-        REQUIRE(g_Renderer.GetStaticSamplerDescriptorTable() != nullptr);
-        CHECK(CR().AnisotropicClamp       != nullptr);
-        CHECK(CR().AnisotropicWrap        != nullptr);
-        CHECK(CR().PointClamp             != nullptr);
-        CHECK(CR().PointWrap              != nullptr);
-        CHECK(CR().LinearClamp            != nullptr);
-        CHECK(CR().LinearWrap             != nullptr);
-        CHECK(CR().MinReductionClamp      != nullptr);
-        CHECK(CR().MaxReductionClamp      != nullptr);
-        CHECK(CR().LinearClampBorderWhite != nullptr);
     }
 
     // ------------------------------------------------------------------

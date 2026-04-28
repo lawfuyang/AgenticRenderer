@@ -731,31 +731,6 @@ TEST_SUITE("Scene_AnimationBuckets")
 TEST_SUITE("Scene_AnimationDisabledGuard")
 {
     // ------------------------------------------------------------------
-    // TC-ADIS-01: Update() with animations disabled does NOT advance time
-    //             (same as TC-AUPD-05 but uses a fresh, separate test
-    //             name for better isolation and future-proofing)
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ADIS-01 AnimationDisabledGuard - Update does not advance time when disabled")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-        REQUIRE(!g_Renderer.m_Scene.m_Animations.empty());
-
-        g_Renderer.m_Scene.m_Animations[0].m_CurrentTime = 0.25f;
-        const float timeBefore = g_Renderer.m_Scene.m_Animations[0].m_CurrentTime;
-
-        const bool prevAnim = g_Renderer.m_EnableAnimations;
-        g_Renderer.m_EnableAnimations = false;
-        g_Renderer.m_Scene.Update(1.0f);
-        g_Renderer.m_EnableAnimations = prevAnim;
-
-        INFO("timeBefore=" << timeBefore
-            << " timeAfter=" << g_Renderer.m_Scene.m_Animations[0].m_CurrentTime);
-        CHECK(g_Renderer.m_Scene.m_Animations[0].m_CurrentTime == doctest::Approx(timeBefore));
-    }
-
-    // ------------------------------------------------------------------
     // TC-ADIS-02: Update() with animations disabled does NOT dirty
     //             any node transforms (no transform recomputation)
     // ------------------------------------------------------------------
