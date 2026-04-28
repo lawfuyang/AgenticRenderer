@@ -41,6 +41,7 @@
 #include "../NrdIntegration.h"
 
 #include <imgui.h>
+#include <imgui_impl_sdl3.h>
 
 // ============================================================================
 // External renderer pointers (defined via REGISTER_RENDERER macros)
@@ -688,18 +689,35 @@ TEST_SUITE("ImGui_Setup")
 {
     // ------------------------------------------------------------------
     // TC-IMGUI-SETUP-01: Setup returns false when ImGui has no draw data
+    // ImGui::GetDrawData() returns nullptr when a NewFrame has been started but
+    // ImGui::Render() has not yet been called for that frame.
+    // We advance ImGui into that state here so the test is self-contained and
+    // independent of whether a previous test called UpdateFrame / RunOneFrame.
     // ------------------------------------------------------------------
     TEST_CASE("TC-IMGUI-SETUP-01 ImGuiSetup - Setup returns false with no draw data")
     {
         REQUIRE(g_ImGuiRenderer != nullptr);
 
-        // ImGui::GetDrawData() returns nullptr if NewFrame/Render haven't been called.
-        // We verify Setup() returns false gracefully.
-        // Note: we call Setup directly with a fresh RenderGraph to avoid side effects.
+        // Start a new ImGui frame.  After NewFrame(), GetDrawData() returns nullptr
+        // because Render() has not been called yet for this frame.
+        // (If a previous frame's Render() left stale draw data, NewFrame() clears it.)
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        // Sanity: draw data must be null at this point.
+        SDL_Log("[TC-IMGUI-SETUP-01] GetDrawData()=%p (expected nullptr)",
+            static_cast<void*>(ImGui::GetDrawData()));
+        REQUIRE(ImGui::GetDrawData() == nullptr);
+
         RenderGraph rg;
         bool result = g_ImGuiRenderer->Setup(rg);
-        // Should be false because there's no valid draw data in test context.
+        SDL_Log("[TC-IMGUI-SETUP-01] Setup() returned %s (expected false)",
+            result ? "true" : "false");
         CHECK(result == false);
+
+        // End the frame we opened so ImGui's internal state stays consistent
+        // for subsequent tests.
+        ImGui::EndFrame();
     }
 
     // ------------------------------------------------------------------
@@ -734,6 +752,34 @@ TEST_SUITE("ImGui_Setup")
     {
         REQUIRE(g_ImGuiRenderer != nullptr);
         CHECK(std::string_view(g_ImGuiRenderer->GetName()) != "BasePass");
+    }
+
+    // ------------------------------------------------------------------
+    // TC-IMGUI-SETUP-06: Setup returns true when draw data is valid
+    // Complement to TC-IMGUI-SETUP-01: after a full RunOneFrame() the draw data
+    // is valid (DisplaySize > 0, Render() was called), so Setup() must return true.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-IMGUI-SETUP-06 ImGuiSetup - Setup returns true with valid draw data")
+    {
+        REQUIRE(g_ImGuiRenderer != nullptr);
+
+        // RunOneFrame calls UpdateFrame (NewFrame + Render) so GetDrawData() is non-null.
+        RunOneFrame();
+
+        ImDrawData* drawData = ImGui::GetDrawData();
+        SDL_Log("[TC-IMGUI-SETUP-06] GetDrawData()=%p DisplaySize=(%.0f,%.0f)",
+            static_cast<void*>(drawData),
+            drawData ? drawData->DisplaySize.x : 0.0f,
+            drawData ? drawData->DisplaySize.y : 0.0f);
+        REQUIRE(drawData != nullptr);
+        REQUIRE(drawData->DisplaySize.x > 0.0f);
+        REQUIRE(drawData->DisplaySize.y > 0.0f);
+
+        RenderGraph rg;
+        bool result = g_ImGuiRenderer->Setup(rg);
+        SDL_Log("[TC-IMGUI-SETUP-06] Setup() returned %s (expected true)",
+            result ? "true" : "false");
+        CHECK(result == true);
     }
 }
 
@@ -793,6 +839,33 @@ TEST_SUITE("ImGui_FontTexture")
         ImGuiIO& io = ImGui::GetIO();
         CHECK(io.DisplaySize.x > 0.0f);
         CHECK(io.DisplaySize.y > 0.0f);
+    }
+
+    // ------------------------------------------------------------------
+    // TC-IMGUI-FONT-06: ImGui DisplaySize remains non-zero and stable across frames
+    // Regression: RunOneFrame() was not calling ImGui_ImplSDL3_NewFrame(), so
+    // DisplaySize was only set during the MinimalSceneFixture warm-up frames.
+    // After the fix, every RunOneFrame() call drives UpdateFrame() which keeps
+    // DisplaySize current.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-IMGUI-FONT-06 ImGuiFontTexture - ImGui IO display size is stable across frames")
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        const float w0 = io.DisplaySize.x;
+        const float h0 = io.DisplaySize.y;
+        REQUIRE(w0 > 0.0f);
+        REQUIRE(h0 > 0.0f);
+
+        // Run several more frames and verify DisplaySize stays non-zero and consistent.
+        for (int i = 0; i < 3; ++i)
+        {
+            RunOneFrame();
+            CHECK(io.DisplaySize.x > 0.0f);
+            CHECK(io.DisplaySize.y > 0.0f);
+            // Size should not change between frames (window is not resized during tests).
+            CHECK(io.DisplaySize.x == doctest::Approx(w0));
+            CHECK(io.DisplaySize.y == doctest::Approx(h0));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1513,8 +1586,9 @@ TEST_SUITE("TLAS_Mutations")
         node.m_Translation = { 1.0f, 2.0f, 3.0f };
         node.m_IsDirty = true;
 
-        // Mark dirty range manually (as the renderer would)
-        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() };
+        // Mark dirty range manually (as the renderer would).
+        // second = size()-1 (last valid index), NOT size() — the range is inclusive [first, second].
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u };
 
         CHECK(g_Renderer.m_Scene.AreInstanceTransformsDirty());
     }
@@ -1571,13 +1645,22 @@ TEST_SUITE("TLAS_Mutations")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-04 TLASMutations - dirty range is reset after frame")
     {
-        // Force dirty (MinimalSceneFixture has no animations, so Update() won't reset it)
-        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() };
+        // Force dirty (MinimalSceneFixture has no animations, so Update() won't reset it).
+        // second = size()-1 (last valid index), NOT size() — the range is inclusive [first, second].
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u };
+        SDL_Log("[TC-TLAS-MUT-04] Before RunOneFrame: dirty=%s range=[%u,%u] instanceCount=%zu",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second,
+            g_Renderer.m_Scene.m_InstanceData.size());
         REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
         RunOneFrame();
         // After the frame the renderer should have cleared the dirty range
         // (first > second means no dirty instances)
         const auto& dr = g_Renderer.m_Scene.m_InstanceDirtyRange;
+        SDL_Log("[TC-TLAS-MUT-04] After RunOneFrame: dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            dr.first, dr.second);
         CHECK(dr.first > dr.second);
     }
 
@@ -1649,14 +1732,31 @@ TEST_SUITE("TLAS_Mutations")
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-09 TLASMutations - dirty range stays clean across multiple frames")
     {
         // Set dirty once, run one frame to consume it.
-        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() };
+        // second = size()-1 (last valid index), NOT size() — the range is inclusive [first, second].
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u };
+        SDL_Log("[TC-TLAS-MUT-09] Frame 1 before: dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-09] Frame 1 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty()); // consumed
 
         // Run two more frames without setting dirty — range must stay clean.
         RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-09] Frame 2 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
         RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-09] Frame 3 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
     }
 
@@ -1669,14 +1769,116 @@ TEST_SUITE("TLAS_Mutations")
         REQUIRE(g_Renderer.m_Scene.m_InstanceData.size() > 0);
         // Set a partial dirty range (just instance 0)
         g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, 0u };
+        SDL_Log("[TC-TLAS-MUT-10] Before RunOneFrame: dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
         RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-10] After RunOneFrame:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+    }
+
+    // ------------------------------------------------------------------
+    // TC-TLAS-MUT-11: Dirty range is reset even when animations are disabled
+    // Root cause regression: the upload+reset block was inside if(m_EnableAnimations),
+    // so manually-set dirty ranges were never consumed when animations were off.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-11 TLASMutations - dirty range is reset when animations are disabled")
+    {
+        // Disable animations to exercise the non-animation code path.
+        g_Renderer.m_EnableAnimations = false;
+
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u };
+        SDL_Log("[TC-TLAS-MUT-11] Before RunOneFrame: animations=%s dirty=%s range=[%u,%u]",
+            g_Renderer.m_EnableAnimations ? "on" : "off",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
+
+        RunOneFrame();
+
+        SDL_Log("[TC-TLAS-MUT-11] After RunOneFrame:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        // The dirty range must be cleared even though animations are disabled.
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+
+        // Re-enable for subsequent tests.
+        g_Renderer.m_EnableAnimations = true;
+    }
+
+    // ------------------------------------------------------------------
+    // TC-TLAS-MUT-12: Dirty range stays clean across multiple frames with animations disabled
+    // Regression: after the first frame consumes the range, subsequent frames must not
+    // see a stale dirty range even when m_EnableAnimations is false.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-12 TLASMutations - dirty range stays clean across frames with animations disabled")
+    {
+        g_Renderer.m_EnableAnimations = false;
+
+        // Set dirty once, run one frame to consume it.
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u };
+        SDL_Log("[TC-TLAS-MUT-12] Frame 1 before: animations=%s dirty=%s range=[%u,%u]",
+            g_Renderer.m_EnableAnimations ? "on" : "off",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-12] Frame 1 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty()); // consumed
+
+        // Run two more frames without setting dirty — range must stay clean.
+        RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-12] Frame 2 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+        RunOneFrame();
+        SDL_Log("[TC-TLAS-MUT-12] Frame 3 after:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+
+        g_Renderer.m_EnableAnimations = true;
+    }
+
+    // ------------------------------------------------------------------
+    // TC-TLAS-MUT-13: Dirty range is reset when set to the last valid instance index
+    // Boundary value: range = {last, last} (single last instance dirty).
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-TLAS-MUT-13 TLASMutations - dirty range is reset for last instance index")
+    {
+        const uint32_t lastIdx = (uint32_t)g_Renderer.m_Scene.m_InstanceData.size() - 1u;
+        REQUIRE(g_Renderer.m_Scene.m_InstanceData.size() > 0);
+
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { lastIdx, lastIdx };
+        SDL_Log("[TC-TLAS-MUT-13] Before RunOneFrame: dirty=%s range=[%u,%u] lastIdx=%u",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second,
+            lastIdx);
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
+
+        RunOneFrame();
+
+        SDL_Log("[TC-TLAS-MUT-13] After RunOneFrame:  dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
         CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
     }
 }
-
-// ============================================================================
-// TEST SUITE: SceneRHI_Integrity
 // ============================================================================
 TEST_SUITE("SceneRHI_Integrity")
 {

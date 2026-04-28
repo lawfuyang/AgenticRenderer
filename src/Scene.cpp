@@ -776,6 +776,12 @@ void Scene::Update(float deltaTime)
 	m_InstanceDirtyRange = { UINT32_MAX, 0 };
 	m_MaterialDirtyRange = { UINT32_MAX, 0 };
 
+	// Invariant: after resetting, the ranges must be clean.
+	SDL_assert(!AreInstanceTransformsDirty() &&
+		"m_InstanceDirtyRange reset failed — first/second sentinel values are inconsistent");
+	SDL_assert(!(m_MaterialDirtyRange.first <= m_MaterialDirtyRange.second) &&
+		"m_MaterialDirtyRange reset failed — first/second sentinel values are inconsistent");
+
 	for (const Animation& anim : m_Animations)
 	{
 		const float animTime = anim.m_CurrentTime;
@@ -1173,6 +1179,25 @@ void Scene::ApplyPendingUpdates()
 
 void Scene::Shutdown()
 {
+	// Warn if dirty ranges were not consumed before shutdown — this indicates a
+	// frame was skipped or a test left stale state.  If not reset here, the
+	// sentinel values would survive into the next scene load and trigger the
+	// bounds-check assert in UploadDirtyInstanceTransforms().
+	if (AreInstanceTransformsDirty())
+	{
+		SDL_Log("[Scene] Shutdown: m_InstanceDirtyRange was still dirty [%u, %u] — "
+			"resetting to clean. A frame may have been skipped or a test left stale state.",
+			m_InstanceDirtyRange.first, m_InstanceDirtyRange.second);
+	}
+	m_InstanceDirtyRange = { UINT32_MAX, 0 };
+
+	if (m_MaterialDirtyRange.first <= m_MaterialDirtyRange.second)
+	{
+		SDL_Log("[Scene] Shutdown: m_MaterialDirtyRange was still dirty [%u, %u] — resetting.",
+			m_MaterialDirtyRange.first, m_MaterialDirtyRange.second);
+	}
+	m_MaterialDirtyRange = { UINT32_MAX, 0 };
+
 	// Release GPU buffer handles so NVRHI can free underlying resources
 	m_VertexBufferQuantized = nullptr;
 	m_IndexBuffer = nullptr;
@@ -1208,6 +1233,11 @@ void Scene::Shutdown()
 	m_DynamicMaterialIndices.clear();
 	m_DynamicNodeIndices.clear();
 	m_InstanceData.clear();
+
+	// Invariant: dirty ranges must be clean after Shutdown so the next scene
+	// load starts from a known-good state.
+	SDL_assert(!AreInstanceTransformsDirty() &&
+		"Scene::Shutdown: m_InstanceDirtyRange is not clean after reset");
 }
 
 void Scene::UpdateNodeBoundingSphere(int nodeIndex)

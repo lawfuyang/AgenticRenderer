@@ -524,6 +524,49 @@ TEST_SUITE("Scene_LifecycleEdgeCases")
         g_Renderer.m_Scene.m_InstanceDirtyRange = { UINT32_MAX, 0u };
         CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
     }
+
+    // ------------------------------------------------------------------
+    // TC-SLFE-07: Scene::Shutdown() resets m_InstanceDirtyRange to clean
+    // Regression: Shutdown() previously did not reset m_InstanceDirtyRange,
+    // so a stale dirty range from one test would survive into the next
+    // MinimalSceneFixture constructor and trigger an out-of-bounds assert
+    // in UploadDirtyInstanceTransforms() during the warm-up RunOneFrame().
+    // ------------------------------------------------------------------
+    TEST_CASE("TC-SLFE-07 LifecycleEdgeCases - Shutdown resets m_InstanceDirtyRange to clean")
+    {
+        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
+        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
+        REQUIRE(scope.loaded);
+
+        // Deliberately leave a dirty range that is out-of-bounds for the
+        // *next* scene (which will have fewer instances).  This simulates
+        // the exact state that caused TC-GRB-01 to assert.
+        const uint32_t instanceCount = static_cast<uint32_t>(g_Renderer.m_Scene.m_InstanceData.size());
+        REQUIRE(instanceCount > 0);
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, instanceCount - 1u };
+        SDL_Log("[TC-SLFE-07] Before Shutdown: dirty=%s range=[%u,%u] instanceCount=%u",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second,
+            instanceCount);
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
+
+        // SceneScope destructor calls Shutdown() — but we call it explicitly
+        // here so we can assert on the post-Shutdown state before the scope
+        // destructor runs a second Shutdown().
+        if (DEV()) DEV()->waitForIdle();
+        g_Renderer.m_Scene.Shutdown();
+
+        SDL_Log("[TC-SLFE-07] After Shutdown: dirty=%s range=[%u,%u]",
+            g_Renderer.m_Scene.AreInstanceTransformsDirty() ? "true" : "false",
+            g_Renderer.m_Scene.m_InstanceDirtyRange.first,
+            g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+
+        // The dirty range must be clean after Shutdown so the next scene load
+        // starts from a known-good state.
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+        CHECK(g_Renderer.m_Scene.m_InstanceDirtyRange.first > g_Renderer.m_Scene.m_InstanceDirtyRange.second);
+    }
 }
 
 // ============================================================================

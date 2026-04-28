@@ -48,6 +48,14 @@ void ImGuiLayer::UpdateFrame()
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    // Invariant: the SDL3 backend must have populated DisplaySize from the window.
+    // A zero DisplaySize means the window is not yet visible or the backend was not
+    // properly initialized, which will cause divide-by-zero in ImGuiRenderer::Render.
+    SDL_assert(ImGui::GetIO().DisplaySize.x > 0.0f &&
+        "ImGuiIO::DisplaySize.x is 0 after ImGui_ImplSDL3_NewFrame — window may not be visible");
+    SDL_assert(ImGui::GetIO().DisplaySize.y > 0.0f &&
+        "ImGuiIO::DisplaySize.y is 0 after ImGui_ImplSDL3_NewFrame — window may not be visible");
+
     if (ImGui::BeginMainMenuBar())
     {
         ImGui::Text("FPS: %.1f", g_Renderer.m_FPS);

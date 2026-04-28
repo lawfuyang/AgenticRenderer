@@ -100,6 +100,12 @@ struct Renderer
     void Shutdown();
     void ScheduleAndRunAllRenderers();
 
+    // Upload any dirty instance transforms to the GPU and reset the dirty range.
+    // Must be called once per frame before ScheduleAndRunAllRenderers() so that
+    // the TLAS rebuild sees up-to-date RT instance descriptors.  Called explicitly
+    // by both RenderFrame() (main loop) and RunOneFrame() (unit-test path).
+    void UploadDirtyInstanceTransforms();
+
     // Command List Management
     nvrhi::CommandListHandle AcquireCommandList(bool bImmediatelyQueue = true);
     void ExecutePendingCommandLists();

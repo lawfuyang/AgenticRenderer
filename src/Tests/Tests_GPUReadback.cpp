@@ -486,4 +486,41 @@ TEST_SUITE("GPUReadback_BufferCreation")
         CHECK(RunOneFrame());
         CHECK(DEV() != nullptr);
     }
+
+    // ------------------------------------------------------------------
+    // TC-GRB-BUF-10: m_InstanceDataBuffer capacity covers all CPU instances
+    // Regression: an off-by-one in the dirty-range upper bound caused
+    // UploadDirtyInstanceTransforms() to attempt writing
+    //   (size) * sizeof(PerInstanceData)  bytes
+    // into a buffer that was only sized for
+    //   (size) * sizeof(PerInstanceData)  bytes starting at offset 0,
+    // but with second = size (out-of-bounds) the write region exceeded the
+    // buffer end and NVRHI fired a validation error.
+    // This test ensures the GPU buffer is always large enough to hold every
+    // CPU-side instance, and that a full-range dirty upload does not overflow.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-10 BufferCreation - InstanceDataBuffer capacity covers all CPU instances")
+    {
+        REQUIRE(DEV() != nullptr);
+
+        const size_t instanceCount = g_Renderer.m_Scene.m_InstanceData.size();
+        REQUIRE(instanceCount > 0);
+
+        // GPU buffer must exist and be large enough for all instances.
+        REQUIRE(g_Renderer.m_Scene.m_InstanceDataBuffer != nullptr);
+        const uint64_t bufferBytes = g_Renderer.m_Scene.m_InstanceDataBuffer->getDesc().byteSize;
+        const uint64_t requiredBytes = instanceCount * sizeof(srrhi::PerInstanceData);
+        INFO("instanceCount=" << instanceCount
+             << " requiredBytes=" << requiredBytes
+             << " bufferBytes=" << bufferBytes);
+        CHECK(bufferBytes >= requiredBytes);
+
+        // A full-range dirty upload (all valid indices) must not crash or fire
+        // a validation error.  Use the last valid index as the upper bound.
+        const uint32_t lastIdx = static_cast<uint32_t>(instanceCount) - 1u;
+        g_Renderer.m_Scene.m_InstanceDirtyRange = { 0u, lastIdx };
+        REQUIRE(g_Renderer.m_Scene.AreInstanceTransformsDirty());
+        CHECK_NOTHROW(g_Renderer.UploadDirtyInstanceTransforms());
+        CHECK(!g_Renderer.m_Scene.AreInstanceTransformsDirty());
+    }
 }

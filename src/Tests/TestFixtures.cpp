@@ -154,6 +154,13 @@ MinimalSceneFixture::MinimalSceneFixture()
     g_Renderer.m_Scene.Shutdown();
     g_Renderer.m_RenderGraph.Shutdown();
 
+    // Invariant: Shutdown() must leave the dirty ranges clean so the warm-up
+    // RunOneFrame() calls below do not attempt to upload a stale dirty range
+    // against a not-yet-allocated GPU buffer.
+    SDL_assert(!g_Renderer.m_Scene.AreInstanceTransformsDirty() &&
+        "MinimalSceneFixture: m_InstanceDirtyRange is dirty after Shutdown() — "
+        "a previous test left stale state that Shutdown() failed to clear");
+
     // Recreate default cube + GPU geometry buffers that the sync upload path appends into.
     g_Renderer.m_Scene.InitializeDefaultCube(0, 0);
     g_Renderer.ExecutePendingCommandLists();
@@ -252,6 +259,18 @@ bool RunOneFrame()
         g_Renderer.m_Scene.m_View,
         static_cast<float>(windowW),
         static_cast<float>(windowH));
+
+    // Drive the ImGui layer so that ImGui_ImplSDL3_NewFrame() is called each
+    // frame.  This sets ImGuiIO::DisplaySize (queried from the SDL window) and
+    // advances ImGui's internal frame state.  Without this call, tests that
+    // inspect io.DisplaySize (TC-IMGUI-FONT-04) or that exercise ImGuiRenderer
+    // would see a zero-sized display and potentially crash.
+    g_Renderer.m_ImGuiLayer.UpdateFrame();
+
+    // Upload any dirty instance transforms before renderers run, mirroring the
+    // call in RenderFrame().  Both paths call the same helper so the logic stays
+    // in one place (Renderer::UploadDirtyInstanceTransforms).
+    g_Renderer.UploadDirtyInstanceTransforms();
 
     g_Renderer.ScheduleAndRunAllRenderers();
 

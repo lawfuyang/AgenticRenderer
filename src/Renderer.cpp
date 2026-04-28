@@ -532,33 +532,12 @@ void Renderer::Run()
         if (m_EnableAnimations)
         {
             m_Scene.Update(static_cast<float>(m_FrameTime / 1000.0));
-
-            if (m_Scene.AreInstanceTransformsDirty())
-            {
-                nvrhi::CommandListHandle cmd = AcquireCommandList();
-                ScopedCommandList scopedCmd{ cmd, "Upload Animated Instances" };
-                uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
-                uint32_t count = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
-                scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
-                    &m_Scene.m_InstanceData[startIdx],
-                    count * sizeof(srrhi::PerInstanceData),
-                    startIdx * sizeof(srrhi::PerInstanceData));
-
-                if (m_Scene.m_RTInstanceDescBuffer)
-                {
-                    scopedCmd->writeBuffer(m_Scene.m_RTInstanceDescBuffer,
-                        &m_Scene.m_RTInstanceDescs[startIdx],
-                        count * sizeof(nvrhi::rt::InstanceDesc),
-                        startIdx * sizeof(nvrhi::rt::InstanceDesc));
-                }
-
-                // Reset dirty range after upload so it doesn't appear dirty next frame.
-                // Scene::Update() resets it at the top of each animation evaluation pass,
-                // but when the dirty range is set manually (e.g. by tests or scene mutations
-                // outside of Update()) it would otherwise persist indefinitely.
-                m_Scene.m_InstanceDirtyRange = { UINT32_MAX, 0 };
-            }
         }
+
+        // Upload any dirty instance transforms before the renderers run.
+        // UploadDirtyInstanceTransforms() is also called by RunOneFrame() in the
+        // unit-test path, so the logic lives in one place.
+        UploadDirtyInstanceTransforms();
 
         if (m_Scene.m_LightsDirty)
         {
@@ -768,6 +747,65 @@ void Renderer::Shutdown()
 
     SDL_Quit();
     SDL_Log("[Shutdown] Clean exit");
+}
+
+void Renderer::UploadDirtyInstanceTransforms()
+{
+    // Upload dirty instance transforms and reset the dirty range.
+    // This must be called once per frame before renderers run (the TLAS rebuild
+    // reads the RT instance descs written here).  The dirty range can be set by:
+    //   • Scene::Update() animation evaluation (when m_EnableAnimations is true)
+    //   • Manual scene mutations (node transforms, async mesh arrivals, tests)
+    // It is intentionally outside the m_EnableAnimations guard so that manually-
+    // set dirty ranges are always consumed regardless of animation state.
+    if (!m_Scene.AreInstanceTransformsDirty())
+        return;
+
+    // SDL_Log("[Renderer] Uploading dirty instance range [%u, %u]",
+    //     m_Scene.m_InstanceDirtyRange.first, m_Scene.m_InstanceDirtyRange.second);
+
+    // Bounds-check: the dirty range must be a valid closed interval within m_InstanceData.
+    // A common mistake is setting second = size() instead of size()-1 (off-by-one).
+    SDL_assert(m_Scene.m_InstanceDirtyRange.first < (uint32_t)m_Scene.m_InstanceData.size() &&
+        "UploadDirtyInstanceTransforms: dirty range first index is out of bounds for m_InstanceData");
+    SDL_assert(m_Scene.m_InstanceDirtyRange.second < (uint32_t)m_Scene.m_InstanceData.size() &&
+        "UploadDirtyInstanceTransforms: dirty range second index is out of bounds for m_InstanceData "
+        "(common cause: setting second = size() instead of size()-1)");
+    SDL_assert(m_Scene.m_InstanceDirtyRange.first <= m_Scene.m_InstanceDirtyRange.second &&
+        "UploadDirtyInstanceTransforms: dirty range first > second despite AreInstanceTransformsDirty() == true");
+
+    nvrhi::CommandListHandle cmd = AcquireCommandList();
+    ScopedCommandList scopedCmd{ cmd, "Upload Dirty Instances" };
+    uint32_t startIdx = m_Scene.m_InstanceDirtyRange.first;
+    uint32_t count    = m_Scene.m_InstanceDirtyRange.second - startIdx + 1;
+
+    // Verify the write will not overflow the GPU buffer.
+    SDL_assert(m_Scene.m_InstanceDataBuffer &&
+        "UploadDirtyInstanceTransforms: m_InstanceDataBuffer is null");
+    SDL_assert((uint64_t)(startIdx + count) * sizeof(srrhi::PerInstanceData)
+            <= m_Scene.m_InstanceDataBuffer->getDesc().byteSize &&
+        "UploadDirtyInstanceTransforms: dirty range write would overflow m_InstanceDataBuffer — "
+        "buffer was not resized after m_InstanceData grew");
+
+    scopedCmd->writeBuffer(m_Scene.m_InstanceDataBuffer,
+        &m_Scene.m_InstanceData[startIdx],
+        count * sizeof(srrhi::PerInstanceData),
+        startIdx * sizeof(srrhi::PerInstanceData));
+
+    if (m_Scene.m_RTInstanceDescBuffer)
+    {
+        scopedCmd->writeBuffer(m_Scene.m_RTInstanceDescBuffer,
+            &m_Scene.m_RTInstanceDescs[startIdx],
+            count * sizeof(nvrhi::rt::InstanceDesc),
+            startIdx * sizeof(nvrhi::rt::InstanceDesc));
+    }
+
+    // Always reset after upload so the range never persists into the next frame.
+    m_Scene.m_InstanceDirtyRange = { UINT32_MAX, 0 };
+
+    // Invariant: the dirty range must be clean immediately after this function.
+    SDL_assert(!m_Scene.AreInstanceTransformsDirty() &&
+        "Instance dirty range was not cleared after upload — stale dirty state will corrupt next frame");
 }
 
 void Renderer::ScheduleAndRunAllRenderers()
@@ -1155,7 +1193,7 @@ nvrhi::GraphicsPipelineHandle Renderer::GetOrCreateGraphicsPipeline(const nvrhi:
     if (it != m_GraphicsPipelineCache.end())
         return it->second;
 
-    SDL_Log("[Pipeline Cache] Creating new graphics pipeline (hash=%zu)", h);
+    // SDL_Log("[Pipeline Cache] Creating new graphics pipeline (hash=%zu)", h);
 
     // Create pipeline and cache it
     nvrhi::GraphicsPipelineHandle pipeline = m_RHI->m_NvrhiDevice->createGraphicsPipeline(pipelineDesc, fbInfo);
@@ -1187,7 +1225,7 @@ nvrhi::MeshletPipelineHandle Renderer::GetOrCreateMeshletPipeline(const nvrhi::M
     if (it != m_MeshletPipelineCache.end())
         return it->second;
 
-    SDL_Log("[Pipeline Cache] Creating new meshlet pipeline (hash=%zu)", h);
+    // SDL_Log("[Pipeline Cache] Creating new meshlet pipeline (hash=%zu)", h);
 
     // Create pipeline and cache it
     nvrhi::MeshletPipelineHandle pipeline = m_RHI->m_NvrhiDevice->createMeshletPipeline(pipelineDesc, fbInfo);
@@ -1216,7 +1254,7 @@ nvrhi::ComputePipelineHandle Renderer::GetOrCreateComputePipeline(nvrhi::ShaderH
     if (it != m_ComputePipelineCache.end())
         return it->second;
 
-    SDL_Log("[Pipeline Cache] Creating new compute pipeline (hash=%zu)", h);
+    // SDL_Log("[Pipeline Cache] Creating new compute pipeline (hash=%zu)", h);
 
     // Create pipeline and cache it
     nvrhi::ComputePipelineDesc desc;
