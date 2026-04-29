@@ -849,21 +849,50 @@ void RenderGraph::Compile()
         {
             TransientTexture& texture = m_Textures[idx];
 
-            if (texture.m_PhysicalTexture && 
+            // Aliased (non-owner) resources must ALWAYS recreate their nvrhi handle
+            // each frame.  They are virtual textures re-bound to the owner's heap
+            // region, and callers must not cache raw pointers across frames.
+            // Only physical owners may use the stable-pointer fast path.
+            const bool isAliased = !texture.m_IsPhysicalOwner;
+
+            if (!isAliased &&
+                texture.m_PhysicalTexture && 
                 texture.m_Heap == heap && 
                 texture.m_Offset == offset)
             {
-                // Already bound correctly to the right heap at the right offset, and metadata matches
+                // Physical owner already bound correctly — reuse the existing handle.
                 return;
             }
 
             PROFILE_SCOPED("CreateTextureAndBindMemory");
+
+            // Capture old pointer so we can assert it changed for aliased resources.
+            const nvrhi::ITexture* oldRawPtr = texture.m_PhysicalTexture
+                                                ? texture.m_PhysicalTexture.Get() : nullptr;
+
+            if (m_bVerboseLogging)
+                SDL_Log("[RenderGraph] CREATE-TEXTURE slot %u '%s': isAliased=%d "
+                        "oldPtr=%p heap=%p offset=%llu",
+                        idx,
+                        texture.m_Desc.m_NvrhiDesc.debugName.c_str(),
+                        (int)isAliased,
+                        (void*)oldRawPtr,
+                        (void*)heap.Get(),
+                        (unsigned long long)offset);
 
             texture.m_Desc.m_NvrhiDesc.isVirtual = true;
             texture.m_PhysicalTexture = device->createTexture(texture.m_Desc.m_NvrhiDesc);
             device->bindTextureMemory(texture.m_PhysicalTexture, heap, offset);
             texture.m_Heap = heap;
             texture.m_Offset = offset;
+
+            // Aliased resources must always produce a fresh handle — if the pointer
+            // is identical to the previous frame's handle the driver may have
+            // returned a cached object, which violates the aliasing contract.
+            SDL_assert((!isAliased || texture.m_PhysicalTexture.Get() != oldRawPtr ||
+                        oldRawPtr == nullptr)
+                       && "Aliased texture: nvrhi returned the same pointer as last frame "
+                          "(handle was not recreated)");
         }
     );
 
@@ -873,21 +902,46 @@ void RenderGraph::Compile()
         {
             TransientBuffer& buffer = m_Buffers[idx];
 
-            if (buffer.m_PhysicalBuffer && 
+            // Aliased (non-owner) resources must ALWAYS recreate their nvrhi handle
+            // each frame — same reasoning as for textures above.
+            const bool isAliased = !buffer.m_IsPhysicalOwner;
+
+            if (!isAliased &&
+                buffer.m_PhysicalBuffer && 
                 buffer.m_Heap == heap && 
                 buffer.m_Offset == offset)
             {
-                // Already bound correctly to the right heap at the right offset, and metadata matches
+                // Physical owner already bound correctly — reuse the existing handle.
                 return;
             }
 
             PROFILE_SCOPED("CreateBufferAndBindMemory");
+
+            // Capture old pointer so we can assert it changed for aliased resources.
+            const nvrhi::IBuffer* oldRawPtr = buffer.m_PhysicalBuffer
+                                               ? buffer.m_PhysicalBuffer.Get() : nullptr;
+
+            if (m_bVerboseLogging)
+                SDL_Log("[RenderGraph] CREATE-BUFFER slot %u '%s': isAliased=%d "
+                        "oldPtr=%p heap=%p offset=%llu",
+                        idx,
+                        buffer.m_Desc.m_NvrhiDesc.debugName.c_str(),
+                        (int)isAliased,
+                        (void*)oldRawPtr,
+                        (void*)heap.Get(),
+                        (unsigned long long)offset);
 
             buffer.m_Desc.m_NvrhiDesc.isVirtual = true;
             buffer.m_PhysicalBuffer = device->createBuffer(buffer.m_Desc.m_NvrhiDesc);
             device->bindBufferMemory(buffer.m_PhysicalBuffer, heap, offset);
             buffer.m_Heap = heap;
             buffer.m_Offset = offset;
+
+            // Aliased resources must always produce a fresh handle.
+            SDL_assert((!isAliased || buffer.m_PhysicalBuffer.Get() != oldRawPtr ||
+                        oldRawPtr == nullptr)
+                       && "Aliased buffer: nvrhi returned the same pointer as last frame "
+                          "(handle was not recreated)");
         }
     );
 

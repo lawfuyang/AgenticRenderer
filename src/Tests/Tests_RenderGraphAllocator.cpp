@@ -2002,10 +2002,22 @@ TEST_SUITE("RGAlloc_OwnershipContract")
         RunOneFrame();
         rg.Reset();
 
+        // Diagnostic struct captured inside runMiniFrame for rich failure messages.
+        struct MiniFrameInfo
+        {
+            const nvrhi::ITexture* ptrA   = nullptr;
+            const nvrhi::ITexture* ptrB   = nullptr;
+            uint32_t               slotA  = UINT32_MAX;
+            uint32_t               slotB  = UINT32_MAX;
+            bool                   aIsOwner   = false;
+            bool                   bIsAliased = false;
+            uint32_t               bAliasedFrom = UINT32_MAX;
+        };
+
         // Helper lambda: run one two-pass mini-frame (Reset+declare+compile+PostRender)
-        // and return TexB's raw pointer.  hA/hB are passed by reference so the
+        // and return full diagnostic info.  hA/hB are passed by reference so the
         // caller can inspect slot state after the call.
-        auto runMiniFrame = [&](RGTextureHandle& hA, RGTextureHandle& hB) -> const nvrhi::ITexture*
+        auto runMiniFrame = [&](RGTextureHandle& hA, RGTextureHandle& hB) -> MiniFrameInfo
         {
             rg.Reset();
 
@@ -2019,32 +2031,79 @@ TEST_SUITE("RGAlloc_OwnershipContract")
             rg.EndSetup();
             rg.Compile();
 
-            const nvrhi::ITexture* ptr = rg.GetTextureRaw(hB) ? rg.GetTextureRaw(hB).Get() : nullptr;
+            MiniFrameInfo info;
+            info.slotA = hA.m_Index;
+            info.slotB = hB.m_Index;
+            if (hA.IsValid() && hA.m_Index < rg.GetTextures().size())
+            {
+                const auto& slotA = rg.GetTextures()[hA.m_Index];
+                info.aIsOwner = slotA.m_IsPhysicalOwner;
+                info.ptrA = rg.GetTextureRaw(hA) ? rg.GetTextureRaw(hA).Get() : nullptr;
+            }
+            if (hB.IsValid() && hB.m_Index < rg.GetTextures().size())
+            {
+                const auto& slotB = rg.GetTextures()[hB.m_Index];
+                info.bIsAliased    = (slotB.m_AliasedFromIndex != UINT32_MAX);
+                info.bAliasedFrom  = slotB.m_AliasedFromIndex;
+                info.ptrB = rg.GetTextureRaw(hB) ? rg.GetTextureRaw(hB).Get() : nullptr;
+            }
+
             rg.PostRender();
-            return ptr;
+            return info;
         };
 
         // Mini-frame 1: fresh handles → hA gets new slot (owner), hB aliases hA
         RGTextureHandle hA, hB;
-        const nvrhi::ITexture* ptrFrame1 = runMiniFrame(hA, hB);
-        REQUIRE(ptrFrame1 != nullptr);
+        const MiniFrameInfo f1 = runMiniFrame(hA, hB);
 
-        const bool wasAliased = (rg.GetTextures()[hB.m_Index].m_AliasedFromIndex != UINT32_MAX);
-        INFO("MiniFrame1: hB.slot=" << hB.m_Index
-             << " aliased=" << wasAliased
-             << " ptr=" << ptrFrame1);
+        INFO("MiniFrame1:"
+             << " hA.slot=" << f1.slotA << " aIsOwner=" << f1.aIsOwner << " ptrA=" << f1.ptrA
+             << " | hB.slot=" << f1.slotB << " bIsAliased=" << f1.bIsAliased
+             << " bAliasedFrom=" << f1.bAliasedFrom << " ptrB=" << f1.ptrB);
 
-        // With fresh slots and aliasing enabled, hB MUST be aliased.
-        REQUIRE(wasAliased);
+        REQUIRE(f1.ptrB != nullptr);
+        // With fresh slots and aliasing enabled, hB MUST be aliased from hA.
+        REQUIRE(f1.bIsAliased);
+        CHECK(f1.bAliasedFrom == f1.slotA);
+        // hA must be the physical owner.
+        CHECK(f1.aIsOwner == true);
 
         // Mini-frame 2: same handles re-declared → hA trivial-reuse (owner),
-        //               hB goes through aliasing path again → new nvrhi handle
-        const nvrhi::ITexture* ptrFrame2 = runMiniFrame(hA, hB);
-        REQUIRE(ptrFrame2 != nullptr);
-        INFO("MiniFrame2: ptr=" << ptrFrame2);
+        //               hB goes through aliasing path again → new nvrhi handle.
+        const MiniFrameInfo f2 = runMiniFrame(hA, hB);
 
+        INFO("MiniFrame2:"
+             << " hA.slot=" << f2.slotA << " aIsOwner=" << f2.aIsOwner << " ptrA=" << f2.ptrA
+             << " | hB.slot=" << f2.slotB << " bIsAliased=" << f2.bIsAliased
+             << " bAliasedFrom=" << f2.bAliasedFrom << " ptrB=" << f2.ptrB);
+
+        REQUIRE(f2.ptrB != nullptr);
+        // hB must still be aliased on the second frame.
+        CHECK(f2.bIsAliased);
+        CHECK(f2.bAliasedFrom == f2.slotA);
+        // hA must still be the physical owner (trivial-reuse path).
+        CHECK(f2.aIsOwner == true);
+        // hA's owner pointer must be STABLE across frames (physical owner reuses handle).
+        CHECK(f2.ptrA == f1.ptrA);
         // Aliased resources are recreated each frame — pointer MUST differ.
-        CHECK(ptrFrame2 != ptrFrame1);
+        CHECK(f2.ptrB != f1.ptrB);
+
+        // Mini-frame 3: confirm the pattern holds for a third consecutive frame.
+        const MiniFrameInfo f3 = runMiniFrame(hA, hB);
+
+        INFO("MiniFrame3:"
+             << " hA.slot=" << f3.slotA << " aIsOwner=" << f3.aIsOwner << " ptrA=" << f3.ptrA
+             << " | hB.slot=" << f3.slotB << " bIsAliased=" << f3.bIsAliased
+             << " bAliasedFrom=" << f3.bAliasedFrom << " ptrB=" << f3.ptrB);
+
+        REQUIRE(f3.ptrB != nullptr);
+        CHECK(f3.bIsAliased);
+        CHECK(f3.aIsOwner == true);
+        // Owner pointer remains stable.
+        CHECK(f3.ptrA == f1.ptrA);
+        // Aliased pointer must differ from both previous frames.
+        CHECK(f3.ptrB != f2.ptrB);
+        CHECK(f3.ptrB != f1.ptrB);
     }
 
     // ------------------------------------------------------------------
@@ -2232,6 +2291,210 @@ TEST_SUITE("RGAlloc_OwnershipContract")
                 firstPtr = ptr;
             else
                 CHECK(ptr == firstPtr); // no eviction, no re-allocation
+
+            rg.PostRender();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // TC-RGAL-OC-13: Physical-owner pointer is STABLE across frames
+    //
+    //   Complementary to OC-08: while aliased resources must get a new
+    //   handle each frame, physical owners must NOT — their pointer must
+    //   remain identical across consecutive frames (trivial-reuse path).
+    //   This test guards against accidentally breaking the fast path for
+    //   owners while fixing the aliased-resource recreation path.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGAL-OC-13 OwnershipContract - physical owner pointer is stable across frames")
+    {
+        ConfigGuard guard;
+        const_cast<Config&>(Config::Get()).m_EnableRenderGraphAliasing = true;
+
+        auto& rg = g_Renderer.m_RenderGraph;
+
+        RunOneFrame();
+        rg.Reset();
+
+        auto runMiniFrame = [&](RGTextureHandle& hA) -> const nvrhi::ITexture*
+        {
+            rg.Reset();
+            rg.BeginSetup();
+            rg.DeclareTexture(MakeTexDesc(128, 128, nvrhi::Format::RGBA8_UNORM, true, "TC-OC-13-A"), hA);
+            rg.BeginPass("TC-OC-13-Pass");
+            rg.EndSetup();
+            rg.Compile();
+            const nvrhi::ITexture* ptr = rg.GetTextureRaw(hA) ? rg.GetTextureRaw(hA).Get() : nullptr;
+            rg.PostRender();
+            return ptr;
+        };
+
+        RGTextureHandle hA;
+        const nvrhi::ITexture* ptr1 = runMiniFrame(hA);
+        REQUIRE(ptr1 != nullptr);
+        INFO("Frame1: slot=" << hA.m_Index
+             << " isOwner=" << rg.GetTextures()[hA.m_Index].m_IsPhysicalOwner
+             << " ptr=" << ptr1);
+        REQUIRE(rg.GetTextures()[hA.m_Index].m_IsPhysicalOwner);
+
+        const nvrhi::ITexture* ptr2 = runMiniFrame(hA);
+        REQUIRE(ptr2 != nullptr);
+        INFO("Frame2: slot=" << hA.m_Index
+             << " isOwner=" << rg.GetTextures()[hA.m_Index].m_IsPhysicalOwner
+             << " ptr=" << ptr2);
+        CHECK(rg.GetTextures()[hA.m_Index].m_IsPhysicalOwner);
+
+        // Physical owner must reuse the same nvrhi handle (trivial-reuse path).
+        CHECK(ptr2 == ptr1);
+
+        const nvrhi::ITexture* ptr3 = runMiniFrame(hA);
+        REQUIRE(ptr3 != nullptr);
+        INFO("Frame3: ptr=" << ptr3);
+        CHECK(ptr3 == ptr1);
+    }
+
+    // ------------------------------------------------------------------
+    // TC-RGAL-OC-14: Aliased BUFFER gets a new nvrhi handle each frame
+    //
+    //   Buffer variant of OC-08.  Two buffers with non-overlapping
+    //   lifetimes and identical memory requirements: the second must alias
+    //   the first, and its nvrhi handle must be recreated every frame.
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGAL-OC-14 OwnershipContract - aliased buffer gets new nvrhi handle each frame")
+    {
+        ConfigGuard guard;
+        const_cast<Config&>(Config::Get()).m_EnableRenderGraphAliasing = true;
+
+        auto& rg = g_Renderer.m_RenderGraph;
+
+        RunOneFrame();
+        rg.Reset();
+
+        // Build a buffer desc large enough to be aliasable.
+        auto makeBufDesc = [](const char* name) -> RGBufferDesc
+        {
+            RGBufferDesc d;
+            d.m_NvrhiDesc.byteSize    = 4096;
+            d.m_NvrhiDesc.structStride = 0;
+            d.m_NvrhiDesc.debugName   = name;
+            d.m_NvrhiDesc.isVirtual   = true;
+            return d;
+        };
+
+        struct MiniFrameInfo
+        {
+            const nvrhi::IBuffer* ptrA = nullptr;
+            const nvrhi::IBuffer* ptrB = nullptr;
+            bool bIsAliased = false;
+            uint32_t bAliasedFrom = UINT32_MAX;
+        };
+
+        auto runMiniFrame = [&](RGBufferHandle& hA, RGBufferHandle& hB) -> MiniFrameInfo
+        {
+            rg.Reset();
+            rg.BeginSetup();
+            rg.DeclareBuffer(makeBufDesc("TC-OC-14-A"), hA);
+            rg.BeginPass("TC-OC-14-PassA");
+            rg.DeclareBuffer(makeBufDesc("TC-OC-14-B"), hB);
+            rg.BeginPass("TC-OC-14-PassB");
+            rg.EndSetup();
+            rg.Compile();
+
+            MiniFrameInfo info;
+            if (hA.IsValid() && hA.m_Index < rg.GetBuffers().size())
+                info.ptrA = rg.GetBufferRaw(hA) ? rg.GetBufferRaw(hA).Get() : nullptr;
+            if (hB.IsValid() && hB.m_Index < rg.GetBuffers().size())
+            {
+                const auto& slotB = rg.GetBuffers()[hB.m_Index];
+                info.bIsAliased   = (slotB.m_AliasedFromIndex != UINT32_MAX);
+                info.bAliasedFrom = slotB.m_AliasedFromIndex;
+                info.ptrB = rg.GetBufferRaw(hB) ? rg.GetBufferRaw(hB).Get() : nullptr;
+            }
+            rg.PostRender();
+            return info;
+        };
+
+        RGBufferHandle hA, hB;
+        const MiniFrameInfo f1 = runMiniFrame(hA, hB);
+
+        INFO("MiniFrame1:"
+             << " hA.slot=" << hA.m_Index << " ptrA=" << f1.ptrA
+             << " | hB.slot=" << hB.m_Index << " bIsAliased=" << f1.bIsAliased
+             << " bAliasedFrom=" << f1.bAliasedFrom << " ptrB=" << f1.ptrB);
+
+        REQUIRE(f1.ptrB != nullptr);
+        REQUIRE(f1.bIsAliased);
+
+        const MiniFrameInfo f2 = runMiniFrame(hA, hB);
+
+        INFO("MiniFrame2:"
+             << " hA.slot=" << hA.m_Index << " ptrA=" << f2.ptrA
+             << " | hB.slot=" << hB.m_Index << " bIsAliased=" << f2.bIsAliased
+             << " ptrB=" << f2.ptrB);
+
+        REQUIRE(f2.ptrB != nullptr);
+        CHECK(f2.bIsAliased);
+        // Owner pointer must be stable.
+        CHECK(f2.ptrA == f1.ptrA);
+        // Aliased buffer pointer must differ each frame.
+        CHECK(f2.ptrB != f1.ptrB);
+    }
+
+    // ------------------------------------------------------------------
+    // TC-RGAL-OC-15: Aliased texture has a valid (non-null) handle after
+    //                recreation on every frame
+    //
+    //   Regression guard: after the fix, createAndBindResource always
+    //   recreates the aliased handle.  This test verifies that the
+    //   recreated handle is non-null and that GetTexture() returns a
+    //   valid nvrhi::TextureHandle (not just a raw non-null pointer).
+    // ------------------------------------------------------------------
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGAL-OC-15 OwnershipContract - aliased texture handle is valid after recreation")
+    {
+        ConfigGuard guard;
+        const_cast<Config&>(Config::Get()).m_EnableRenderGraphAliasing = true;
+
+        auto& rg = g_Renderer.m_RenderGraph;
+
+        RunOneFrame();
+        rg.Reset();
+
+        auto runMiniFrame = [&](RGTextureHandle& hA, RGTextureHandle& hB)
+        {
+            rg.Reset();
+            rg.BeginSetup();
+            rg.DeclareTexture(MakeTexDesc(64, 64, nvrhi::Format::RGBA8_UNORM, true, "TC-OC-15-A"), hA);
+            rg.BeginPass("TC-OC-15-PassA");
+            rg.DeclareTexture(MakeTexDesc(64, 64, nvrhi::Format::RGBA8_UNORM, true, "TC-OC-15-B"), hB);
+            rg.BeginPass("TC-OC-15-PassB");
+            rg.EndSetup();
+            rg.Compile();
+        };
+
+        RGTextureHandle hA, hB;
+
+        for (int frame = 0; frame < 4; ++frame)
+        {
+            runMiniFrame(hA, hB);
+
+            REQUIRE(hB.IsValid());
+            const auto& slotB = rg.GetTextures()[hB.m_Index];
+            const bool isAliased = (slotB.m_AliasedFromIndex != UINT32_MAX);
+
+            INFO("Frame " << frame
+                 << ": hB.slot=" << hB.m_Index
+                 << " isAliased=" << isAliased
+                 << " isAllocated=" << slotB.m_IsAllocated
+                 << " rawPtr=" << (rg.GetTextureRaw(hB) ? rg.GetTextureRaw(hB).Get() : nullptr));
+
+            // After the first frame hB should be aliased.
+            if (frame > 0)
+                CHECK(isAliased);
+
+            // The handle must always be valid and non-null.
+            CHECK(slotB.m_IsAllocated == true);
+            CHECK(rg.GetTextureRaw(hB) != nullptr);
+            // GetTexture() (the typed accessor) must also return a non-null handle.
+            CHECK(rg.GetTexture(hB, RGResourceAccessMode::Write) != nullptr);
 
             rg.PostRender();
         }
