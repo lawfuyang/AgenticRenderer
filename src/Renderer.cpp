@@ -545,27 +545,10 @@ void Renderer::Run()
             m_Scene.m_LightsDirty = false;
         }
 
-        // Upload material constants for materials changed by emissive intensity animations
-        if (m_Scene.m_MaterialDirtyRange.first <= m_Scene.m_MaterialDirtyRange.second && m_Scene.m_MaterialConstantsBuffer)
-        {
-            PROFILE_SCOPED("Upload Animated Materials");
-            const uint32_t firstMat = m_Scene.m_MaterialDirtyRange.first;
-            const uint32_t lastMat  = m_Scene.m_MaterialDirtyRange.second;
-            const uint32_t count    = lastMat - firstMat + 1;
-
-            std::vector<srrhi::MaterialConstants> materialConstants(count);
-            for (uint32_t i = 0; i < count; ++i)
-                materialConstants[i] = MaterialConstantsFromMaterial(m_Scene.m_Materials[firstMat + i], m_Scene.m_Textures);
-
-            nvrhi::CommandListHandle cmd = AcquireCommandList();
-            ScopedCommandList scopedCmd{ cmd, "Upload Animated Material Constants" };
-            scopedCmd->writeBuffer(m_Scene.m_MaterialConstantsBuffer,
-                materialConstants.data(),
-                count * sizeof(srrhi::MaterialConstants),
-                firstMat * sizeof(srrhi::MaterialConstants));
-
-            m_Scene.m_MaterialDirtyRange = { UINT32_MAX, 0 };
-        }
+        // Upload material constants for materials changed by emissive intensity animations.
+        // Logic lives in UploadDirtyMaterialConstants() so the unit-test path
+        // (RunOneFrame) exercises the same code as the main game loop.
+        UploadDirtyMaterialConstants();
 
         // Update camera (camera retrieves frame time internally)
         m_Scene.m_ViewPrev = m_Scene.m_View;
@@ -806,6 +789,59 @@ void Renderer::UploadDirtyInstanceTransforms()
     // Invariant: the dirty range must be clean immediately after this function.
     SDL_assert(!m_Scene.AreInstanceTransformsDirty() &&
         "Instance dirty range was not cleared after upload — stale dirty state will corrupt next frame");
+}
+
+void Renderer::UploadDirtyMaterialConstants()
+{
+    // Upload material constants for any materials whose dirty range is set and
+    // reset the range to clean.  This is called once per frame from both
+    // RenderFrame() (main loop) and RunOneFrame() (unit-test path) so that
+    // animated-material uploads are exercised identically in both paths.
+    //
+    // Guard conditions (no-op if any fail):
+    //   • m_MaterialConstantsBuffer must be non-null (scene loaded)
+    //   • m_Materials must be non-empty
+    //   • dirty range must be active (first <= second)
+    if (!m_Scene.m_MaterialConstantsBuffer)
+        return;
+    if (m_Scene.m_Materials.empty())
+        return;
+    if (m_Scene.m_MaterialDirtyRange.first > m_Scene.m_MaterialDirtyRange.second)
+        return;
+
+    const uint32_t firstMat = m_Scene.m_MaterialDirtyRange.first;
+    const uint32_t lastMat  = m_Scene.m_MaterialDirtyRange.second;
+    const uint32_t count    = lastMat - firstMat + 1;
+
+    // Bounds-check: the dirty range must be a valid closed interval within m_Materials.
+    SDL_assert(firstMat < (uint32_t)m_Scene.m_Materials.size() &&
+        "UploadDirtyMaterialConstants: dirty range first index is out of bounds for m_Materials");
+    SDL_assert(lastMat < (uint32_t)m_Scene.m_Materials.size() &&
+        "UploadDirtyMaterialConstants: dirty range last index is out of bounds for m_Materials "
+        "(common cause: setting second = size() instead of size()-1)");
+
+    // Verify the write will not overflow the GPU buffer.
+    SDL_assert((uint64_t)(firstMat + count) * sizeof(srrhi::MaterialConstants)
+            <= m_Scene.m_MaterialConstantsBuffer->getDesc().byteSize &&
+        "UploadDirtyMaterialConstants: dirty range write would overflow m_MaterialConstantsBuffer");
+
+    std::vector<srrhi::MaterialConstants> materialConstants(count);
+    for (uint32_t i = 0; i < count; ++i)
+        materialConstants[i] = MaterialConstantsFromMaterial(m_Scene.m_Materials[firstMat + i], m_Scene.m_Textures);
+
+    nvrhi::CommandListHandle cmd = AcquireCommandList();
+    ScopedCommandList scopedCmd{ cmd, "Upload Dirty Material Constants" };
+    scopedCmd->writeBuffer(m_Scene.m_MaterialConstantsBuffer,
+        materialConstants.data(),
+        count * sizeof(srrhi::MaterialConstants),
+        firstMat * sizeof(srrhi::MaterialConstants));
+
+    // Always reset after upload so the range never persists into the next frame.
+    m_Scene.m_MaterialDirtyRange = { UINT32_MAX, 0 };
+
+    // Invariant: the dirty range must be clean immediately after this function.
+    SDL_assert(m_Scene.m_MaterialDirtyRange.first > m_Scene.m_MaterialDirtyRange.second &&
+        "UploadDirtyMaterialConstants: dirty range was not cleared after upload");
 }
 
 void Renderer::ScheduleAndRunAllRenderers()

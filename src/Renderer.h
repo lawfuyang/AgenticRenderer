@@ -106,6 +106,14 @@ struct Renderer
     // by both RenderFrame() (main loop) and RunOneFrame() (unit-test path).
     void UploadDirtyInstanceTransforms();
 
+    // Upload material constants for any materials whose dirty range is set
+    // (m_MaterialDirtyRange.first <= second) and reset the range to clean.
+    // Handles the case where m_Materials is empty or m_MaterialConstantsBuffer
+    // is null (no-op).  Called explicitly by both RenderFrame() (main loop) and
+    // RunOneFrame() (unit-test path) so animated-material uploads are exercised
+    // by tests.
+    void UploadDirtyMaterialConstants();
+
     // Command List Management
     nvrhi::CommandListHandle AcquireCommandList(bool bImmediatelyQueue = true);
     void ExecutePendingCommandLists();

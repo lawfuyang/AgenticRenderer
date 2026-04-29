@@ -272,6 +272,11 @@ bool RunOneFrame()
     // in one place (Renderer::UploadDirtyInstanceTransforms).
     g_Renderer.UploadDirtyInstanceTransforms();
 
+    // Upload any dirty material constants (animated emissive, test mutations).
+    // Mirrors the call in RenderFrame() so the unit-test path exercises the same
+    // GPU upload logic as the main game loop.
+    g_Renderer.UploadDirtyMaterialConstants();
+
     g_Renderer.ScheduleAndRunAllRenderers();
 
     // Submit to GPU and wait for completion
