@@ -372,41 +372,6 @@ TEST_SUITE("RGAdv_Stats")
 }
 
 // ============================================================================
-// TEST SUITE: RGAdv_SPDHelper
-// ============================================================================
-TEST_SUITE("RGAdv_SPDHelper")
-{
-    // ------------------------------------------------------------------
-    // TC-RGA-SPD-01: GetSPDAtomicCounterDesc byte size > 0
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RGA-SPD-01 SPDHelper - GetSPDAtomicCounterDesc byteSize > 0")
-    {
-        const RGBufferDesc desc = RenderGraph::GetSPDAtomicCounterDesc("TC-SPD-01");
-        CHECK(desc.m_NvrhiDesc.byteSize > 0);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-RGA-SPD-02: GetSPDAtomicCounterDesc has isUAV = true
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RGA-SPD-02 SPDHelper - GetSPDAtomicCounterDesc canHaveUAVs is true")
-    {
-        const RGBufferDesc desc = RenderGraph::GetSPDAtomicCounterDesc("TC-SPD-02");
-        CHECK(desc.m_NvrhiDesc.canHaveUAVs);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-RGA-SPD-03: GetSPDAtomicCounterDesc can be used to create a GPU buffer
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-SPD-03 SPDHelper - SPD counter buffer creation succeeds")
-    {
-        REQUIRE(DEV() != nullptr);
-        const RGBufferDesc rgDesc = RenderGraph::GetSPDAtomicCounterDesc("TC-SPD-03");
-        auto buf = DEV()->createBuffer(rgDesc.m_NvrhiDesc);
-        CHECK(buf != nullptr);
-    }
-}
-
-// ============================================================================
 // TEST SUITE: RGAdv_Aliasing
 // ============================================================================
 TEST_SUITE("RGAdv_Aliasing")

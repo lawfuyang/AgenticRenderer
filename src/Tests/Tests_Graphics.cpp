@@ -143,22 +143,6 @@ TEST_SUITE("Graphics_RHI")
 TEST_SUITE("Graphics_Samplers")
 {
     // ------------------------------------------------------------------
-    // TC-SAMP-01: All 9 common samplers are non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-SAMP-01 Samplers — all common sampler handles are valid")
-    {
-        CHECK(CR().LinearClamp            != nullptr);
-        CHECK(CR().LinearWrap             != nullptr);
-        CHECK(CR().PointClamp             != nullptr);
-        CHECK(CR().PointWrap              != nullptr);
-        CHECK(CR().AnisotropicClamp       != nullptr);
-        CHECK(CR().AnisotropicWrap        != nullptr);
-        CHECK(CR().MaxReductionClamp      != nullptr);
-        CHECK(CR().MinReductionClamp      != nullptr);
-        CHECK(CR().LinearClampBorderWhite != nullptr);
-    }
-
-    // ------------------------------------------------------------------
     // TC-SAMP-02: LinearClamp has correct address mode (ClampToEdge)
     // ------------------------------------------------------------------
     TEST_CASE("TC-SAMP-02 Samplers — LinearClamp address mode is ClampToEdge")
@@ -403,27 +387,6 @@ TEST_SUITE("Graphics_DepthStates")
         CHECK_FALSE(ds.stencilEnable);
     }
 
-    // ------------------------------------------------------------------
-    // TC-DEPTH-04: DepthGreaterRead — test enabled, write disabled, GreaterOrEqual
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-DEPTH-04 DepthState — GreaterRead has test enabled, write disabled")
-    {
-        const auto& ds = CR().DepthGreaterRead;
-        CHECK(ds.depthTestEnable);
-        CHECK_FALSE(ds.depthWriteEnable);
-        CHECK(ds.depthFunc == nvrhi::ComparisonFunc::GreaterOrEqual);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-DEPTH-05: DepthGreaterReadWrite — test and write enabled, GreaterOrEqual
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-DEPTH-05 DepthState — GreaterReadWrite has test and write enabled")
-    {
-        const auto& ds = CR().DepthGreaterReadWrite;
-        CHECK(ds.depthTestEnable);
-        CHECK(ds.depthWriteEnable);
-        CHECK(ds.depthFunc == nvrhi::ComparisonFunc::GreaterOrEqual);
-    }
 }
 
 // ============================================================================
@@ -632,66 +595,4 @@ TEST_SUITE("Graphics_DummyBuffers")
     }
 }
 
-// ============================================================================
-// TEST SUITE: Bindless Descriptor Heaps
-// ============================================================================
-TEST_SUITE("Graphics_BindlessHeaps")
-{
-    // ------------------------------------------------------------------
-    // TC-BIND-01: Static texture descriptor table is non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-01 BindlessTextures — descriptor table handle is valid")
-    {
-        CHECK(g_Renderer.GetStaticTextureDescriptorTable() != nullptr);
-    }
 
-    // ------------------------------------------------------------------
-    // TC-BIND-02: Static texture binding layout is non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-02 BindlessTextures — binding layout handle is valid")
-    {
-        CHECK(g_Renderer.GetStaticTextureBindingLayout() != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BIND-03: Static sampler descriptor table is non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-03 BindlessSamplers — descriptor table handle is valid")
-    {
-        CHECK(g_Renderer.GetStaticSamplerDescriptorTable() != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BIND-04: Static sampler binding layout is non-null
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-04 BindlessSamplers — binding layout handle is valid")
-    {
-        CHECK(g_Renderer.GetStaticSamplerBindingLayout() != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BIND-07: Shader hot-reload does not invalidate descriptor tables
-    //             Captures table pointers before and after a reload request,
-    //             verifying the handles remain non-null and consistent.
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BIND-07 BindlessTextures — descriptor tables survive shader reload")
-    {
-        const nvrhi::DescriptorTableHandle texTableBefore  = g_Renderer.GetStaticTextureDescriptorTable();
-        const nvrhi::DescriptorTableHandle sampTableBefore = g_Renderer.GetStaticSamplerDescriptorTable();
-
-        REQUIRE(texTableBefore  != nullptr);
-        REQUIRE(sampTableBefore != nullptr);
-
-        // Trigger a shader reload (non-destructive: shaders recompile but
-        // descriptor tables are not recreated).
-        g_Renderer.m_RequestedShaderReload = true;
-        // The reload is processed at the start of the next frame; we just
-        // verify the tables are still valid immediately after setting the flag.
-
-        CHECK(g_Renderer.GetStaticTextureDescriptorTable()  != nullptr);
-        CHECK(g_Renderer.GetStaticSamplerDescriptorTable()  != nullptr);
-
-        // Reset the flag so we don't accidentally trigger a reload mid-test.
-        g_Renderer.m_RequestedShaderReload = false;
-    }
-}

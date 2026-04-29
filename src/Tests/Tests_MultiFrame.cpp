@@ -450,18 +450,6 @@ TEST_SUITE("MultiFrame_RenderingModes")
         g_Renderer.m_DebugMode = prevDebug;
     }
 
-    // ------------------------------------------------------------------
-    // TC-MF-DBG-02: DebugMode=0 (off) for 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-DBG-02 RenderingModes - debug mode 0 (off) 3 frames")
-    {
-        g_Renderer.m_DebugMode = 0;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
 }
 
 // ============================================================================

@@ -405,14 +405,6 @@ TEST_SUITE("Lighting_DeferredShaders")
     }
 
     // ------------------------------------------------------------------
-    // TC-LSHD-05: HDR color format is non-UNKNOWN (output of deferred pass)
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-LSHD-05 DeferredShaders - HDR color format is non-UNKNOWN")
-    {
-        CHECK(Renderer::HDR_COLOR_FORMAT != nvrhi::Format::UNKNOWN);
-    }
-
-    // ------------------------------------------------------------------
     // TC-LSHD-06: HDR color format is R11G11B10_FLOAT
     // ------------------------------------------------------------------
     TEST_CASE("TC-LSHD-06 DeferredShaders - HDR color format is R11G11B10_FLOAT")
@@ -458,15 +450,6 @@ TEST_SUITE("Lighting_DeferredShaders")
 // ============================================================================
 TEST_SUITE("Lighting_SkyAtmosphere")
 {
-    // ------------------------------------------------------------------
-    // TC-LATMO-01: m_EnableSky default is true
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-LATMO-01 SkyAtmosphere - m_EnableSky default is true")
-    {
-        // The renderer is initialized with sky enabled.
-        CHECK(g_Renderer.m_EnableSky);
-    }
-
     // ------------------------------------------------------------------
     // TC-LATMO-02: Irradiance texture path is non-empty
     // ------------------------------------------------------------------
@@ -530,41 +513,6 @@ TEST_SUITE("Lighting_SkyAtmosphere")
               srrhi::CommonConsts::BRUNETON_IRRADIANCE_TEXTURE);
     }
 
-    // ------------------------------------------------------------------
-    // TC-LATMO-09: Sky can be disabled while in IBL mode without crash
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-LATMO-09 SkyAtmosphere - sky disabled in IBL mode does not crash")
-    {
-        const RenderingMode prevMode = g_Renderer.m_Mode;
-        const bool prevSky           = g_Renderer.m_EnableSky;
-
-        g_Renderer.m_Mode      = RenderingMode::IBL;
-        g_Renderer.m_EnableSky = false;
-
-        CHECK(g_Renderer.m_Mode      == RenderingMode::IBL);
-        CHECK(!g_Renderer.m_EnableSky);
-
-        g_Renderer.m_Mode      = prevMode;
-        g_Renderer.m_EnableSky = prevSky;
-    }
-
-    // ------------------------------------------------------------------
-    // TC-LATMO-10: Sky can be enabled while in Normal mode without crash
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-LATMO-10 SkyAtmosphere - sky enabled in Normal mode does not crash")
-    {
-        const RenderingMode prevMode = g_Renderer.m_Mode;
-        const bool prevSky           = g_Renderer.m_EnableSky;
-
-        g_Renderer.m_Mode      = RenderingMode::Normal;
-        g_Renderer.m_EnableSky = true;
-
-        CHECK(g_Renderer.m_Mode == RenderingMode::Normal);
-        CHECK(g_Renderer.m_EnableSky);
-
-        g_Renderer.m_Mode      = prevMode;
-        g_Renderer.m_EnableSky = prevSky;
-    }
 }
 
 

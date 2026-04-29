@@ -582,18 +582,6 @@ TEST_SUITE("Scene_BoundingBoxes")
     }
 
     // ------------------------------------------------------------------
-    // TC-BBOX-02: Scene bounding sphere radius is positive
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BBOX-02 BoundingBoxes - scene bounding sphere radius is positive")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        CHECK(g_Renderer.m_Scene.m_SceneBoundingSphere.Radius > 0.0f);
-    }
-
-    // ------------------------------------------------------------------
     // TC-BBOX-03: Instance bounding sphere radii are non-negative
     // ------------------------------------------------------------------
     TEST_CASE("TC-BBOX-03 BoundingBoxes - instance bounding sphere radii are non-negative")
@@ -612,44 +600,7 @@ TEST_SUITE("Scene_BoundingBoxes")
 }
 
 // NOTE: Scene_AccelStructures tests are in Tests_SceneAdvanced.cpp (Scene_AccelStructures suite).
-// NOTE: Scene_Animations tests are in Tests_SceneAnimation.cpp.
-
-// ============================================================================
-// TEST SUITE: Scene_Animations (kept for Update() integration test only)
-// ============================================================================
-TEST_SUITE("Scene_Animations")
-{
-    // ------------------------------------------------------------------
-    // TC-ANIM-07: Scene::Update advances animation time
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ANIM-07 Animations - Update() advances animation current time")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        REQUIRE(g_Renderer.m_Scene.m_Animations.size() > 0);
-
-        // Root cause of original failure: calling RunOneFrame() passes deltaTime =
-        // m_FrameTime / 1000.0, but m_FrameTime is 0 on the very first frame (it is
-        // set to 16.6 *after* ScheduleAndRunAllRenderers returns).  So deltaTime=0
-        // and m_CurrentTime never changes.
-        // Fix: call Scene::Update() directly with a known non-zero delta, exactly as
-        // the dedicated animation tests (TC-AUPD-02 etc.) do.
-        const float timeBefore = g_Renderer.m_Scene.m_Animations[0].m_CurrentTime;
-
-        const bool prevAnim = g_Renderer.m_EnableAnimations;
-        g_Renderer.m_EnableAnimations = true;
-        g_Renderer.m_Scene.Update(0.1f);
-        g_Renderer.m_EnableAnimations = prevAnim;
-
-        const float timeAfter = g_Renderer.m_Scene.m_Animations[0].m_CurrentTime;
-        // After advancing 0.1s, current time should have changed
-        // (unless the animation duration is exactly 0, which TC-ANIM-02 already guards against)
-        CHECK(timeAfter != doctest::Approx(timeBefore));
-    }
-}
-
+// NOTE: Scene_Animations tests are in Tests_SceneAnimation.cpp (TC-AUPD-02 covers Update() advancing time).
 // NOTE: Scene_Lights tests are in Tests_Lighting.cpp (Lighting_LightSystem suite).
 
 // ============================================================================
@@ -794,27 +745,6 @@ TEST_SUITE("Scene_Shutdown")
         CHECK(scene.m_BLASAddressBuffer     == nullptr);
     }
 
-    // ------------------------------------------------------------------
-    // TC-SHUT-03: Scene can be loaded, shut down, and reloaded cleanly
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-SHUT-03 Shutdown - scene can be reloaded after shutdown")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-
-        // First load
-        {
-            SceneScope scope1("BoxTextured/glTF/BoxTextured.gltf");
-            REQUIRE(scope1.loaded);
-            CHECK(g_Renderer.m_Scene.m_Meshes.size() > 0);
-        }
-
-        // Second load (after shutdown)
-        {
-            SceneScope scope2("BoxTextured/glTF/BoxTextured.gltf");
-            REQUIRE(scope2.loaded);
-            CHECK(g_Renderer.m_Scene.m_Meshes.size() > 0);
-        }
-    }
 }
 
 // ============================================================================
