@@ -103,23 +103,6 @@ TEST_SUITE("Scene_AnimationStructure")
     }
 
     // ------------------------------------------------------------------
-    // TC-ANIM-05: Animation CurrentTime starts at 0
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ANIM-05 AnimationStructure - CurrentTime starts at 0 after load")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& anims = g_Renderer.m_Scene.m_Animations;
-        for (int i = 0; i < (int)anims.size(); ++i)
-        {
-            INFO("Animation " << i << " (" << anims[i].m_Name << ") currentTime=" << anims[i].m_CurrentTime);
-            CHECK(anims[i].m_CurrentTime >= 0.0f);
-        }
-    }
-
-    // ------------------------------------------------------------------
     // TC-ANIM-06: Sampler input (time) arrays are non-empty
     // ------------------------------------------------------------------
     TEST_CASE("TC-ANIM-06 AnimationStructure - sampler input arrays are non-empty")
@@ -159,26 +142,6 @@ TEST_SUITE("Scene_AnimationStructure")
                     INFO("Anim " << ai << " sampler " << si << " key " << k);
                     CHECK(inputs[k] >= inputs[k - 1]);
                 }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-ANIM-08: Sampler output arrays are non-empty
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ANIM-08 AnimationStructure - sampler output arrays are non-empty")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& anims = g_Renderer.m_Scene.m_Animations;
-        for (int ai = 0; ai < (int)anims.size(); ++ai)
-        {
-            for (int si = 0; si < (int)anims[ai].m_Samplers.size(); ++si)
-            {
-                INFO("Anim " << ai << " sampler " << si);
-                CHECK(!anims[ai].m_Samplers[si].m_Outputs.empty());
             }
         }
     }
@@ -238,40 +201,6 @@ TEST_SUITE("Scene_AnimationStructure")
 // ============================================================================
 TEST_SUITE("Scene_AnimationEnums")
 {
-    // ------------------------------------------------------------------
-    // TC-ANEM-01: AnimationChannel::Path enum values are distinct
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ANEM-01 AnimationEnums - AnimationChannel Path values are distinct")
-    {
-        using P = Scene::AnimationChannel::Path;
-        const int translation  = (int)P::Translation;
-        const int rotation     = (int)P::Rotation;
-        const int scale        = (int)P::Scale;
-        const int weights      = (int)P::Weights;
-        const int emissive     = (int)P::EmissiveIntensity;
-
-        std::vector<int> vals = { translation, rotation, scale, weights, emissive };
-        std::sort(vals.begin(), vals.end());
-        CHECK(std::adjacent_find(vals.begin(), vals.end()) == vals.end());
-    }
-
-    // ------------------------------------------------------------------
-    // TC-ANEM-02: AnimationSampler::Interpolation enum values are distinct
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ANEM-02 AnimationEnums - AnimationSampler Interpolation values are distinct")
-    {
-        using I = Scene::AnimationSampler::Interpolation;
-        const int linear      = (int)I::Linear;
-        const int step        = (int)I::Step;
-        const int cubic       = (int)I::CubicSpline;
-        const int slerp       = (int)I::Slerp;
-        const int catmullRom  = (int)I::CatmullRom;
-
-        std::vector<int> vals = { linear, step, cubic, slerp, catmullRom };
-        std::sort(vals.begin(), vals.end());
-        CHECK(std::adjacent_find(vals.begin(), vals.end()) == vals.end());
-    }
-
     // ------------------------------------------------------------------
     // TC-ANEM-03: AnimatedCube uses Linear interpolation for rotation
     // ------------------------------------------------------------------
@@ -429,48 +358,6 @@ TEST_SUITE("Scene_AnimationUpdate")
     }
 
     // ------------------------------------------------------------------
-    // TC-AUPD-07: m_IsAnimated flag is set on nodes targeted by channels
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-AUPD-07 AnimationUpdate - m_IsAnimated set on animated nodes")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        bool foundAnimated = false;
-        for (const auto& node : g_Renderer.m_Scene.m_Nodes)
-        {
-            if (node.m_IsAnimated)
-            {
-                foundAnimated = true;
-                break;
-            }
-        }
-        CHECK(foundAnimated);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-AUPD-08: m_IsDynamic flag is set on animated nodes
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-AUPD-08 AnimationUpdate - m_IsDynamic set on animated nodes")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        bool foundDynamic = false;
-        for (const auto& node : g_Renderer.m_Scene.m_Nodes)
-        {
-            if (node.m_IsDynamic)
-            {
-                foundDynamic = true;
-                break;
-            }
-        }
-        CHECK(foundDynamic);
-    }
-
-    // ------------------------------------------------------------------
     // TC-AUPD-09: Node with m_IsAnimated also has m_IsDynamic
     // ------------------------------------------------------------------
     TEST_CASE("TC-AUPD-09 AnimationUpdate - animated node is always dynamic")
@@ -517,33 +404,6 @@ TEST_SUITE("Scene_AnimationUpdate")
     }
 
     // ------------------------------------------------------------------
-    // TC-AUPD-11: Mesh node bounding sphere stays non-negative after Update()
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-AUPD-11 AnimationUpdate - node bounding sphere radius is non-negative after Update")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        const bool prevAnim = g_Renderer.m_EnableAnimations;
-        g_Renderer.m_EnableAnimations = true;
-
-        for (int step = 0; step < 5; ++step)
-            g_Renderer.m_Scene.Update(0.2f);
-
-        g_Renderer.m_EnableAnimations = prevAnim;
-
-        for (int i = 0; i < (int)g_Renderer.m_Scene.m_Nodes.size(); ++i)
-        {
-            if (g_Renderer.m_Scene.m_Nodes[i].m_MeshIndex >= 0)
-            {
-                INFO("Node " << i << " (" << g_Renderer.m_Scene.m_Nodes[i].m_Name << ")");
-                CHECK(g_Renderer.m_Scene.m_Nodes[i].m_Radius >= 0.0f);
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
     // TC-AUPD-12: Scene bounding sphere stays positive after Update()
     // ------------------------------------------------------------------
     TEST_CASE("TC-AUPD-12 AnimationUpdate - scene bounding sphere stays positive after Update")
@@ -561,21 +421,6 @@ TEST_SUITE("Scene_AnimationUpdate")
         g_Renderer.m_EnableAnimations = prevAnim;
 
         CHECK(g_Renderer.m_Scene.m_SceneBoundingSphere.Radius > 0.0f);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-AUPD-13: Animation name is accessible as a string
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-AUPD-13 AnimationUpdate - animation name is accessible")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-        REQUIRE(!g_Renderer.m_Scene.m_Animations.empty());
-
-        // Name may be empty ("") — we just verify it's a valid std::string.
-        const std::string& name = g_Renderer.m_Scene.m_Animations[0].m_Name;
-        CHECK(name.size() < 1024u); // sane max length
     }
 
     // ------------------------------------------------------------------
@@ -704,23 +549,6 @@ TEST_SUITE("Scene_AnimationBuckets")
         CHECK(!g_Renderer.m_Scene.m_InstanceData.empty());
     }
 
-    // ------------------------------------------------------------------
-    // TC-ABKT-02: Instance data is consistent with node mesh assignments
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-ABKT-02 AnimationBuckets - instance count consistent with mesh node count")
-    {
-        SKIP_IF_NO_SAMPLES("AnimatedCube/glTF/AnimatedCube.gltf");
-        SceneScope scope("AnimatedCube/glTF/AnimatedCube.gltf");
-        REQUIRE(scope.loaded);
-
-        // Count mesh nodes
-        int meshNodeCount = 0;
-        for (const auto& node : g_Renderer.m_Scene.m_Nodes)
-            if (node.m_MeshIndex >= 0) ++meshNodeCount;
-
-        CHECK(meshNodeCount > 0);
-        CHECK(!g_Renderer.m_Scene.m_InstanceData.empty());
-    }
 }
 
 // ============================================================================

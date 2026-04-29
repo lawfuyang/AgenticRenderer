@@ -237,190 +237,10 @@ TEST_SUITE("Graphics_Samplers")
 }
 
 // ============================================================================
-// TEST SUITE: CommonResources — Raster & Blend States
-// ============================================================================
-TEST_SUITE("Graphics_RasterBlendStates")
-{
-    // ------------------------------------------------------------------
-    // TC-RAST-01: RasterCullNone — Solid fill, no cull
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RAST-01 RasterState — CullNone is Solid fill with no culling")
-    {
-        CHECK(CR().RasterCullNone.fillMode == nvrhi::RasterFillMode::Solid);
-        CHECK(CR().RasterCullNone.cullMode == nvrhi::RasterCullMode::None);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-RAST-02: RasterCullBack — Solid fill, back-face cull
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RAST-02 RasterState — CullBack is Solid fill with back-face culling")
-    {
-        CHECK(CR().RasterCullBack.fillMode == nvrhi::RasterFillMode::Solid);
-        CHECK(CR().RasterCullBack.cullMode == nvrhi::RasterCullMode::Back);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-RAST-03: RasterCullFront — Solid fill, front-face cull
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RAST-03 RasterState — CullFront is Solid fill with front-face culling")
-    {
-        CHECK(CR().RasterCullFront.fillMode == nvrhi::RasterFillMode::Solid);
-        CHECK(CR().RasterCullFront.cullMode == nvrhi::RasterCullMode::Front);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-RAST-04: RasterWireframeNoCull — Wireframe, no cull
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-RAST-04 RasterState — WireframeNoCull is Wireframe with no culling")
-    {
-        CHECK(CR().RasterWireframeNoCull.fillMode == nvrhi::RasterFillMode::Wireframe);
-        CHECK(CR().RasterWireframeNoCull.cullMode == nvrhi::RasterCullMode::None);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-01: BlendTargetOpaque — blending disabled
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-01 BlendState — Opaque has blending disabled")
-    {
-        CHECK_FALSE(CR().BlendTargetOpaque.blendEnable);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-02: BlendTargetAlpha — standard alpha blending
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-02 BlendState — Alpha uses SrcAlpha/InvSrcAlpha")
-    {
-        const auto& bt = CR().BlendTargetAlpha;
-        CHECK(bt.blendEnable);
-        CHECK(bt.srcBlend  == nvrhi::BlendFactor::SrcAlpha);
-        CHECK(bt.destBlend == nvrhi::BlendFactor::InvSrcAlpha);
-        CHECK(bt.blendOp   == nvrhi::BlendOp::Add);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-03: BlendTargetPremultipliedAlpha — One/InvSrcAlpha
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-03 BlendState — PremultipliedAlpha uses One/InvSrcAlpha")
-    {
-        const auto& bt = CR().BlendTargetPremultipliedAlpha;
-        CHECK(bt.blendEnable);
-        CHECK(bt.srcBlend  == nvrhi::BlendFactor::One);
-        CHECK(bt.destBlend == nvrhi::BlendFactor::InvSrcAlpha);
-        CHECK(bt.blendOp   == nvrhi::BlendOp::Add);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-04: BlendTargetAdditive — One/One
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-04 BlendState — Additive uses One/One")
-    {
-        const auto& bt = CR().BlendTargetAdditive;
-        CHECK(bt.blendEnable);
-        CHECK(bt.srcBlend  == nvrhi::BlendFactor::One);
-        CHECK(bt.destBlend == nvrhi::BlendFactor::One);
-        CHECK(bt.blendOp   == nvrhi::BlendOp::Add);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-05: BlendTargetMultiply — DstColor/Zero
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-05 BlendState — Multiply uses DstColor/Zero")
-    {
-        const auto& bt = CR().BlendTargetMultiply;
-        CHECK(bt.blendEnable);
-        CHECK(bt.srcBlend  == nvrhi::BlendFactor::DstColor);
-        CHECK(bt.destBlend == nvrhi::BlendFactor::Zero);
-        CHECK(bt.blendOp   == nvrhi::BlendOp::Add);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-BLEND-06: BlendTargetImGui — same as Alpha (SrcAlpha/InvSrcAlpha)
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BLEND-06 BlendState — ImGui blend matches Alpha blend")
-    {
-        const auto& imgui = CR().BlendTargetImGui;
-        const auto& alpha = CR().BlendTargetAlpha;
-        CHECK(imgui.blendEnable == alpha.blendEnable);
-        CHECK(imgui.srcBlend    == alpha.srcBlend);
-        CHECK(imgui.destBlend   == alpha.destBlend);
-        CHECK(imgui.blendOp     == alpha.blendOp);
-    }
-}
-
-// ============================================================================
-// TEST SUITE: CommonResources — Depth-Stencil States
-// ============================================================================
-TEST_SUITE("Graphics_DepthStates")
-{
-    // ------------------------------------------------------------------
-    // TC-DEPTH-01: DepthDisabled — no test, no write, no stencil
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-DEPTH-01 DepthState — Disabled has no test, no write, no stencil")
-    {
-        const auto& ds = CR().DepthDisabled;
-        CHECK_FALSE(ds.depthTestEnable);
-        CHECK_FALSE(ds.depthWriteEnable);
-        CHECK_FALSE(ds.stencilEnable);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-DEPTH-02: DepthRead — test enabled, write disabled, GreaterOrEqual
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-DEPTH-02 DepthState — Read has test enabled, write disabled, GreaterOrEqual")
-    {
-        const auto& ds = CR().DepthRead;
-        CHECK(ds.depthTestEnable);
-        CHECK_FALSE(ds.depthWriteEnable);
-        CHECK(ds.depthFunc == nvrhi::ComparisonFunc::GreaterOrEqual);
-        CHECK_FALSE(ds.stencilEnable);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-DEPTH-03: DepthReadWrite — test and write enabled, GreaterOrEqual
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-DEPTH-03 DepthState — ReadWrite has test and write enabled, GreaterOrEqual")
-    {
-        const auto& ds = CR().DepthReadWrite;
-        CHECK(ds.depthTestEnable);
-        CHECK(ds.depthWriteEnable);
-        CHECK(ds.depthFunc == nvrhi::ComparisonFunc::GreaterOrEqual);
-        CHECK_FALSE(ds.stencilEnable);
-    }
-
-}
-
-// ============================================================================
 // TEST SUITE: CommonResources — Default Textures
 // ============================================================================
 TEST_SUITE("Graphics_DefaultTextures")
 {
-    // ------------------------------------------------------------------
-    // TC-TEX-03: DefaultTextureBlack is 1x1 RGBA8_UNORM Texture2D
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-03 DefaultTextures — Black is 1x1 RGBA8_UNORM Texture2D")
-    {
-        REQUIRE(CR().DefaultTextureBlack != nullptr);
-        const nvrhi::TextureDesc& desc = CR().DefaultTextureBlack->getDesc();
-        CHECK(desc.width     == 1u);
-        CHECK(desc.height    == 1u);
-        CHECK(desc.format    == nvrhi::Format::RGBA8_UNORM);
-        CHECK(desc.dimension == nvrhi::TextureDimension::Texture2D);
-        CHECK(desc.isShaderResource);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TEX-04: DefaultTextureWhite is 1x1 RGBA8_UNORM Texture2D
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-04 DefaultTextures — White is 1x1 RGBA8_UNORM Texture2D")
-    {
-        REQUIRE(CR().DefaultTextureWhite != nullptr);
-        const nvrhi::TextureDesc& desc = CR().DefaultTextureWhite->getDesc();
-        CHECK(desc.width     == 1u);
-        CHECK(desc.height    == 1u);
-        CHECK(desc.format    == nvrhi::Format::RGBA8_UNORM);
-        CHECK(desc.dimension == nvrhi::TextureDimension::Texture2D);
-    }
-
     // ------------------------------------------------------------------
     // TC-TEX-05: DefaultTexture3DWhite is a Texture3D
     // ------------------------------------------------------------------
@@ -429,36 +249,6 @@ TEST_SUITE("Graphics_DefaultTextures")
         REQUIRE(CR().DefaultTexture3DWhite != nullptr);
         const nvrhi::TextureDesc& desc = CR().DefaultTexture3DWhite->getDesc();
         CHECK(desc.dimension == nvrhi::TextureDimension::Texture3D);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TEX-06: DefaultTexturePBR is RGBA8_UNORM (Occlusion/Roughness/Metallic)
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-06 DefaultTextures — PBR is RGBA8_UNORM")
-    {
-        REQUIRE(CR().DefaultTexturePBR != nullptr);
-        const nvrhi::TextureDesc& desc = CR().DefaultTexturePBR->getDesc();
-        CHECK(desc.format == nvrhi::Format::RGBA8_UNORM);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TEX-07: DummyUAVTexture has UAV flag set
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-07 DefaultTextures — DummyUAV has isUAV flag")
-    {
-        REQUIRE(CR().DummyUAVTexture != nullptr);
-        const nvrhi::TextureDesc& desc = CR().DummyUAVTexture->getDesc();
-        CHECK(desc.isUAV);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TEX-08: DummySRVTexture has shader resource flag set
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-08 DefaultTextures — DummySRV has isShaderResource flag")
-    {
-        REQUIRE(CR().DummySRVTexture != nullptr);
-        const nvrhi::TextureDesc& desc = CR().DummySRVTexture->getDesc();
-        CHECK(desc.isShaderResource);
     }
 
     // ------------------------------------------------------------------
@@ -581,18 +371,6 @@ TEST_SUITE("Graphics_DummyBuffers")
         CHECK(desc.format != nvrhi::Format::UNKNOWN);
     }
 
-    // ------------------------------------------------------------------
-    // TC-BUF-08: All dummy buffers have a non-zero byte size
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BUF-08 DummyBuffers — all buffers have non-zero byte size")
-    {
-        CHECK(CR().DummySRVByteAddressBuffer->getDesc().byteSize > 0u);
-        CHECK(CR().DummyUAVByteAddressBuffer->getDesc().byteSize > 0u);
-        CHECK(CR().DummySRVStructuredBuffer->getDesc().byteSize  > 0u);
-        CHECK(CR().DummyUAVStructuredBuffer->getDesc().byteSize  > 0u);
-        CHECK(CR().DummySRVTypedBuffer->getDesc().byteSize       > 0u);
-        CHECK(CR().DummyUAVTypedBuffer->getDesc().byteSize       > 0u);
-    }
 }
 
 

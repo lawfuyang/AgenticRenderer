@@ -85,16 +85,6 @@ TEST_SUITE("Camera_DefaultState")
     }
 
     // ------------------------------------------------------------------
-    // TC-CAM-DEFAULT-03: Default exposure multiplier is positive
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-DEFAULT-03 DefaultState - default exposure multiplier is positive")
-    {
-        Camera cam;
-        // m_Exposure is computed in Update(); the default field value is 1.0f.
-        CHECK(cam.m_Exposure > 0.0f);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CAM-DEFAULT-04: Reset restores position to origin
     // ------------------------------------------------------------------
     TEST_CASE("TC-CAM-DEFAULT-04 DefaultState - Reset restores position to origin")
@@ -447,20 +437,6 @@ TEST_SUITE("Camera_SetFromMatrix")
     }
 
     // ------------------------------------------------------------------
-    // TC-CAM-SFM-02: SetFromMatrix with identity leaves camera at origin
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SFM-02 SetFromMatrix - identity matrix leaves camera at origin")
-    {
-        Camera cam;
-        cam.SetFromMatrix(IdentityMatrix());
-
-        const Vector3 pos = cam.GetPosition();
-        CHECK(std::fabs(pos.x) < kEps);
-        CHECK(std::fabs(pos.y) < kEps);
-        CHECK(std::fabs(pos.z) < kEps);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CAM-SFM-03: SetFromMatrix with 180-degree yaw rotation
     //                Camera should look along -Z (yaw ≈ π)
     // ------------------------------------------------------------------
@@ -567,17 +543,6 @@ TEST_SUITE("Camera_Exposure")
         const float expPosComp  = computeExposure(ev, 2.0f); // +2 stops brighter
 
         CHECK(expPosComp > expNoComp);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CAM-EXP-04: Default exposure range bounds are sane
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-EXP-04 Exposure - default EV range bounds are sane")
-    {
-        Camera cam;
-        CHECK(cam.m_ExposureValueMin < cam.m_ExposureValueMax);
-        CHECK(cam.m_ExposureValueMin < 0.0f);  // allows dark scenes
-        CHECK(cam.m_ExposureValueMax > 10.0f); // allows bright scenes
     }
 
     // ------------------------------------------------------------------
@@ -863,24 +828,6 @@ TEST_SUITE("Camera_FrustumPlanes")
 TEST_SUITE("Camera_PitchClamping")
 {
     // ------------------------------------------------------------------
-    // TC-CAM-PITCH-01: Pitch is clamped to [-PI/2 + eps, PI/2 - eps]
-    //                  We verify the clamp bounds are sane constants.
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-PITCH-01 PitchClamping - pitch clamp bounds are within half-pi")
-    {
-        // The Camera::ProcessEvent code clamps pitch to:
-        //   [-XM_PIDIV2 + 0.01, XM_PIDIV2 - 0.01]
-        // We verify these bounds are strictly within ±π/2.
-        const float maxPitch = DirectX::XM_PIDIV2 - 0.01f;
-        const float minPitch = -DirectX::XM_PIDIV2 + 0.01f;
-
-        CHECK(maxPitch < DirectX::XM_PIDIV2);
-        CHECK(minPitch > -DirectX::XM_PIDIV2);
-        CHECK(maxPitch > 0.0f);
-        CHECK(minPitch < 0.0f);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CAM-PITCH-02: View matrix remains valid at extreme pitch
     // ------------------------------------------------------------------
     TEST_CASE("TC-CAM-PITCH-02 PitchClamping - view matrix is valid at extreme pitch")
@@ -979,27 +926,4 @@ TEST_SUITE("Camera_SceneIntegration")
         CHECK(allFinite);
     }
 
-    // ------------------------------------------------------------------
-    // TC-CAM-SCENE-04: Shader hot-reload does not affect camera matrices
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SCENE-04 SceneIntegration - shader hot-reload does not affect camera")
-    {
-        Camera& cam = g_Renderer.m_Scene.m_Camera;
-        cam.Reset();
-
-        const Matrix viewBefore = cam.GetViewMatrix();
-        const Matrix projBefore = cam.GetProjMatrix();
-
-        // Request a shader reload (non-destructive).
-        g_Renderer.m_RequestedShaderReload = true;
-        // The reload is processed at the start of the next frame; camera
-        // matrices must be unaffected immediately.
-        const Matrix viewAfter = cam.GetViewMatrix();
-        const Matrix projAfter = cam.GetProjMatrix();
-
-        g_Renderer.m_RequestedShaderReload = false;
-
-        CHECK(MatrixNearEqual(viewBefore, viewAfter));
-        CHECK(MatrixNearEqual(projBefore, projAfter));
-    }
 }

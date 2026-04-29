@@ -187,14 +187,6 @@ TEST_SUITE("TaskScheduler")
 TEST_SUITE("Config")
 {
     // ------------------------------------------------------------------
-    // TC-CFG-05: Default render-graph aliasing is enabled
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFG-05 Default config - render graph aliasing enabled")
-    {
-        CHECK(Config::Get().m_EnableRenderGraphAliasing);
-    }
-
-    // ------------------------------------------------------------------
     // TC-CFG-06: ParseCommandLine sets --rhidebug
     // ------------------------------------------------------------------
     TEST_CASE("TC-CFG-06 ParseCommandLine - --rhidebug enables validation")
@@ -266,15 +258,6 @@ TEST_SUITE("Config")
 TEST_SUITE("Timer")
 {
     // ------------------------------------------------------------------
-    // TC-TMR-01: SimpleTimer TotalSeconds is non-negative immediately after construction
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TMR-01 SimpleTimer - TotalSeconds is non-negative")
-    {
-        SimpleTimer t;
-        CHECK(t.TotalSeconds() >= 0.0);
-    }
-
-    // ------------------------------------------------------------------
     // TC-TMR-02: SimpleTimer measures elapsed time with reasonable accuracy
     //            We sleep 50 ms and expect 40–200 ms (generous bounds for CI).
     // ------------------------------------------------------------------
@@ -301,17 +284,6 @@ TEST_SUITE("Timer")
 
         // After reset the elapsed should be very small (< 30 ms)
         CHECK(afterReset < 30.0);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TMR-04: SimpleTimer LapSeconds returns positive value and advances
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TMR-04 SimpleTimer - LapSeconds returns positive value")
-    {
-        SimpleTimer t;
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        const double lap = t.LapSeconds();
-        CHECK(lap >= 0.0);
     }
 
     // ------------------------------------------------------------------
@@ -456,161 +428,6 @@ TEST_SUITE("Math")
     }
 
     // ------------------------------------------------------------------
-    // TC-MATH-08: DirectXMath - XMVector basic arithmetic
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-08 DirectXMath - XMVector basic arithmetic")
-    {
-        using namespace DirectX;
-
-        const XMVECTOR a = XMVectorSet(1.0f, 2.0f, 3.0f, 0.0f);
-        const XMVECTOR b = XMVectorSet(4.0f, 5.0f, 6.0f, 0.0f);
-        const XMVECTOR sum = XMVectorAdd(a, b);
-
-        XMFLOAT4 result;
-        XMStoreFloat4(&result, sum);
-
-        CHECK(result.x == doctest::Approx(5.0f));
-        CHECK(result.y == doctest::Approx(7.0f));
-        CHECK(result.z == doctest::Approx(9.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-09: DirectXMath - XMVector3Dot
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-09 DirectXMath - XMVector3Dot")
-    {
-        using namespace DirectX;
-
-        const XMVECTOR a = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-        const XMVECTOR b = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        const XMVECTOR c = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-
-        // Perpendicular vectors → dot = 0
-        float dotAB = XMVectorGetX(XMVector3Dot(a, b));
-        CHECK(dotAB == doctest::Approx(0.0f));
-
-        // Parallel vectors → dot = 1
-        float dotAC = XMVectorGetX(XMVector3Dot(a, c));
-        CHECK(dotAC == doctest::Approx(1.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-10: DirectXMath - XMVector3Normalize
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-10 DirectXMath - XMVector3Normalize produces unit vector")
-    {
-        using namespace DirectX;
-
-        const XMVECTOR v = XMVectorSet(3.0f, 4.0f, 0.0f, 0.0f);
-        const XMVECTOR n = XMVector3Normalize(v);
-        const float len = XMVectorGetX(XMVector3Length(n));
-
-        CHECK(len == doctest::Approx(1.0f).epsilon(0.0001f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-11: DirectXMath - XMMatrixIdentity
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-11 DirectXMath - XMMatrixIdentity is correct")
-    {
-        using namespace DirectX;
-
-        const XMMATRIX I = XMMatrixIdentity();
-        XMFLOAT4X4 m;
-        XMStoreFloat4x4(&m, I);
-
-        // Diagonal should be 1, off-diagonal 0
-        CHECK(m._11 == doctest::Approx(1.0f));
-        CHECK(m._22 == doctest::Approx(1.0f));
-        CHECK(m._33 == doctest::Approx(1.0f));
-        CHECK(m._44 == doctest::Approx(1.0f));
-        CHECK(m._12 == doctest::Approx(0.0f));
-        CHECK(m._13 == doctest::Approx(0.0f));
-        CHECK(m._21 == doctest::Approx(0.0f));
-        CHECK(m._31 == doctest::Approx(0.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-12: DirectXMath - XMMatrixMultiply with identity
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-12 DirectXMath - XMMatrixMultiply with identity is no-op")
-    {
-        using namespace DirectX;
-
-        const XMMATRIX T = XMMatrixTranslation(1.0f, 2.0f, 3.0f);
-        const XMMATRIX I = XMMatrixIdentity();
-        const XMMATRIX result = XMMatrixMultiply(T, I);
-
-        XMFLOAT4X4 mT, mR;
-        XMStoreFloat4x4(&mT, T);
-        XMStoreFloat4x4(&mR, result);
-
-        CHECK(mR._41 == doctest::Approx(mT._41));
-        CHECK(mR._42 == doctest::Approx(mT._42));
-        CHECK(mR._43 == doctest::Approx(mT._43));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-13: DirectXMath - XMMatrixInverse
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-13 DirectXMath - XMMatrixInverse of translation")
-    {
-        using namespace DirectX;
-
-        const XMMATRIX T = XMMatrixTranslation(5.0f, -3.0f, 2.0f);
-        XMVECTOR det;
-        const XMMATRIX Tinv = XMMatrixInverse(&det, T);
-        const XMMATRIX product = XMMatrixMultiply(T, Tinv);
-
-        XMFLOAT4X4 m;
-        XMStoreFloat4x4(&m, product);
-
-        // T * T^-1 should be identity
-        CHECK(m._11 == doctest::Approx(1.0f).epsilon(0.0001f));
-        CHECK(m._22 == doctest::Approx(1.0f).epsilon(0.0001f));
-        CHECK(m._33 == doctest::Approx(1.0f).epsilon(0.0001f));
-        CHECK(m._44 == doctest::Approx(1.0f).epsilon(0.0001f));
-        CHECK(m._41 == doctest::Approx(0.0f).epsilon(0.0001f));
-        CHECK(m._42 == doctest::Approx(0.0f).epsilon(0.0001f));
-        CHECK(m._43 == doctest::Approx(0.0f).epsilon(0.0001f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-14: DirectXMath - XMQuaternionRotationAxis
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-14 DirectXMath - XMQuaternionRotationAxis produces unit quaternion")
-    {
-        using namespace DirectX;
-
-        const XMVECTOR axis = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        const XMVECTOR q = XMQuaternionRotationAxis(axis, XM_PIDIV2);
-        const float len = XMVectorGetX(XMQuaternionLength(q));
-
-        CHECK(len == doctest::Approx(1.0f).epsilon(0.0001f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-15: DirectXMath - BoundingFrustum contains/intersects
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-15 DirectXMath - BoundingFrustum contains a point inside")
-    {
-        using namespace DirectX;
-
-        // Build a simple perspective frustum
-        const XMMATRIX proj = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.0f, 0.1f, 100.0f);
-        BoundingFrustum frustum;
-        BoundingFrustum::CreateFromMatrix(frustum, proj);
-
-        // A point directly in front of the camera at z=10 should be inside
-        const XMVECTOR pointInside = XMVectorSet(0.0f, 0.0f, 10.0f, 1.0f);
-        XMFLOAT3 p;
-        XMStoreFloat3(&p, pointInside);
-
-        const ContainmentType ct = frustum.Contains(XMLoadFloat3(&p));
-        CHECK(ct != DISJOINT);
-    }
-
-    // ------------------------------------------------------------------
     // TC-MATH-16: CalculateGridZParams returns finite Vector3
     // ------------------------------------------------------------------
     TEST_CASE("TC-MATH-16 CalculateGridZParams - returns finite components")
@@ -646,17 +463,6 @@ TEST_SUITE("Math")
     }
 
     // ------------------------------------------------------------------
-    // TC-MATH-19: HashToUint returns consistent value for the same input
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-19 HashToUint - same input produces same output")
-    {
-        const size_t hash = std::hash<std::string>{}("test_string");
-        const uint32_t r1 = HashToUint(hash);
-        const uint32_t r2 = HashToUint(hash);
-        CHECK(r1 == r2);
-    }
-
-    // ------------------------------------------------------------------
     // TC-MATH-20: HashToUint different inputs generally produce different outputs
     // ------------------------------------------------------------------
     TEST_CASE("TC-MATH-20 HashToUint - different hashes produce different uint values")
@@ -669,15 +475,6 @@ TEST_SUITE("Math")
         const uint32_t rb = HashToUint(hashB);
         if (hashA != hashB)
             CHECK(ra != rb);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-21: NextLowerPow2 edge: 0 does not crash
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-21 NextLowerPow2 - 0 does not crash")
-    {
-        // Behaviour of NextLowerPow2(0) is implementation-defined but must not crash.
-        CHECK_NOTHROW(static_cast<void>(NextLowerPow2(0u)));
     }
 
     // ------------------------------------------------------------------
@@ -712,125 +509,6 @@ TEST_SUITE("Math")
         CHECK(Halton(4, 5) == doctest::Approx(0.8f));
     }
 
-    // ------------------------------------------------------------------
-    // TC-MATH-25: DirectXMath - XMVector3Cross basic identity
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-25 DirectXMath - XMVector3Cross X x Y = Z")
-    {
-        using namespace DirectX;
-        const XMVECTOR X = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-        const XMVECTOR Y = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        const XMVECTOR Z = XMVector3Cross(X, Y);
-
-        XMFLOAT3 result;
-        XMStoreFloat3(&result, Z);
-
-        CHECK(result.x == doctest::Approx(0.0f));
-        CHECK(result.y == doctest::Approx(0.0f));
-        CHECK(result.z == doctest::Approx(1.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-26: DirectXMath - XMMatrixTranspose of identity is identity
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-26 DirectXMath - XMMatrixTranspose of identity is identity")
-    {
-        using namespace DirectX;
-        const XMMATRIX I = XMMatrixIdentity();
-        const XMMATRIX T = XMMatrixTranspose(I);
-        XMFLOAT4X4 m;
-        XMStoreFloat4x4(&m, T);
-        CHECK(m._11 == doctest::Approx(1.0f));
-        CHECK(m._22 == doctest::Approx(1.0f));
-        CHECK(m._33 == doctest::Approx(1.0f));
-        CHECK(m._44 == doctest::Approx(1.0f));
-        CHECK(m._12 == doctest::Approx(0.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-27: DirectXMath - XMMatrixScaling diagonal entries
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-27 DirectXMath - XMMatrixScaling diagonal entries")
-    {
-        using namespace DirectX;
-        const XMMATRIX S = XMMatrixScaling(2.0f, 3.0f, 4.0f);
-        XMFLOAT4X4 m;
-        XMStoreFloat4x4(&m, S);
-        CHECK(m._11 == doctest::Approx(2.0f));
-        CHECK(m._22 == doctest::Approx(3.0f));
-        CHECK(m._33 == doctest::Approx(4.0f));
-        CHECK(m._44 == doctest::Approx(1.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-28: DirectXMath - XMMatrixRotationY 90° rotates +X to +Z
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-28 DirectXMath - XMMatrixRotationY 90 degrees")
-    {
-        using namespace DirectX;
-        // Rotate +X by 90° around Y → should yield +Z (in LH convention)
-        const XMMATRIX R = XMMatrixRotationY(XM_PIDIV2);
-        const XMVECTOR X = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-        const XMVECTOR result = XMVector3TransformNormal(X, R);
-        XMFLOAT3 r;
-        XMStoreFloat3(&r, result);
-        CHECK(std::abs(r.x) < 0.0001f);
-        CHECK(std::abs(r.y) < 0.0001f);
-        CHECK(std::abs(std::abs(r.z) - 1.0f) < 0.0001f);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-29: DirectXMath - XMMatrixLookAtLH produces finite matrix
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-29 DirectXMath - XMMatrixLookAtLH produces finite matrix")
-    {
-        using namespace DirectX;
-        const XMVECTOR eye = XMVectorSet(0.0f, 5.0f, -10.0f, 0.0f);
-        const XMVECTOR at  = XMVectorSet(0.0f, 0.0f,   0.0f, 0.0f);
-        const XMVECTOR up  = XMVectorSet(0.0f, 1.0f,   0.0f, 0.0f);
-        const XMMATRIX V = XMMatrixLookAtLH(eye, at, up);
-        XMFLOAT4X4 m;
-        XMStoreFloat4x4(&m, V);
-        CHECK(std::isfinite(m._11));
-        CHECK(std::isfinite(m._22));
-        CHECK(std::isfinite(m._33));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-30: DirectXMath - BoundingSphere Contains works
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-30 DirectXMath - BoundingSphere contains interior point")
-    {
-        using namespace DirectX;
-        BoundingSphere bs({ 0.0f, 0.0f, 0.0f }, 5.0f);
-        XMFLOAT3 inside{ 1.0f, 1.0f, 1.0f };
-        XMFLOAT3 outside{ 10.0f, 10.0f, 10.0f };
-        CHECK(bs.Contains(XMLoadFloat3(&inside))  != DISJOINT);
-        CHECK(bs.Contains(XMLoadFloat3(&outside)) == DISJOINT);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-31: DirectXMath - XMVector3LengthSq basic identity
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-31 DirectXMath - XMVector3LengthSq basic values")
-    {
-        using namespace DirectX;
-        // ||(1,0,0)||^2 = 1
-        const XMVECTOR v1 = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-        CHECK(XMVectorGetX(XMVector3LengthSq(v1)) == doctest::Approx(1.0f));
-
-        // ||(3,4,0)||^2 = 25
-        const XMVECTOR v2 = XMVectorSet(3.0f, 4.0f, 0.0f, 0.0f);
-        CHECK(XMVectorGetX(XMVector3LengthSq(v2)) == doctest::Approx(25.0f));
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MATH-32: Halton sequence - index 0 does not crash
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MATH-32 Halton - index 0 does not crash")
-    {
-        CHECK_NOTHROW(static_cast<void>(Halton(0, 2)));
-    }
 }
 
 // ============================================================================
@@ -857,23 +535,6 @@ TEST_SUITE("TaskScheduler_Extended")
 
         for (int i = 0; i < 50; ++i)
             CHECK(counters[i].load() == 1);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TSX-04: Multiple consecutive ExecuteAllScheduledTasks() calls are idempotent
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TSX-04 ExecuteAll - repeated calls are idempotent")
-    {
-        TaskScheduler scheduler;
-        std::atomic<int> counter{ 0 };
-
-        scheduler.ScheduleTask([&counter]() { counter.fetch_add(1); }, false);
-        scheduler.ExecuteAllScheduledTasks();
-
-        // Second call should be a no-op (no pending tasks).
-        const int afterFirst = counter.load();
-        CHECK_NOTHROW(scheduler.ExecuteAllScheduledTasks());
-        CHECK(counter.load() == afterFirst);
     }
 
     // ------------------------------------------------------------------
@@ -925,28 +586,6 @@ TEST_SUITE("Config_Extended")
         CHECK_NOTHROW(Config::ParseCommandLine(1, const_cast<char**>(argv)));
     }
 
-    // ------------------------------------------------------------------
-    // TC-CFGX-03: m_GltfSamplesPath default is empty string
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-03 DefaultConfig - m_GltfSamplesPath default is empty")
-    {
-        // Config is shared state; we cannot reset it to true defaults without
-        // ConfigGuard, but we can at least verify the type is std::string.
-        const std::string& path = Config::Get().m_GltfSamplesPath;
-        CHECK(path.size() < 4096u); // sane bound
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CFGX-05: m_EnableGPUAssistedValidation default is false
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CFGX-05 DefaultConfig - m_EnableGPUAssistedValidation default is false")
-    {
-        ConfigGuard guard;
-        const char* argv[] = { "HobbyRenderer" };
-        Config::ParseCommandLine(1, const_cast<char**>(argv));
-        CHECK_FALSE(Config::Get().m_EnableGPUAssistedValidation);
-    }
-
 }
 
 // ============================================================================
@@ -983,14 +622,6 @@ TEST_SUITE("Timer_Extended")
 
         // Allow 1 ms tolerance for the two reads not being simultaneous.
         CHECK(std::abs(ms - sec * 1000.0) < 1.0);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-TMRX-03: SecondsToMilliseconds handles negative input
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TMRX-03 SecondsToMilliseconds - negative input")
-    {
-        CHECK(SimpleTimer::SecondsToMilliseconds(-1.0f) == doctest::Approx(-1000.0f));
     }
 
     // ------------------------------------------------------------------

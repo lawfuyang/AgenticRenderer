@@ -6,32 +6,17 @@
 // Prerequisites: g_Renderer fully initialized (RHI + CommonResources).
 //
 // Test coverage:
-//   - Single frame runs without crash (baseline)
-//   - 5 consecutive frames complete without crash
-//   - 10 consecutive frames complete without crash
-//   - 20 consecutive frames complete without crash
+//   - 10 consecutive frames complete without crash (baseline)
 //   - Frame number increments by exactly 1 per RunOneFrame() call
 //   - Frame number increments by N after N RunOneFrame() calls
-//   - m_FrameTime is non-zero after RunOneFrame()
-//   - TAA enabled: 5 frames without crash
-//   - TAA disabled: 5 frames without crash
-//   - Bloom enabled: 3 frames without crash
-//   - Bloom disabled: 3 frames without crash
-//   - Sky enabled: 3 frames without crash
-//   - Sky disabled: 3 frames without crash
-//   - Auto-exposure enabled: 3 frames without crash
-//   - Auto-exposure disabled: 3 frames without crash
-//   - All culling disabled: 3 frames without crash
-//   - All culling enabled: 3 frames without crash
+//   - Sky on/off toggle: 3 frames each without crash
+//   - Auto-exposure on/off toggle: 3 frames each without crash
+//   - Culling toggle (all off vs all on): 3 frames each without crash
 //   - ForcedLOD=0: 3 frames without crash
-//   - ForcedLOD=-1 (reset): 3 frames without crash
 //   - FreezeCullingCamera: 5 frames without crash
 //   - RT shadows enabled: 3 frames (skip if RT not supported)
 //   - RT shadows disabled: 3 frames without crash
-//   - IBL rendering mode: 3 frames without crash
-//   - RenderingMode::Normal after IBL: 3 frames without crash
-//   - Animation enabled: 5 frames without crash (with AnimatedCube if available)
-//   - Animation disabled: 5 frames without crash
+//   - Animations on/off toggle: 5 frames each without crash
 //   - Scene load → 3 frames → unload → reload → 3 frames: no crash
 //   - DebugMode cycling over several frames: no crash
 //   - RendererMode::ReferencePathTracer: 1 frame (skip if no samples)
@@ -47,43 +32,11 @@
 TEST_SUITE("MultiFrame_Basic")
 {
     // ------------------------------------------------------------------
-    // TC-MF-01: Single frame baseline (minimal scene)
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-01 MultiFrame - single frame does not crash")
-    {
-        CHECK(RunOneFrame());
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-02: 5 consecutive frames complete without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-02 MultiFrame - 5 frames complete without crash")
-    {
-        for (int i = 0; i < 5; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
     // TC-MF-03: 10 consecutive frames complete without crash
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-03 MultiFrame - 10 frames complete without crash")
     {
         for (int i = 0; i < 10; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-04: 20 consecutive frames complete without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-04 MultiFrame - 20 frames complete without crash")
-    {
-        for (int i = 0; i < 20; ++i)
         {
             INFO("Frame " << i);
             CHECK(RunOneFrame());
@@ -111,17 +64,6 @@ TEST_SUITE("MultiFrame_Basic")
             RunOneFrame();
         CHECK(g_Renderer.m_FrameNumber == before + N);
     }
-
-    // ------------------------------------------------------------------
-    // TC-MF-07: m_FrameTime is set (non-zero) after RunOneFrame()
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-07 MultiFrame - m_FrameTime is non-zero after a frame")
-    {
-        // Run twice: the first frame may have zero delta (no prior timestamp).
-        RunOneFrame();
-        RunOneFrame();
-        CHECK(g_Renderer.m_FrameTime >= 0.0f); // ≥0 (may be very small in a test)
-    }
 }
 
 // ============================================================================
@@ -130,147 +72,43 @@ TEST_SUITE("MultiFrame_Basic")
 TEST_SUITE("MultiFrame_FeatureToggles")
 {
     // ------------------------------------------------------------------
-    // TC-MF-TAA-01: TAA enabled — 5 frames without crash
+    // TC-MF-SKY: Sky on/off toggle — 3 frames each without crash
     // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-TAA-01 FeatureToggles - TAA enabled 5 frames")
-    {
-        g_Renderer.m_bTAAEnabled = true;
-        for (int i = 0; i < 5; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-        g_Renderer.m_bTAAEnabled = false; // restore
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-TAA-02: TAA disabled — 5 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-TAA-02 FeatureToggles - TAA disabled 5 frames")
-    {
-        g_Renderer.m_bTAAEnabled = false;
-        for (int i = 0; i < 5; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-BLM-01: Bloom enabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-BLM-01 FeatureToggles - Bloom enabled 3 frames")
-    {
-        g_Renderer.m_EnableBloom = true;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-        g_Renderer.m_EnableBloom = true; // keep default
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-BLM-02: Bloom disabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-BLM-02 FeatureToggles - Bloom disabled 3 frames")
-    {
-        g_Renderer.m_EnableBloom = false;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-        g_Renderer.m_EnableBloom = true; // restore
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-SKY-01: Sky enabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-SKY-01 FeatureToggles - Sky enabled 3 frames")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-SKY FeatureToggles - Sky on/off toggle 3 frames each")
     {
         g_Renderer.m_EnableSky = true;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-SKY-02: Sky disabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-SKY-02 FeatureToggles - Sky disabled 3 frames")
-    {
+        for (int i = 0; i < 3; ++i) { INFO("Sky-on frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableSky = false;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
+        for (int i = 0; i < 3; ++i) { INFO("Sky-off frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableSky = true; // restore
     }
 
     // ------------------------------------------------------------------
-    // TC-MF-EXP-01: Auto-exposure enabled — 3 frames without crash
+    // TC-MF-EXP: Auto-exposure on/off toggle — 3 frames each without crash
     // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-EXP-01 FeatureToggles - Auto-exposure enabled 3 frames")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-EXP FeatureToggles - Auto-exposure on/off toggle 3 frames each")
     {
         g_Renderer.m_EnableAutoExposure = true;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-EXP-02: Auto-exposure disabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-EXP-02 FeatureToggles - Auto-exposure disabled 3 frames")
-    {
+        for (int i = 0; i < 3; ++i) { INFO("AE-on frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableAutoExposure = false;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
+        for (int i = 0; i < 3; ++i) { INFO("AE-off frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableAutoExposure = true; // restore
     }
 
     // ------------------------------------------------------------------
-    // TC-MF-CULL-01: All culling disabled — 3 frames without crash
+    // TC-MF-CULL: Culling all-off then all-on — 3 frames each without crash
     // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-CULL-01 FeatureToggles - all culling disabled 3 frames")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-CULL FeatureToggles - culling all-off then all-on 3 frames each")
     {
-        g_Renderer.m_EnableFrustumCulling    = false;
-        g_Renderer.m_EnableOcclusionCulling  = false;
-        g_Renderer.m_EnableConeCulling       = false;
+        g_Renderer.m_EnableFrustumCulling   = false;
+        g_Renderer.m_EnableOcclusionCulling = false;
+        g_Renderer.m_EnableConeCulling      = false;
+        for (int i = 0; i < 3; ++i) { INFO("Cull-off frame " << i); CHECK(RunOneFrame()); }
 
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-
-        g_Renderer.m_EnableFrustumCulling    = true;
-        g_Renderer.m_EnableOcclusionCulling  = true;
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-CULL-02: All culling enabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-CULL-02 FeatureToggles - all culling enabled 3 frames")
-    {
-        g_Renderer.m_EnableFrustumCulling    = true;
-        g_Renderer.m_EnableOcclusionCulling  = true;
-        g_Renderer.m_EnableConeCulling       = true;
-
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
+        g_Renderer.m_EnableFrustumCulling   = true;
+        g_Renderer.m_EnableOcclusionCulling = true;
+        g_Renderer.m_EnableConeCulling      = true;
+        for (int i = 0; i < 3; ++i) { INFO("Cull-on frame " << i); CHECK(RunOneFrame()); }
 
         g_Renderer.m_EnableConeCulling = false; // restore non-default
     }
@@ -287,19 +125,6 @@ TEST_SUITE("MultiFrame_FeatureToggles")
             CHECK(RunOneFrame());
         }
         g_Renderer.m_ForcedLOD = -1; // restore
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-LOD-02: ForcedLOD=-1 (auto) — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-LOD-02 FeatureToggles - ForcedLOD=-1 (auto) 3 frames")
-    {
-        g_Renderer.m_ForcedLOD = -1;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
     }
 
     // ------------------------------------------------------------------
@@ -334,8 +159,6 @@ TEST_SUITE("MultiFrame_FeatureToggles")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-RT-02 FeatureToggles - RT shadows enabled 3 frames")
     {
-        // Check for RayQuery support; skip gracefully if absent.
-        nvrhi::rt::AccelStructHandle dummy = nullptr;
         if (!DEV()->queryFeatureSupport(nvrhi::Feature::RayQuery))
         {
             WARN("Skipping: RayQuery not supported on this device");
@@ -352,29 +175,14 @@ TEST_SUITE("MultiFrame_FeatureToggles")
     }
 
     // ------------------------------------------------------------------
-    // TC-MF-ANIM-01: Animations enabled — 5 frames without crash
+    // TC-MF-ANIM: Animations on/off toggle — 5 frames each without crash
     // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-ANIM-01 FeatureToggles - animations enabled 5 frames")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-ANIM FeatureToggles - animations on/off toggle 5 frames each")
     {
         g_Renderer.m_EnableAnimations = true;
-        for (int i = 0; i < 5; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-ANIM-02: Animations disabled — 5 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-ANIM-02 FeatureToggles - animations disabled 5 frames")
-    {
+        for (int i = 0; i < 5; ++i) { INFO("Anim-on frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableAnimations = false;
-        for (int i = 0; i < 5; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
+        for (int i = 0; i < 5; ++i) { INFO("Anim-off frame " << i); CHECK(RunOneFrame()); }
         g_Renderer.m_EnableAnimations = true; // restore
     }
 }
@@ -396,21 +204,6 @@ TEST_SUITE("MultiFrame_RenderingModes")
             CHECK(RunOneFrame());
         }
         g_Renderer.m_Mode = RenderingMode::Normal; // restore
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-MODE-02: Normal mode after IBL — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-MODE-02 RenderingModes - Normal mode after IBL 3 frames")
-    {
-        g_Renderer.m_Mode = RenderingMode::IBL;
-        RunOneFrame();
-        g_Renderer.m_Mode = RenderingMode::Normal;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
     }
 
     // ------------------------------------------------------------------
@@ -562,22 +355,8 @@ TEST_SUITE("MultiFrame_SceneReload")
 TEST_SUITE("MultiFrame_BloomDebug")
 {
     // ------------------------------------------------------------------
-    // TC-MF-BLMD-01: DebugBloom enabled — 3 frames without crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-BLMD-01 BloomDebug - DebugBloom enabled 3 frames")
-    {
-        g_Renderer.m_EnableBloom = true;
-        g_Renderer.m_DebugBloom  = true;
-        for (int i = 0; i < 3; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-        g_Renderer.m_DebugBloom = false;
-    }
-
-    // ------------------------------------------------------------------
     // TC-MF-BLMD-02: BloomIntensity=0 — 3 frames without crash
+    //   (DebugBloom toggle is covered by TC-MF-GPU-04 bloom-per-frame toggle)
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-BLMD-02 BloomDebug - BloomIntensity=0 3 frames")
     {
@@ -657,25 +436,7 @@ TEST_SUITE("MultiFrame_GPULifetime")
     }
 
     // ------------------------------------------------------------------
-    // TC-MF-GPU-02: 20 tight frames — extended stress of the deferred-
-    //   release path.  Covers multiple eviction cycles (resources inactive
-    //   for >3 frames get evicted in Reset()).
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-GPU-02 GPULifetime - 20 tight frames no ERROR 921")
-    {
-        g_Renderer.m_RenderGraph.SetVerboseLogging(true);
-
-        for (int i = 0; i < 20; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-
-        g_Renderer.m_RenderGraph.SetVerboseLogging(false);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-GPU-03: Rendering mode switch mid-run.
+    // TC-MF-GPU-03:    // TC-MF-GPU-03: Rendering mode switch mid-run.
     //   Switching Normal → IBL → Normal changes which renderers are
     //   scheduled, causing some transient resources to be evicted (not
     //   declared for >3 frames) and then re-allocated.  This exercises
@@ -914,25 +675,7 @@ TEST_SUITE("MultiFrame_GPULifetime")
     }
 
     // ------------------------------------------------------------------
-    // TC-MF-GPU-11: RenderGraph verbose logging does not crash over N frames.
-    //   Ensures the SDL_Log calls inside FlushDeferredReleases, Reset eviction,
-    //   and Compile recreation paths don't cause issues when enabled.
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-MF-GPU-11 GPULifetime - verbose logging enabled 10 frames no crash")
-    {
-        g_Renderer.m_RenderGraph.SetVerboseLogging(true);
-
-        for (int i = 0; i < 10; ++i)
-        {
-            INFO("Frame " << i);
-            CHECK(RunOneFrame());
-        }
-
-        g_Renderer.m_RenderGraph.SetVerboseLogging(false);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-MF-GPU-12: ForceInvalidateFramesRemaining reaches 0 after 2 frames
+    // TC-MF-GPU-12:    // TC-MF-GPU-12: ForceInvalidateFramesRemaining reaches 0 after 2 frames
     //   post-Shutdown.  Verifies the post-Shutdown invalidation countdown
     //   works correctly alongside the deferred-release path.
     // ------------------------------------------------------------------

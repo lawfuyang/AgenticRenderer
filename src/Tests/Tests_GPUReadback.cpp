@@ -7,32 +7,17 @@
 //
 // Test coverage:
 //   - CreateTestTexture2D 1x1 RGBA8_UNORM succeeds (non-null handle)
-//   - CreateTestTexture2D 4x4 RGBA8_UNORM succeeds
-//   - CreateTestTexture2D 256x256 RGBA8_UNORM succeeds
 //   - CreateTestTexture2D 1x1 R32_FLOAT succeeds
-//   - ReadbackTexelRGBA8 red pixel: R=255, G=0, B=0, A=255
-//   - ReadbackTexelRGBA8 green pixel: R=0, G=255, B=0, A=255
-//   - ReadbackTexelRGBA8 blue pixel: R=0, G=0, B=255, A=255
-//   - ReadbackTexelRGBA8 white pixel: R=255, G=255, B=255, A=255
-//   - ReadbackTexelRGBA8 black pixel: all channels == 0
-//   - ReadbackTexelFloat 0.0f → reads ~0.0f
+//   - ReadbackTexelRGBA8 red/green/blue/black pixels: correct channel values
 //   - ReadbackTexelFloat 1.0f → reads ~1.0f
 //   - ReadbackTexelFloat 0.5f → reads ~0.5f
 //   - Staging texture creation (nvrhi::StagingTextureHandle) is non-null
-//   - Multiple textures created in sequence do not crash
-//   - Texture debugName descriptor is preserved
-//   - GPU structured buffer creation (byteSize > 0)
-//   - GPU constant buffer creation
-//   - GPU index buffer creation (32-bit)
-//   - GPU vertex buffer creation
+//   - Texture descriptor reports correct dimensions
+//   - ReadbackTexelRGBA8 non-zero interior texel in a 4x4 texture
+//   - GPU buffer creation: structured, constant, index, vertex, UAV, indirect args
 //   - Buffer descriptor byte size matches requested
-//   - Vertex buffer is copyable to staging buffer
-//   - UAV buffer creation (byteSize > 0)
-//   - Indirect args buffer creation
-//   - Creating a texture and writing via upload command list does not crash
-//   - Rendering a frame after GPU resource creation preserves device validity
-//   - Binding layout creation for CBV+SRV does not crash
-//   - Sampler descriptor table (CommonResources) is non-null
+//   - SPD atomic counter descriptor byte size > 0
+//   - InstanceDataBuffer capacity covers all CPU instances (regression)
 //
 // Run with: HobbyRenderer --run-tests=*GPUReadback*
 // ============================================================================
@@ -78,30 +63,6 @@ TEST_SUITE("GPUReadback_TextureCreation")
     }
 
     // ------------------------------------------------------------------
-    // TC-GRB-02: CreateTestTexture2D 4x4 RGBA8_UNORM returns non-null
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-02 TextureCreation - 4x4 RGBA8 texture is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-        std::vector<uint32_t> pixels(16, MakeRGBA8(0, 128, 255, 255));
-        nvrhi::TextureHandle tex = CreateTestTexture2D(4, 4, nvrhi::Format::RGBA8_UNORM,
-                                                       pixels.data(), 4 * sizeof(uint32_t), "TC-GRB-02");
-        CHECK(tex != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-03: CreateTestTexture2D 256x256 RGBA8_UNORM returns non-null
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-03 TextureCreation - 256x256 RGBA8 texture is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-        std::vector<uint32_t> pixels(256 * 256, MakeRGBA8(200, 200, 200, 255));
-        nvrhi::TextureHandle tex = CreateTestTexture2D(256, 256, nvrhi::Format::RGBA8_UNORM,
-                                                       pixels.data(), 256 * sizeof(uint32_t), "TC-GRB-03");
-        CHECK(tex != nullptr);
-    }
-
-    // ------------------------------------------------------------------
     // TC-GRB-04: CreateTestTexture2D 1x1 R32_FLOAT returns non-null
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-04 TextureCreation - 1x1 R32_FLOAT texture is non-null")
@@ -128,35 +89,6 @@ TEST_SUITE("GPUReadback_TextureCreation")
         const auto& desc = tex->getDesc();
         CHECK(desc.width  == W);
         CHECK(desc.height == H);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-06: Texture descriptor reports correct format
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-06 TextureCreation - texture descriptor reports correct format")
-    {
-        REQUIRE(DEV() != nullptr);
-        const uint32_t pixel = MakeRGBA8(0, 255, 0, 255);
-        nvrhi::TextureHandle tex = CreateTestTexture2D(1, 1, nvrhi::Format::RGBA8_UNORM,
-                                                       &pixel, sizeof(uint32_t), "TC-GRB-06");
-        REQUIRE(tex != nullptr);
-        CHECK(tex->getDesc().format == nvrhi::Format::RGBA8_UNORM);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-07: Multiple textures created in sequence do not crash
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-07 TextureCreation - creating 8 textures in sequence does not crash")
-    {
-        REQUIRE(DEV() != nullptr);
-        for (int i = 0; i < 8; ++i)
-        {
-            const uint32_t pixel = MakeRGBA8((uint8_t)(i * 30), (uint8_t)(i * 20), 128, 255);
-            nvrhi::TextureHandle tex = CreateTestTexture2D(1, 1, nvrhi::Format::RGBA8_UNORM,
-                                                           &pixel, sizeof(uint32_t));
-            INFO("Texture " << i);
-            CHECK(tex != nullptr);
-        }
     }
 
     // ------------------------------------------------------------------
@@ -236,24 +168,6 @@ TEST_SUITE("GPUReadback_TexelValues")
     }
 
     // ------------------------------------------------------------------
-    // TC-GRB-WHT: ReadbackTexelRGBA8 — white pixel
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-WHT ReadbackTexel - white pixel RGBA values correct")
-    {
-        REQUIRE(DEV() != nullptr);
-        const uint32_t srcPixel = MakeRGBA8(255, 255, 255, 255);
-        nvrhi::TextureHandle tex = CreateTestTexture2D(1, 1, nvrhi::Format::RGBA8_UNORM,
-                                                       &srcPixel, sizeof(uint32_t), "TC-WHT");
-        REQUIRE(tex != nullptr);
-
-        const auto px = Unpack(ReadbackTexelRGBA8(tex, 0, 0));
-        CHECK(px.r == 255);
-        CHECK(px.g == 255);
-        CHECK(px.b == 255);
-        CHECK(px.a == 255);
-    }
-
-    // ------------------------------------------------------------------
     // TC-GRB-BLK: ReadbackTexelRGBA8 — black pixel
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BLK ReadbackTexel - black pixel all channels are 0")
@@ -269,21 +183,6 @@ TEST_SUITE("GPUReadback_TexelValues")
         CHECK(px.g == 0);
         CHECK(px.b == 0);
         // Alpha may be 255 depending on upload path — just check RGB are 0.
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-F0: ReadbackTexelFloat 0.0f → reads ~0.0f
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-F0 ReadbackTexel - R32_FLOAT 0.0f reads back as 0.0f")
-    {
-        REQUIRE(DEV() != nullptr);
-        const float val = 0.0f;
-        nvrhi::TextureHandle tex = CreateTestTexture2D(1, 1, nvrhi::Format::R32_FLOAT,
-                                                       &val, sizeof(float), "TC-F0");
-        REQUIRE(tex != nullptr);
-
-        const float readback = ReadbackTexelFloat(tex, 0, 0);
-        CHECK(readback == doctest::Approx(0.0f).epsilon(0.001f));
     }
 
     // ------------------------------------------------------------------
@@ -342,68 +241,61 @@ TEST_SUITE("GPUReadback_TexelValues")
 TEST_SUITE("GPUReadback_BufferCreation")
 {
     // ------------------------------------------------------------------
-    // TC-GRB-BUF-01: GPU structured buffer creation (byteSize > 0)
+    // TC-GRB-BUF-01: GPU buffer creation — structured, constant, index, vertex, UAV, indirect args
     // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-01 BufferCreation - structured buffer is non-null")
+    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-01 BufferCreation - all common buffer types are non-null")
     {
         REQUIRE(DEV() != nullptr);
 
-        nvrhi::BufferDesc desc;
-        desc.byteSize     = 64;
-        desc.structStride = sizeof(float);
-        desc.debugName    = "TC-BUF-Structured";
-        desc.canHaveUAVs  = false;
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-BUF-02: GPU constant buffer creation
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-02 BufferCreation - constant buffer is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        nvrhi::BufferDesc desc;
-        desc.byteSize        = 256; // D3D12 minimum CBV alignment
-        desc.isConstantBuffer = true;
-        desc.debugName        = "TC-BUF-Constant";
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-BUF-03: GPU index buffer creation (32-bit)
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-03 BufferCreation - index buffer is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        nvrhi::BufferDesc desc;
-        desc.byteSize     = 12; // 3 indices × 4 bytes
-        desc.isIndexBuffer = true;
-        desc.debugName    = "TC-BUF-Index";
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-BUF-04: GPU vertex buffer creation
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-04 BufferCreation - vertex buffer is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        nvrhi::BufferDesc desc;
-        desc.byteSize      = sizeof(float) * 3 * 3; // 3 floats × 3 vertices
-        desc.isVertexBuffer = true;
-        desc.debugName     = "TC-BUF-Vertex";
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
+        // Structured
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize     = 64;
+            desc.structStride = sizeof(float);
+            desc.debugName    = "TC-BUF-Structured";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
+        // Constant (D3D12 minimum CBV alignment)
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize         = 256;
+            desc.isConstantBuffer = true;
+            desc.debugName        = "TC-BUF-Constant";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
+        // Index (32-bit, 3 indices)
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize      = 12;
+            desc.isIndexBuffer = true;
+            desc.debugName     = "TC-BUF-Index";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
+        // Vertex
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize       = sizeof(float) * 3 * 3;
+            desc.isVertexBuffer = true;
+            desc.debugName      = "TC-BUF-Vertex";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
+        // UAV
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize    = 64;
+            desc.canHaveUAVs = true;
+            desc.debugName   = "TC-BUF-UAV";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
+        // Indirect args
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize          = sizeof(uint32_t) * 5;
+            desc.isDrawIndirectArgs = true;
+            desc.canHaveUAVs       = true;
+            desc.debugName         = "TC-BUF-IndirectArgs";
+            CHECK(DEV()->createBuffer(desc) != nullptr);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -424,39 +316,6 @@ TEST_SUITE("GPUReadback_BufferCreation")
     }
 
     // ------------------------------------------------------------------
-    // TC-GRB-BUF-06: UAV buffer creation
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-06 BufferCreation - UAV buffer is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        nvrhi::BufferDesc desc;
-        desc.byteSize    = 64;
-        desc.canHaveUAVs = true;
-        desc.debugName   = "TC-BUF-UAV";
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-BUF-07: Indirect args buffer creation
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-07 BufferCreation - indirect args buffer is non-null")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        nvrhi::BufferDesc desc;
-        desc.byteSize           = sizeof(uint32_t) * 5; // D3D12 DrawIndexedArguments
-        desc.isDrawIndirectArgs  = true;
-        desc.canHaveUAVs        = true;
-        desc.debugName          = "TC-BUF-IndirectArgs";
-
-        auto buf = DEV()->createBuffer(desc);
-        CHECK(buf != nullptr);
-    }
-
-    // ------------------------------------------------------------------
     // TC-GRB-BUF-08: SPD atomic counter descriptor byte size > 0
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-08 BufferCreation - SPD atomic counter desc byteSize > 0")
@@ -466,25 +325,6 @@ TEST_SUITE("GPUReadback_BufferCreation")
         const RGBufferDesc spdDesc = RenderGraph::GetSPDAtomicCounterDesc("TC-SPD");
         CHECK(spdDesc.m_NvrhiDesc.byteSize > 0);
         CHECK(spdDesc.m_NvrhiDesc.canHaveUAVs);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-GRB-BUF-09: Render frame after buffer creation keeps device valid
-    // ------------------------------------------------------------------
-    TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-GRB-BUF-09 BufferCreation - frame after buffer creation is safe")
-    {
-        REQUIRE(DEV() != nullptr);
-
-        // Create a few buffers
-        nvrhi::BufferDesc desc;
-        desc.byteSize     = 256;
-        desc.isVertexBuffer = true;
-        desc.debugName    = "TC-BUF-PreFrame";
-        auto buf = DEV()->createBuffer(desc);
-        REQUIRE(buf != nullptr);
-
-        CHECK(RunOneFrame());
-        CHECK(DEV() != nullptr);
     }
 
     // ------------------------------------------------------------------

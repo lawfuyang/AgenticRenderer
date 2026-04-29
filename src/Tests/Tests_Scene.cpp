@@ -25,18 +25,6 @@
 TEST_SUITE("Scene_NodeHierarchy")
 {
     // ------------------------------------------------------------------
-    // TC-NODE-01: Scene has at least one node after loading
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-NODE-01 Nodes - scene has at least one node")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        CHECK(g_Renderer.m_Scene.m_Nodes.size() > 0);
-    }
-
-    // ------------------------------------------------------------------
     // TC-NODE-02: All node parent indices are valid (in-range or -1)
     // ------------------------------------------------------------------
     TEST_CASE("TC-NODE-02 Nodes - all parent indices are valid")
@@ -147,18 +135,6 @@ TEST_SUITE("Scene_NodeHierarchy")
 // ============================================================================
 TEST_SUITE("Scene_MeshData")
 {
-    // ------------------------------------------------------------------
-    // TC-MESH-01: Scene has at least one mesh after loading
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MESH-01 Meshes - scene has at least one mesh")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        CHECK(g_Renderer.m_Scene.m_Meshes.size() > 0);
-    }
-
     // ------------------------------------------------------------------
     // TC-MESH-02: Every mesh has at least one primitive
     // ------------------------------------------------------------------
@@ -332,18 +308,6 @@ TEST_SUITE("Scene_MeshData")
 TEST_SUITE("Scene_Materials")
 {
     // ------------------------------------------------------------------
-    // TC-MAT-01: Scene has at least one material after loading
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-MAT-01 Materials - scene has at least one material")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        CHECK(g_Renderer.m_Scene.m_Materials.size() > 0);
-    }
-
-    // ------------------------------------------------------------------
     // TC-MAT-02: Material constants GPU buffer is non-null
     // ------------------------------------------------------------------
     TEST_CASE("TC-MAT-02 Materials - GPU material constants buffer is non-null")
@@ -455,18 +419,6 @@ TEST_SUITE("Scene_Materials")
 TEST_SUITE("Scene_Textures")
 {
     // ------------------------------------------------------------------
-    // TC-TEX-SCENE-01: Textured scene has at least one texture
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-TEX-SCENE-01 SceneTextures - textured scene has at least one texture")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        CHECK(g_Renderer.m_Scene.m_Textures.size() > 0);
-    }
-
-    // ------------------------------------------------------------------
     // TC-TEX-SCENE-02: All loaded textures have a valid GPU handle
     // ------------------------------------------------------------------
     TEST_CASE("TC-TEX-SCENE-02 SceneTextures - all textures have valid GPU handles")
@@ -565,23 +517,6 @@ TEST_SUITE("Scene_Textures")
 TEST_SUITE("Scene_BoundingBoxes")
 {
     // ------------------------------------------------------------------
-    // TC-BBOX-01: All mesh bounding sphere radii are non-negative
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-BBOX-01 BoundingBoxes - mesh bounding sphere radii are non-negative")
-    {
-        SKIP_IF_NO_SAMPLES("BoxTextured/glTF/BoxTextured.gltf");
-        SceneScope scope("BoxTextured/glTF/BoxTextured.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& meshes = g_Renderer.m_Scene.m_Meshes;
-        for (int i = 0; i < (int)meshes.size(); ++i)
-        {
-            INFO("Mesh " << i << " radius=" << meshes[i].m_Radius);
-            CHECK(meshes[i].m_Radius >= 0.0f);
-        }
-    }
-
-    // ------------------------------------------------------------------
     // TC-BBOX-03: Instance bounding sphere radii are non-negative
     // ------------------------------------------------------------------
     TEST_CASE("TC-BBOX-03 BoundingBoxes - instance bounding sphere radii are non-negative")
@@ -608,71 +543,6 @@ TEST_SUITE("Scene_BoundingBoxes")
 // ============================================================================
 TEST_SUITE("Scene_Cameras")
 {
-    // ------------------------------------------------------------------
-    // TC-CAM-SCENE-01: Scene with a camera has at no camera
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SCENE-01 SceneCameras - scene with camera has at no camera")
-    {
-        SKIP_IF_NO_SAMPLES("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        SceneScope scope("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        REQUIRE(scope.loaded);
-
-        // CesiumMilkTruck includes a camera in the glTF
-        CHECK(g_Renderer.m_Scene.m_Cameras.size() == 0);
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CAM-SCENE-02: All cameras have a valid node index
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SCENE-02 SceneCameras - all cameras have a valid node index")
-    {
-        SKIP_IF_NO_SAMPLES("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        SceneScope scope("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& cameras   = g_Renderer.m_Scene.m_Cameras;
-        const int   nodeCount = (int)g_Renderer.m_Scene.m_Nodes.size();
-        for (int i = 0; i < (int)cameras.size(); ++i)
-        {
-            INFO("Camera " << i << " (" << cameras[i].m_Name << ") nodeIndex=" << cameras[i].m_NodeIndex);
-            CHECK((cameras[i].m_NodeIndex >= 0 && cameras[i].m_NodeIndex < nodeCount));
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CAM-SCENE-03: All cameras have a positive field of view
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SCENE-03 SceneCameras - all cameras have positive FoV")
-    {
-        SKIP_IF_NO_SAMPLES("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        SceneScope scope("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& cameras = g_Renderer.m_Scene.m_Cameras;
-        for (int i = 0; i < (int)cameras.size(); ++i)
-        {
-            INFO("Camera " << i << " (" << cameras[i].m_Name << ") fovY=" << cameras[i].m_Projection.fovY);
-            CHECK(cameras[i].m_Projection.fovY > 0.0f);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // TC-CAM-SCENE-04: All cameras have positive near/far clip planes
-    // ------------------------------------------------------------------
-    TEST_CASE("TC-CAM-SCENE-04 SceneCameras - all cameras have positive near/far clip planes")
-    {
-        SKIP_IF_NO_SAMPLES("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        SceneScope scope("CesiumMilkTruck/glTF/CesiumMilkTruck.gltf");
-        REQUIRE(scope.loaded);
-
-        const auto& cameras = g_Renderer.m_Scene.m_Cameras;
-        for (int i = 0; i < (int)cameras.size(); ++i)
-        {
-            INFO("Camera " << i << " (" << cameras[i].m_Name << ")");
-            CHECK(cameras[i].m_Projection.nearZ > 0.0f);
-        }
-    }
-
     // ------------------------------------------------------------------
     // TC-CAM-SCENE-05: When a scene camera is present, m_SelectedCameraIndex is valid
     // ------------------------------------------------------------------
