@@ -414,3 +414,71 @@ uint32_t ReadbackTexelRGBA8(nvrhi::TextureHandle tex, uint32_t x, uint32_t y)
     device->unmapStagingTexture(staging);
     return value;
 }
+
+RGTextureDesc MakeTexDesc(uint32_t w, uint32_t h, nvrhi::Format fmt, bool isUAV, const char* name)
+{
+    RGTextureDesc d;
+    d.m_NvrhiDesc = nvrhi::TextureDesc()
+        .setWidth(w).setHeight(h)
+        .setFormat(fmt)
+        .setDimension(nvrhi::TextureDimension::Texture2D)
+        .setDebugName(name)
+        .setInitialState(nvrhi::ResourceStates::ShaderResource)
+        .setIsUAV(isUAV);
+    return d;
+}
+
+RGBufferDesc MakeBufDesc(uint64_t byteSize, bool isUAV, const char* name)
+{
+    RGBufferDesc d;
+    d.m_NvrhiDesc.byteSize    = byteSize;
+    d.m_NvrhiDesc.canHaveUAVs = isUAV;
+    d.m_NvrhiDesc.debugName   = name;
+    d.m_NvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+    return d;
+}
+
+// Declare a texture inside an already-open BeginSetup block, register a write
+// access, and return the handle.  Caller must call EndSetup + BeginPass.
+RGTextureHandle DeclareAndWriteTex(RenderGraph& rg, const RGTextureDesc& desc)
+{
+    RGTextureHandle h;
+    rg.DeclareTexture(desc, h);
+    // DeclareTexture implicitly calls WriteTexture, so no extra call needed.
+    return h;
+}
+
+// Declare a buffer inside an already-open BeginSetup block.
+RGBufferHandle DeclareAndWriteBuf(RenderGraph& rg, const RGBufferDesc& desc)
+{
+    RGBufferHandle h;
+    rg.DeclareBuffer(desc, h);
+    return h;
+}
+
+// Run a single minimal pass: Reset → BeginSetup → declare → BeginPass → EndSetup → Compile.
+// Owns the full frame lifecycle so callers don't need to call Reset() themselves.
+// Returns the allocated texture handle.
+RGTextureHandle RunSingleTexPass(RenderGraph& rg, const RGTextureDesc& desc, const char* passName)
+{
+    rg.Reset();
+    rg.BeginSetup();
+    RGTextureHandle h = DeclareAndWriteTex(rg, desc);
+    rg.BeginPass(passName);
+    rg.EndSetup();
+    rg.Compile();
+    return h;
+}
+
+// Run a single minimal pass for a buffer.
+// Owns the full frame lifecycle (Reset → BeginSetup → declare → BeginPass → EndSetup → Compile).
+RGBufferHandle RunSingleBufPass(RenderGraph& rg, const RGBufferDesc& desc, const char* passName)
+{
+    rg.Reset();
+    rg.BeginSetup();
+    RGBufferHandle h = DeclareAndWriteBuf(rg, desc);
+    rg.BeginPass(passName);
+    rg.EndSetup();
+    rg.Compile();
+    return h;
+}

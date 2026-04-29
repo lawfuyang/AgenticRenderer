@@ -345,7 +345,8 @@ TEST_SUITE("Rendering_RenderGraph")
 
         g_Renderer.m_RenderGraph.BeginSetup();
         const bool ok = g_Renderer.m_RenderGraph.DeclareTexture(desc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        g_Renderer.m_RenderGraph.BeginPass("TC-RG-02-Pass");
+        g_Renderer.m_RenderGraph.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -365,7 +366,8 @@ TEST_SUITE("Rendering_RenderGraph")
 
         g_Renderer.m_RenderGraph.BeginSetup();
         const bool ok = g_Renderer.m_RenderGraph.DeclareBuffer(desc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        g_Renderer.m_RenderGraph.BeginPass("TC-RG-03-Pass");
+        g_Renderer.m_RenderGraph.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -386,7 +388,8 @@ TEST_SUITE("Rendering_RenderGraph")
 
         g_Renderer.m_RenderGraph.BeginSetup();
         g_Renderer.m_RenderGraph.DeclareTexture(desc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        g_Renderer.m_RenderGraph.BeginPass("TC-RG-04-Pass");
+        g_Renderer.m_RenderGraph.EndSetup();
 
         REQUIRE(handle.IsValid());
 
@@ -413,7 +416,8 @@ TEST_SUITE("Rendering_RenderGraph")
 
         g_Renderer.m_RenderGraph.BeginSetup();
         const bool ok = g_Renderer.m_RenderGraph.DeclarePersistentTexture(desc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        g_Renderer.m_RenderGraph.BeginPass("TC-RG-05-Pass");
+        g_Renderer.m_RenderGraph.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -441,7 +445,8 @@ TEST_SUITE("Rendering_RenderGraph")
         g_Renderer.m_RenderGraph.DeclareTexture(dA, hA);
         g_Renderer.m_RenderGraph.DeclareTexture(dB, hB);
         g_Renderer.m_RenderGraph.DeclareTexture(dC, hC);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        g_Renderer.m_RenderGraph.BeginPass("TC-RG-06-Pass");
+        g_Renderer.m_RenderGraph.EndSetup();
 
         CHECK(hA.IsValid());
         CHECK(hB.IsValid());

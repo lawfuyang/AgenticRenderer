@@ -832,6 +832,8 @@ void Renderer::ScheduleAndRunAllRenderers()
     extern IRenderer* g_ImGuiRenderer;
     extern IRenderer* g_PathTracerRenderer;
 
+    m_RenderGraph.BeginSetup();
+
     m_RenderGraph.ScheduleRenderer(g_ClearRenderer);
 
     if (m_Mode == RenderingMode::ReferencePathTracer)
@@ -854,6 +856,8 @@ void Renderer::ScheduleAndRunAllRenderers()
 
     m_RenderGraph.ScheduleRenderer(g_HDRRenderer);
     m_RenderGraph.ScheduleRenderer(g_ImGuiRenderer);
+
+    m_RenderGraph.EndSetup();
 
     // Compile render graph: compute lifetimes and allocate resources
     m_RenderGraph.Compile();

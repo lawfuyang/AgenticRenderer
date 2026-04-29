@@ -350,7 +350,15 @@ int RunTests(int argc, char* argv[])
     SDL_Log("[Tests] Starting test run (%d doctest arg(s))",
             static_cast<int>(doctestArgv.size()) - 1);
 
+    // Enable verbose RenderGraph logging for the entire test run so that
+    // pool-reuse, aliasing, eviction, desc-change, and error diagnostics are
+    // visible in the test output.  This flag is false by default in production
+    // to avoid log spam.
+    g_Renderer.m_RenderGraph.SetVerboseLogging(true);
+
     const int result = ctx.run();
+
+    g_Renderer.m_RenderGraph.SetVerboseLogging(false);
 
     // ------------------------------------------------------------------
     // Print a summary of every test that failed.

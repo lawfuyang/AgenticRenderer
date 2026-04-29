@@ -134,7 +134,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D01 DeclarationAPI - DeclareTexture returns valid handle")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGTextureDesc texDesc;
         texDesc.m_NvrhiDesc = nvrhi::TextureDesc()
@@ -145,8 +147,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
             .setIsUAV(true);
 
         RGTextureHandle handle;
-        const bool ok = g_Renderer.m_RenderGraph.DeclareTexture(texDesc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        const bool ok = rg.DeclareTexture(texDesc, handle);
+        rg.BeginPass("TC-D01-Pass");
+        rg.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -157,7 +160,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D02 DeclarationAPI - DeclareBuffer returns valid handle")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGBufferDesc bufDesc;
         bufDesc.m_NvrhiDesc.byteSize     = 64;
@@ -165,8 +170,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
         bufDesc.m_NvrhiDesc.debugName    = "TC-D02-Buf";
 
         RGBufferHandle handle;
-        const bool ok = g_Renderer.m_RenderGraph.DeclareBuffer(bufDesc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        const bool ok = rg.DeclareBuffer(bufDesc, handle);
+        rg.BeginPass("TC-D02-Pass");
+        rg.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -177,7 +183,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D03 DeclarationAPI - DeclarePersistentTexture returns valid handle")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGTextureDesc texDesc;
         texDesc.m_NvrhiDesc = nvrhi::TextureDesc()
@@ -187,8 +195,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
             .setDebugName("TC-D03-PersistTex");
 
         RGTextureHandle handle;
-        const bool ok = g_Renderer.m_RenderGraph.DeclarePersistentTexture(texDesc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        const bool ok = rg.DeclarePersistentTexture(texDesc, handle);
+        rg.BeginPass("TC-D03-Pass");
+        rg.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -199,7 +208,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D04 DeclarationAPI - DeclarePersistentBuffer returns valid handle")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGBufferDesc bufDesc;
         bufDesc.m_NvrhiDesc.byteSize     = 128;
@@ -207,8 +218,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
         bufDesc.m_NvrhiDesc.debugName    = "TC-D04-PersistBuf";
 
         RGBufferHandle handle;
-        const bool ok = g_Renderer.m_RenderGraph.DeclarePersistentBuffer(bufDesc, handle);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        const bool ok = rg.DeclarePersistentBuffer(bufDesc, handle);
+        rg.BeginPass("TC-D04-Pass");
+        rg.EndSetup();
 
         CHECK(ok);
         CHECK(handle.IsValid());
@@ -219,7 +231,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D05 DeclarationAPI - ReadTexture + WriteTexture do not crash")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGTextureDesc texDesc;
         texDesc.m_NvrhiDesc = nvrhi::TextureDesc()
@@ -230,11 +244,11 @@ TEST_SUITE("RGAdv_DeclarationAPI")
             .setIsUAV(true);
 
         RGTextureHandle handle;
-        g_Renderer.m_RenderGraph.DeclareTexture(texDesc, handle);
-        CHECK_NOTHROW(g_Renderer.m_RenderGraph.ReadTexture(handle));
-        CHECK_NOTHROW(g_Renderer.m_RenderGraph.WriteTexture(handle));
-
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclareTexture(texDesc, handle);
+        CHECK_NOTHROW(rg.ReadTexture(handle));
+        CHECK_NOTHROW(rg.WriteTexture(handle));
+        rg.BeginPass("TC-D05-Pass");
+        rg.EndSetup();
     }
 
     // ------------------------------------------------------------------
@@ -242,7 +256,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D06 DeclarationAPI - ReadBuffer + WriteBuffer do not crash")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGBufferDesc bufDesc;
         bufDesc.m_NvrhiDesc.byteSize    = 64;
@@ -250,11 +266,11 @@ TEST_SUITE("RGAdv_DeclarationAPI")
         bufDesc.m_NvrhiDesc.debugName   = "TC-D06-RW";
 
         RGBufferHandle handle;
-        g_Renderer.m_RenderGraph.DeclareBuffer(bufDesc, handle);
-        CHECK_NOTHROW(g_Renderer.m_RenderGraph.ReadBuffer(handle));
-        CHECK_NOTHROW(g_Renderer.m_RenderGraph.WriteBuffer(handle));
-
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclareBuffer(bufDesc, handle);
+        CHECK_NOTHROW(rg.ReadBuffer(handle));
+        CHECK_NOTHROW(rg.WriteBuffer(handle));
+        rg.BeginPass("TC-D06-Pass");
+        rg.EndSetup();
     }
 
     // ------------------------------------------------------------------
@@ -262,7 +278,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D07 DeclarationAPI - two DeclareTexture same desc return different handles")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGTextureDesc texDesc;
         texDesc.m_NvrhiDesc = nvrhi::TextureDesc()
@@ -273,9 +291,10 @@ TEST_SUITE("RGAdv_DeclarationAPI")
             .setIsUAV(true);
 
         RGTextureHandle h1, h2;
-        g_Renderer.m_RenderGraph.DeclareTexture(texDesc, h1);
-        g_Renderer.m_RenderGraph.DeclareTexture(texDesc, h2);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclareTexture(texDesc, h1);
+        rg.DeclareTexture(texDesc, h2);
+        rg.BeginPass("TC-D07-Pass");
+        rg.EndSetup();
 
         CHECK(h1.IsValid());
         CHECK(h2.IsValid());
@@ -293,7 +312,9 @@ TEST_SUITE("RGAdv_DeclarationAPI")
     // ------------------------------------------------------------------
     TEST_CASE_FIXTURE(MinimalSceneFixture, "TC-RGA-D08 DeclarationAPI - two fresh DeclarePersistentTexture same desc return different handles")
     {
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
 
         RGTextureDesc texDesc;
         texDesc.m_NvrhiDesc = nvrhi::TextureDesc()
@@ -303,10 +324,11 @@ TEST_SUITE("RGAdv_DeclarationAPI")
             .setDebugName("TC-D08-PersistFreshTwo");
 
         RGTextureHandle h1, h2;
-        g_Renderer.m_RenderGraph.DeclarePersistentTexture(texDesc, h1);
+        rg.DeclarePersistentTexture(texDesc, h1);
         // h2 starts invalid (fresh) — no implicit content dedup, new slot is allocated.
-        g_Renderer.m_RenderGraph.DeclarePersistentTexture(texDesc, h2);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclarePersistentTexture(texDesc, h2);
+        rg.BeginPass("TC-D08-Pass");
+        rg.EndSetup();
 
         CHECK(h1.IsValid());
         CHECK(h2.IsValid());
@@ -466,18 +488,23 @@ TEST_SUITE("RGAdv_PersistentResources")
             .setDebugName("TC-P01-PersistHandle");
 
         // Frame 1: declare with fresh handle → allocate new slot.
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
         RGTextureHandle h; // held across frames, like a Renderer member variable
-        g_Renderer.m_RenderGraph.DeclarePersistentTexture(texDesc, h);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclarePersistentTexture(texDesc, h);
+        rg.BeginPass("TC-P01-Pass");
+        rg.EndSetup();
         REQUIRE(h.IsValid());
         const uint32_t firstIdx = h.m_Index;
         RunOneFrame();
 
         // Frame 2: re-declare with SAME handle → fast-path reuse, same slot.
-        g_Renderer.m_RenderGraph.BeginSetup();
-        g_Renderer.m_RenderGraph.DeclarePersistentTexture(texDesc, h);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.Reset();
+        rg.BeginSetup();
+        rg.DeclarePersistentTexture(texDesc, h);
+        rg.BeginPass("TC-P01-Pass");
+        rg.EndSetup();
         RunOneFrame();
 
         INFO("firstIdx=" << firstIdx << " h.m_Index=" << h.m_Index);
@@ -497,18 +524,23 @@ TEST_SUITE("RGAdv_PersistentResources")
         bufDesc.m_NvrhiDesc.debugName   = "TC-P02-PersistBuf";
 
         // Frame 1: fresh handle → new slot.
-        g_Renderer.m_RenderGraph.BeginSetup();
+        auto& rg = g_Renderer.m_RenderGraph;
+        rg.Reset();
+        rg.BeginSetup();
         RGBufferHandle h; // held across frames
-        g_Renderer.m_RenderGraph.DeclarePersistentBuffer(bufDesc, h);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.DeclarePersistentBuffer(bufDesc, h);
+        rg.BeginPass("TC-P02-Pass");
+        rg.EndSetup();
         REQUIRE(h.IsValid());
         const uint32_t firstIdx = h.m_Index;
         RunOneFrame();
 
         // Frame 2: same handle → fast-path, same slot.
-        g_Renderer.m_RenderGraph.BeginSetup();
-        g_Renderer.m_RenderGraph.DeclarePersistentBuffer(bufDesc, h);
-        g_Renderer.m_RenderGraph.EndSetup(true);
+        rg.Reset();
+        rg.BeginSetup();
+        rg.DeclarePersistentBuffer(bufDesc, h);
+        rg.BeginPass("TC-P02-Pass");
+        rg.EndSetup();
         RunOneFrame();
 
         INFO("firstIdx=" << firstIdx << " h.m_Index=" << h.m_Index);

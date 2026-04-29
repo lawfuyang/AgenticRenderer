@@ -185,3 +185,23 @@ struct RenderingModeGuard
     }
     ~RenderingModeGuard() { g_Renderer.m_Mode = m_Saved; }
 };
+
+// Build a minimal transient texture descriptor.
+RGTextureDesc MakeTexDesc(uint32_t w, uint32_t h, nvrhi::Format fmt, bool isUAV, const char* name);
+
+// Build a minimal transient buffer descriptor.
+RGBufferDesc MakeBufDesc(uint64_t byteSize, bool isUAV, const char* name);
+
+// Declare a texture inside an already-open BeginSetup block, register a write
+// access, and return the handle.  Caller must call EndSetup + BeginPass.
+RGTextureHandle DeclareAndWriteTex(RenderGraph& rg, const RGTextureDesc& desc);
+
+// Declare a buffer inside an already-open BeginSetup block.
+RGBufferHandle DeclareAndWriteBuf(RenderGraph& rg, const RGBufferDesc& desc);
+
+// Run a single minimal pass: BeginSetup → declare → BeginPass → EndSetup → Compile.
+// Returns the allocated texture handle.
+RGTextureHandle RunSingleTexPass(RenderGraph& rg, const RGTextureDesc& desc, const char* passName = "TestPass");
+
+// Run a single minimal pass for a buffer.
+RGBufferHandle RunSingleBufPass(RenderGraph& rg, const RGBufferDesc& desc, const char* passName = "TestPass");

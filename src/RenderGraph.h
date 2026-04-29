@@ -155,8 +155,11 @@ public:
     void WriteBuffer(RGBufferHandle handle);
     
     // Pass management (internal use by render loop)
+    // BeginSetup() is called exactly once per frame (after Reset()), before any
+    // ScheduleRenderer() calls.  EndSetup() is called once after all renderers
+    // have been scheduled, before Compile().
     void BeginSetup();
-    void EndSetup(bool bEnabled);
+    void EndSetup();
     void BeginPass(const char* name);
     
     void ScheduleRenderer(class IRenderer* pRenderer);
@@ -269,6 +272,10 @@ private:
     bool m_IsCompiled = false;
     uint16_t m_CurrentPassIndex = 0;
     bool m_bForceInvalidateAllResources = false;
+    // When true, informational SDL_Log messages (pool-reuse, aliasing, eviction,
+    // desc-change, etc.) are emitted.  Kept false in production to avoid log
+    // spam; set to true by unit tests so failures produce actionable output.
+    bool m_bVerboseLogging = false;
     // After Shutdown(), we need to force-invalidate handles for TWO consecutive
     // frames, not just one.  Frame 1 only invalidates handles that are actually
     // declared in that frame's rendering mode (e.g. PT mode skips depth/GBuffers).
@@ -280,4 +287,14 @@ private:
 public:
     // Exposed for unit-test assertions only — do not use in production code.
     uint32_t GetForceInvalidateFramesRemaining() const { return m_ForceInvalidateFramesRemaining; }
+
+    // Enable/disable verbose informational logging (pool-reuse, aliasing, eviction …).
+    // Call with true at the start of a test run; false restores production behaviour.
+    void SetVerboseLogging(bool enabled) { m_bVerboseLogging = enabled; }
+    bool IsVerboseLogging() const { return m_bVerboseLogging; }
+
+    const std::vector<RenderGraphInternal::TransientTexture>& GetTextures() const { return m_Textures; }
+    const std::vector<RenderGraphInternal::TransientBuffer>& GetBuffers() const { return m_Buffers; }
+    const std::vector<HeapEntry>& GetHeaps() const { return m_Heaps; }
+    const Stats& GetStats() const { return m_Stats; }
 };
