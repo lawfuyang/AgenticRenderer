@@ -77,8 +77,6 @@ public:
     nvrhi::TextureHandle BRDF_LUT;                   // BRDF integration LUT for IBL
     nvrhi::TextureHandle IrradianceTexture;          // Irradiance cubemap for IBL
     nvrhi::TextureHandle RadianceTexture;            // Radiance cubemap (filtered environment) for IBL
-    nvrhi::TextureHandle BlueNoiseTex;               // 64x64 R8G8_UNORM blue-noise disc (external/LDR_RG01_0.png)
-
     // Bruneton Atmosphere textures
     nvrhi::TextureHandle BrunetonTransmittance;
     nvrhi::TextureHandle BrunetonScattering;

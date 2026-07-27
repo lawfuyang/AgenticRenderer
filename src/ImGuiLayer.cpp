@@ -115,9 +115,7 @@ void ImGuiLayer::UpdateFrame()
                         static const char* kCSMDebugModes[] = {
                             "Off", "Cascade Splits", "Shadow Map Array", "Raw Shadow Mask",
                             "PCF Footprint", "Alpha-Masked Overlay", "Depth Compare",
-                            "Frustum Wireframe", "Blend Zone",
-                            "PCSS: Blocker Depth", "PCSS: Penumbra Radius",
-                            "PCSS: Early-Out", "PCSS: Raw Shadow", "PCSS: Temporal Blend"
+                            "Frustum Wireframe", "Blend Zone"
                         };
                         ImGui::Combo("CSM Debug", (int*)&g_Renderer.m_CSMDebugMode,
                             kCSMDebugModes, IM_ARRAYSIZE(kCSMDebugModes));
@@ -128,12 +126,6 @@ void ImGuiLayer::UpdateFrame()
                         ImGui::SliderFloat("Cascade Bias Scale", &g_Renderer.m_CSMCascadeBiasScale, 0.0f, 1.0f, "%.2f");
 
                         ImGui::SeparatorText("Quality");
-                        ImGui::Checkbox("Enable PCSS", &g_Renderer.m_EnablePCSS);
-                        if (g_Renderer.m_EnablePCSS)
-                        {
-                            ImGui::Checkbox("Shadow Depth Mips", &g_Renderer.m_EnablePCSSShadowDepthMips);
-                            ImGui::Checkbox("Shadow Temporal", &g_Renderer.m_EnablePCSSShadowTemporal);
-                        }
                         ImGui::Checkbox("Cascade Blend", &g_Renderer.m_EnableCascadeBlend);
 
                     } // if (m_EnableCSMShadows)
