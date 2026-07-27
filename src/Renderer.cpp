@@ -1173,12 +1173,12 @@ void Renderer::ComputeCascadeViewProj()
         minLS.z -= kShadowCasterEnlarge;
         maxLS.z += kShadowCasterEnlarge;
 
-        // --- 5. Build standard orthographic projection ---
-        // Standard depth: near maps to 0.0, far maps to 1.0.
+        // --- 5. Build reversed-Z orthographic projection ---
+        // Reversed-Z: near (closest to light) maps to 1.0, far maps to 0.0.
         XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(
             minLS.x, maxLS.x,
             minLS.y, maxLS.y,
-            minLS.z, maxLS.z);
+            maxLS.z, minLS.z);
 
         XMMATRIX lightViewProj = lightView * lightProj;
 

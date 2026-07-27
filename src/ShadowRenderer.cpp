@@ -40,7 +40,7 @@ public:
         shadowMapDesc.m_NvrhiDesc.debugName  = "CSMShadowMap_RG";
         shadowMapDesc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::DepthWrite;
         shadowMapDesc.m_NvrhiDesc.keepInitialState = true;
-        shadowMapDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{ 1.0f, 0.0f, 0.0f, 0.0f }); // standard depth: far=1.0
+        shadowMapDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{ srrhi::CommonConsts::DEPTH_FAR, 0.0f, 0.0f, 0.0f }); // reversed-Z: far=0.0
         renderGraph.DeclareTexture(shadowMapDesc, g_RG_CSMShadowMap);
 
         // Declare GPU culling buffers for opaque and masked buckets
@@ -54,7 +54,7 @@ public:
     {
         nvrhi::TextureHandle shadowMap = renderGraph.GetTexture(g_RG_CSMShadowMap, RGResourceAccessMode::Write);
 
-        commandList->clearDepthStencilTexture(shadowMap, nvrhi::AllSubresources, true, 1.0f, false, 0); // standard depth: clear to far
+        commandList->clearDepthStencilTexture(shadowMap, nvrhi::AllSubresources, true, srrhi::CommonConsts::DEPTH_FAR, false, 0); // reversed-Z: clear to far (0.0)
 
         // Resolve RG buffer handles once for both buckets — reused across all cascade iterations
         BucketHandles opaque = ResolveWrite(renderGraph, m_OpaqueResources);
@@ -267,7 +267,7 @@ private:
         nvrhi::RenderState renderState;
         renderState.rasterState       = CommonResources::GetInstance().RasterCullBack;
         renderState.depthStencilState = CommonResources::GetInstance().DepthReadWrite;
-        renderState.depthStencilState.depthFunc = nvrhi::ComparisonFunc::LessOrEqual; // standard depth: keep closest
+        renderState.depthStencilState.depthFunc = nvrhi::ComparisonFunc::GreaterOrEqual; // reversed-Z: keep closest (higher depth value)
 
         const uint32_t msID = bAlphaTest
             ? ShaderID::SHADOWDEPTH_SHADOWDEPTH_MSMAIN_ALPHATEST_SHADOW_ALPHA_TEST_1

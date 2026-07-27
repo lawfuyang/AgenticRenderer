@@ -36,7 +36,7 @@ public:
     nvrhi::SamplerHandle PointMaxReductionClamp;  // Point + max reduction, clamp to edge
     nvrhi::SamplerHandle PointMaxReductionWrap;   // Point + max reduction, wrap
     nvrhi::SamplerHandle LinearClampBorderWhite; // Bilinear filtering, clamp to border (white color)
-    nvrhi::SamplerHandle ShadowComparison;       // Comparison sampler for PCF shadow maps (linear, border=white)
+    nvrhi::SamplerHandle ShadowComparison;       // Comparison sampler for PCF shadow maps (linear, border=far, GREATER)
     nvrhi::SamplerHandle ShadowSamplerPoint;     // Point sampler, clamp-to-border white, for raw shadow depth fetch
 
     // Common raster states

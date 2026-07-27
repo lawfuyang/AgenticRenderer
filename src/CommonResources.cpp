@@ -96,23 +96,24 @@ void CommonResources::Initialize()
         desc.reductionType = nvrhi::SamplerReductionType::Maximum;
         PointMaxReductionWrap = createSampler("PointMaxReductionWrap", desc);
     }
+    const float kFarDepth = srrhi::CommonConsts::DEPTH_FAR;
     {
-        // Shadow comparison sampler — linear PCF, clamp-to-border white (fully lit outside shadow map).
-        // Standard depth (near=0, far=1): LESS comparison means compareDepth < shadowMapDepth → lit.
+        // Shadow comparison sampler — linear PCF, clamp-to-border far (fully lit outside shadow map).
+        // Reversed-Z (near=1, far=0): GREATER comparison means compareDepth > shadowMapDepth → lit.
         nvrhi::SamplerDesc desc;
         desc.setAllFilters(true);
         desc.setAllAddressModes(nvrhi::SamplerAddressMode::Border);
-        desc.borderColor = nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f);
+        desc.borderColor = nvrhi::Color{ kFarDepth };
         desc.reductionType = nvrhi::SamplerReductionType::Comparison;
         ShadowComparison = createSampler("ShadowComparison", desc);
     }
     {
         // Point sampler for raw shadow depth fetch (blocker search — no comparison).
-        // Border = white so out-of-bounds samples read as 1.0 (fully lit).
+        // Border = 0.0 (far) so out-of-bounds samples read as no blocker.
         nvrhi::SamplerDesc desc;
         desc.setAllFilters(false);
         desc.setAllAddressModes(nvrhi::SamplerAddressMode::Border);
-        desc.borderColor = nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f);
+        desc.borderColor = nvrhi::Color{ kFarDepth };
         ShadowSamplerPoint = createSampler("ShadowSamplerPoint", desc);
     }
 

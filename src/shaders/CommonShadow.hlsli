@@ -5,9 +5,9 @@
 // Pushes the sample position outward along the surface normal before transforming to light space.
 // This "thickens" the receiver uniformly in world space and is bounded at all angles.
 //
-// Standard depth convention: near = 0.0, far = 1.0
-//   - Shadow map depth comparison: Less (hardware default)
-//   - Sky/background: depth == 1.0 (far clear value)
+// Reversed-Z depth convention: near = 1.0, far = 0.0
+//   - Shadow map depth comparison: Greater (hardware: receiver depth > stored depth → lit)
+//   - Sky/background: depth == 0.0 (far clear value)
 
 #ifndef COMMON_SHADOW_HLSLI
 #define COMMON_SHADOW_HLSLI
@@ -43,7 +43,7 @@ float Compute3x3PCF(
         [unroll]
         for (int y = -1; y <= 1; ++y)
         {
-            shadow += shadowMap.SampleCmpLevelZero(
+        shadow += 1.0f - shadowMap.SampleCmpLevelZero(
                 shadowSampler,
                 float3(shadowUV.xy + float2(x, y) * texelSize, shadowUV.z),
                 compareDepth);
