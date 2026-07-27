@@ -1105,8 +1105,10 @@ void Renderer::ComputeCascadeViewProj()
         const float splitFar  = m_CSMCascades[cascadeIndex].m_SplitFar;
 
         // --- 1. Extract 8 frustum corners in world space ---
-        const Matrix& invViewProj = m_Scene.m_View.m_MatClipToWorld;
-        const Matrix& proj        = m_Scene.m_View.m_MatViewToClip;
+        // Use non-jittered matrices so the cascade AABB (and therefore the shadow
+        // depth draw calls) are stable across TAA frames.
+        const Matrix& invViewProj = m_Scene.m_View.m_MatClipToWorldNoOffset;
+        const Matrix& proj        = m_Scene.m_View.m_MatViewToClipNoOffset;
 
         // Convert view-space split depths to NDC Z (reversed-Z: ndcZ = proj._33 + proj._43 / viewZ)
         auto ViewDepthToNDCZ = [&](float viewZ) -> float {
