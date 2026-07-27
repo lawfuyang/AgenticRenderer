@@ -279,6 +279,7 @@ void CommonResources::Initialize()
         DummySRVTexture = createDefaultTexture("DummySRV", nvrhi::TextureDimension::Texture2D, nvrhi::Format::R32_FLOAT, false);
         DummySRVTextureArray = createDefaultTexture("DummySRVArray", nvrhi::TextureDimension::Texture2DArray, nvrhi::Format::R32_FLOAT, false);
         DummySRVTexture4 = createDefaultTexture("DummySRV4", nvrhi::TextureDimension::Texture2D, nvrhi::Format::RGBA32_FLOAT, false);
+        DummySRVFloat4Array = createDefaultTexture("DummySRVFloat4Array", nvrhi::TextureDimension::Texture2DArray, nvrhi::Format::RGBA32_FLOAT, false);
 
         // DummySRVByteAddressBuffer
         {
@@ -464,6 +465,7 @@ void CommonResources::Initialize()
         commandList->writeTexture(DefaultTexturePBR, 0, 0, &pbrPixel, sizeof(uint32_t), 0);
 
         { const float zero = 0.0f; commandList->writeTexture(DummySRVTextureArray, 0, 0, &zero, sizeof(zero)); }
+        { const float zeros[4] = {}; commandList->writeTexture(DummySRVFloat4Array, 0, 0, zeros, sizeof(zeros)); }
 
         commandList->setPermanentTextureState(DefaultTextureBlack, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(DefaultTextureWhite, nvrhi::ResourceStates::ShaderResource);
@@ -476,6 +478,7 @@ void CommonResources::Initialize()
         commandList->setPermanentTextureState(DummyUAVTexture4, nvrhi::ResourceStates::UnorderedAccess);
         commandList->setPermanentTextureState(DummySRVTexture, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(DummySRVTextureArray, nvrhi::ResourceStates::ShaderResource);
+        commandList->setPermanentTextureState(DummySRVFloat4Array, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(DummySRVTexture4, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(BRDF_LUT, nvrhi::ResourceStates::ShaderResource);
         commandList->setPermanentTextureState(IrradianceTexture, nvrhi::ResourceStates::ShaderResource);
@@ -531,6 +534,7 @@ void CommonResources::Shutdown()
     DummyUAVTexture4 = nullptr;
     DummySRVTexture = nullptr;
     DummySRVTextureArray = nullptr;
+    DummySRVFloat4Array = nullptr;
     DummySRVTexture4 = nullptr;
     DummySRVByteAddressBuffer = nullptr;
     DummyUAVByteAddressBuffer = nullptr;
