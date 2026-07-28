@@ -478,7 +478,8 @@ struct DispatchParameters
 			
 			// Asking the GPU to write scattered single-byte pixels isn't great,
 			// But thankfully the latency is hidden by all the work we're doing...
-			inParameters.OutputTexture[(int2)write_xy] = result;
+			// [Modified] Min-blend with existing value to combine with CSM shadow mask
+			inParameters.OutputTexture[(int2)write_xy] = min(inParameters.OutputTexture[(int2)write_xy], result);
 		}
 	}
 
