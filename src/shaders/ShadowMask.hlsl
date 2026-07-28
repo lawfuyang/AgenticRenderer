@@ -1,5 +1,6 @@
 // ShadowMask.hlsl — CSM shadow mask compute shader
-// Supports PCF (mode 0) and EVSSM (mode 1) with optional screen-space contact shadows.
+// Supports PCF (mode 0) and EVSSM (mode 1).
+// Screen-space shadows are handled separately by ScreenSpaceShadows.hlsl.
 #include "Common.hlsli"
 #include "CommonLighting.hlsli"
 #include "srrhi/hlsl/Common.hlsli"
@@ -13,12 +14,9 @@ static const Texture2D<float>           g_Depth          = srrhi::ShadowMaskInpu
 static const Texture2D<float2>          g_GBufferNormals = srrhi::ShadowMaskInputs::GetGBufferNormals();
 static const Texture2DArray<float>      g_CSMShadowMap   = srrhi::ShadowMaskInputs::GetCSMShadowMap();
 static const Texture2DArray<float4>     g_EVSMShadowMap  = srrhi::ShadowMaskInputs::GetEVSMShadowMap();
-static const Texture2D<float2>          g_BlueNoiseTex   = srrhi::ShadowMaskInputs::GetBlueNoiseTexture();
 static       RWTexture2D<float>         g_RWShadowMask   = srrhi::ShadowMaskInputs::GetRWShadowMask();
 static const SamplerComparisonState     g_ShadowSampler  = srrhi::ShadowMaskInputs::GetShadowSampler();
 static const SamplerState               g_LinearClamp    = srrhi::ShadowMaskInputs::GetLinearClamp();
-static const SamplerState               g_PointClamp     = srrhi::ShadowMaskInputs::GetPointClamp();
-static const SamplerState               g_PointWrap      = srrhi::ShadowMaskInputs::GetPointWrap();
 
 // ---------------------------------------------------------------------------
 // Cascade selection
@@ -104,15 +102,6 @@ float ComputeCSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
 
     float texelSize = 1.0f / (float)srrhi::CommonConsts::kShadowMapResolution;
     return ComputePCF(float3(shadowUV.xy, (float)cascadeIndex), shadowUV.z, texelSize);
-}
-
-// ---------------------------------------------------------------------------
-// Interleaved Gradient Noise
-// ---------------------------------------------------------------------------
-float InterleavedGradientNoise(float2 fragCoord)
-{
-    float3 magic = float3(0.06711056f, 0.00583715f, 52.9829189f);
-    return frac(magic.z * frac(dot(fragCoord, magic.xy)));
 }
 
 // ---------------------------------------------------------------------------
@@ -208,62 +197,6 @@ float ComputeEVSSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
     return EvaluateEVSMFull(g_CB.m_VsmExponent, finalMoments, shadowDepth, g_CB.m_LightBleedReduction);
 }
 
-// ---------------------------------------------------------------------------
-// Screen-Space Contact Shadows
-// ---------------------------------------------------------------------------
-float ComputeContactShadow(float3 worldPos, float viewDepth, float noiseSample)
-{
-    // Ray end in world space — march toward the light
-    float3 wsEnd = worldPos + g_CB.m_LightDirectionWS * g_CB.m_ContactShadowDistance;
-
-    // Project start/end to clip space
-    float4 csStart = mul(float4(worldPos, 1.0f), g_CB.m_WorldToClip);
-    float4 csEnd   = mul(float4(wsEnd,    1.0f), g_CB.m_WorldToClip);
-
-    // Perspective divide → NDC
-    float3 ssStart = csStart.xyz / csStart.w;
-    float3 ssEnd   = csEnd.xyz   / csEnd.w;
-
-    // UV space: D3D NDC xy [-1,1] -> [0,1] with Y flip; z stays as NDC depth (reversed-Z)
-    float3 uvStart = float3(ClipXYToUV(ssStart.xy), ssStart.z);
-    float3 uvRay   = float3(ClipXYToUV(ssEnd.xy), ssEnd.z) - uvStart;
-
-    float dt = 1.0f / (float)g_CB.m_ContactShadowSteps;
-
-    // Tolerance: compute how much NDC Z changes for one step
-    // along the view-Z axis. For infinite reversed-Z: NDC_Z = near / viewZ.
-    // A point at (viewZ + stepDist) has NDC_Z = near / (viewZ + stepDist).
-    // Full ray delta = near/viewZ - near/(viewZ + dist) = near*dist / (viewZ*(viewZ+dist))
-    // Per-step tolerance = fullDelta * dt
-    // We use viewDepth (positive, LH) directly.
-    float dist = g_CB.m_ContactShadowDistance;
-    float tolerance = abs(ssStart.z - ssStart.z * viewDepth / (viewDepth + dist)) * dt;
-
-    // Clamp minimum tolerance to prevent false hits from float32 precision noise
-    tolerance = max(tolerance, ssStart.z * 5e-5f);
-
-    // Dithered start position to break banding
-    float t = dt * noiseSample + dt;
-
-    float  occlusion = 0.0f;
-    float3 ray       = uvStart;
-    for (uint i = 0; i < g_CB.m_ContactShadowSteps; i++, t += dt)
-    {
-        ray      = uvStart + uvRay * t;
-        float z  = g_Depth.SampleLevel(g_PointClamp, ray.xy, 0).r;
-        float dz = z - ray.z;
-        if (abs(tolerance - dz) < tolerance)
-        {
-            occlusion = 1.0f;
-            break;
-        }
-    }
-
-    // Fade out near screen edges where depth data is unavailable
-    float2 fade = max(12.0f * abs(ray.xy - 0.5f) - 5.0f, 0.0f);
-    return occlusion * saturate(1.0f - dot(fade, fade));
-}
-
 [numthreads(8, 8, 1)]
 void ShadowMask_CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
@@ -284,21 +217,6 @@ void ShadowMask_CSMain(uint3 dispatchID : SV_DispatchThreadID)
 #else
     shadow = ComputeCSMShadow(worldPos, worldNorm, viewDepth);
 #endif
-
-    if (g_CB.m_ContactShadowSteps > 0u)
-    {
-        float noise;
-        if (g_CB.m_ContactShadowsUseBlueNoise)
-        {
-            uint2 bnCoord = (uvInt + uint2(g_CB.m_FrameIndex * 17u, g_CB.m_FrameIndex * 31u)) & 0x3F;
-            noise = g_BlueNoiseTex.SampleLevel(g_PointWrap, float2(bnCoord) / 64.0f, 0).r - 0.5f;
-        }
-        else
-        {
-            noise = InterleavedGradientNoise(float2(uvInt) + 5.588238f * float(g_CB.m_FrameIndex)) - 0.5f;
-        }
-        shadow *= (1.0f - ComputeContactShadow(worldPos, viewDepth, noise));
-    }
 
     g_RWShadowMask[uvInt] = shadow;
 }

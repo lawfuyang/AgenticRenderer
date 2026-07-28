@@ -333,11 +333,13 @@ struct Renderer
     float   m_MaxPenumbraRatio       = 1.0f;    // soft cap on penumbra ratio
     float   m_LightBleedReduction    = 0.1f;    // LBR amount [0, 0.5]
 
-    // ── Contact Shadow settings ───────────────────────────────────────────────
-    bool    m_EnableContactShadows   = false;
-    float   m_ContactShadowDistance  = 0.5f;    // max ray length (world units)
-    int     m_ContactShadowSteps     = 8;       // ray march step count
-    bool    m_ContactShadowsUseBlueNoise = false;   // use blue noise dither for contact shadows (vs IGN)
+    // ── Screen-Space Shadows ────────────────────────────────────────────────
+    bool    m_EnableScreenSpaceShadows = true;
+    float   m_SSS_SurfaceThickness    = 0.005f;  // Assumed pixel thickness as fraction of depth range
+    float   m_SSS_BilinearThreshold   = 0.02f;   // Edge detection threshold for bilinear filtering
+    float   m_SSS_ShadowContrast      = 4.0f;    // Contrast boost (>=1)
+    bool    m_SSS_IgnoreEdgePixels    = false;    // Don't cast shadow from detected edge pixels
+    bool    m_SSS_UseEarlyOut         = true;     // Early-out sky/out-of-bounds pixels
 
     // bloom
     float m_BloomKnee = 0.1f;

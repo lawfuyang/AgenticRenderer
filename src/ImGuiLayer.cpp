@@ -137,13 +137,15 @@ void ImGuiLayer::UpdateFrame()
                             ImGui::SliderFloat("Light Bleed Red.",  &g_Renderer.m_LightBleedReduction, 0.0f, 0.5f, "%.3f");
                         }
 
-                        ImGui::SeparatorText("Contact Shadows");
-                        ImGui::Checkbox("Enable Contact Shadows", &g_Renderer.m_EnableContactShadows);
-                        if (g_Renderer.m_EnableContactShadows)
+                        ImGui::SeparatorText("Screen-Space Shadows");
+                        ImGui::Checkbox("Enable SS Shadows", &g_Renderer.m_EnableScreenSpaceShadows);
+                        if (g_Renderer.m_EnableScreenSpaceShadows)
                         {
-                            ImGui::SliderFloat("CS Distance", &g_Renderer.m_ContactShadowDistance, 0.1f, 5.0f, "%.2f m");
-                            ImGui::SliderInt("CS Steps",      &g_Renderer.m_ContactShadowSteps, 4, 32);
-                            ImGui::Checkbox("Blue Noise Dither", &g_Renderer.m_ContactShadowsUseBlueNoise);
+                            ImGui::SliderFloat("Surface Thickness",    &g_Renderer.m_SSS_SurfaceThickness,  0.001f, 0.05f, "%.4f");
+                            ImGui::SliderFloat("Bilinear Threshold",   &g_Renderer.m_SSS_BilinearThreshold, 0.005f, 0.1f,  "%.3f");
+                            ImGui::SliderFloat("Shadow Contrast",      &g_Renderer.m_SSS_ShadowContrast,    1.0f,   8.0f,  "%.1f");
+                            ImGui::Checkbox("Ignore Edge Pixels",      &g_Renderer.m_SSS_IgnoreEdgePixels);
+                            ImGui::Checkbox("Early Out (sky cull)",    &g_Renderer.m_SSS_UseEarlyOut);
                         }
 
                     } // if (m_EnableCSMShadows)

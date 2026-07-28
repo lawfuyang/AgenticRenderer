@@ -2,6 +2,8 @@
 #include "CommonResources.h"
 
 #include "shaders/srrhi/cpp/ShadowMask.h"
+#include "shaders/srrhi/cpp/ScreenSpaceShadows.h"
+#include "../external/bend_sss_cpu.h"
 
 // ---------------------------------------------------------------------------
 // Render Graph handles — g_RG_CSMShadowMap / g_RG_EVSMShadowMap defined in ShadowRenderer.cpp
@@ -81,8 +83,6 @@ public:
 
         cb.SetClipToWorld(g_Renderer.m_Scene.m_View.m_MatClipToWorld);
         cb.SetWorldToView(g_Renderer.m_Scene.m_View.m_MatWorldToView);
-        cb.SetClipToView(g_Renderer.m_Scene.m_View.m_MatClipToViewNoOffset);   // no TAA jitter — contact shadow ray must be stable
-        cb.SetWorldToClip(g_Renderer.m_Scene.m_View.m_MatWorldToClipNoOffset); // no TAA jitter — contact shadow ray must be stable
         cb.SetCascadeSplits(Vector4{
             g_Renderer.m_CSMCascadeSplits[1],
             g_Renderer.m_CSMCascadeSplits[2],
@@ -135,11 +135,6 @@ public:
             g_Renderer.m_CSMCascades[3].m_SplitFar - g_Renderer.m_CSMCascades[3].m_SplitNear,
         });
 
-        // Contact shadow fields
-        cb.SetLightDirectionWS(g_Renderer.m_Scene.GetSunDirection());
-        cb.SetContactShadowDistance(g_Renderer.m_ContactShadowDistance);
-        cb.SetContactShadowSteps(g_Renderer.m_EnableContactShadows ? (uint32_t)g_Renderer.m_ContactShadowSteps : 0u);
-        cb.SetContactShadowsUseBlueNoise(g_Renderer.m_ContactShadowsUseBlueNoise ? 1u : 0u);
         cb.SetFrameIndex(g_Renderer.m_FrameNumber);
 
         commandList->writeBuffer(shadowMaskCB, &cb, sizeof(cb), 0);
@@ -166,12 +161,9 @@ public:
             inputs.SetGBufferNormals(normals);
             inputs.SetCSMShadowMap(shadowMap);
             inputs.SetEVSMShadowMap(evsmMap);
-            inputs.SetBlueNoiseTexture(cr.BlueNoiseTexture);
             inputs.SetRWShadowMask(shadowMask, 0);
             inputs.SetShadowSampler(cr.ShadowComparison);
             inputs.SetLinearClamp(cr.LinearClamp);
-            inputs.SetPointClamp(cr.PointClamp);
-            inputs.SetPointWrap(cr.PointWrap);
 
             const bool bEVSSM = g_Renderer.m_EnableEVSSM;
             uint32_t shaderID = bEVSSM
@@ -188,6 +180,86 @@ public:
                 .z = 1u
             };
             g_Renderer.AddComputePass(params);
+        }
+
+        // -------------------------------------------------------------------
+        // Screen-Space Shadows pass
+        // -------------------------------------------------------------------
+        if (g_Renderer.m_EnableScreenSpaceShadows)
+        {
+            // Compute light projection: float4(sunDir, 0) * ViewProjectionMatrix
+            // GetSunDirection() returns direction toward the sun.
+            const Vector3 sunDir = g_Renderer.m_Scene.GetSunDirection();
+            const Matrix& viewProj = g_Renderer.m_Scene.m_View.m_MatWorldToClipNoOffset;
+
+            // Manual float4(sunDir, 0) * row-major VP matrix
+            float lightProj[4];
+            lightProj[0] = sunDir.x * viewProj._11 + sunDir.y * viewProj._21 + sunDir.z * viewProj._31;
+            lightProj[1] = sunDir.x * viewProj._12 + sunDir.y * viewProj._22 + sunDir.z * viewProj._32;
+            lightProj[2] = sunDir.x * viewProj._13 + sunDir.y * viewProj._23 + sunDir.z * viewProj._33;
+            lightProj[3] = sunDir.x * viewProj._14 + sunDir.y * viewProj._24 + sunDir.z * viewProj._34;
+
+            int viewportSize[2] = { (int)width, (int)height };
+            int minBounds[2]    = { 0, 0 };
+            int maxBounds[2]    = { (int)width, (int)height };
+
+            // Reversed-Z: near=1, far=0. Non-expanded Z range.
+            Bend::DispatchList dispatchList = Bend::BuildDispatchList(
+                lightProj, viewportSize, minBounds, maxBounds, /*inExpandedZRange=*/false, /*inWaveSize=*/64);
+
+            // Pack flags
+            uint32_t flags = 0;
+            if (g_Renderer.m_SSS_IgnoreEdgePixels) flags |= 0x1;
+            // UsePrecisionOffset = off (bit 1)
+            // BilinearSamplingOffsetMode = off (bit 2)
+            if (g_Renderer.m_SSS_UseEarlyOut)      flags |= 0x8;
+
+            for (int d = 0; d < dispatchList.DispatchCount; d++)
+            {
+                const Bend::DispatchData& dd = dispatchList.Dispatch[d];
+
+                // Build per-dispatch constant buffer
+                const nvrhi::BufferDesc sssCBDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(
+                    sizeof(srrhi::ScreenSpaceShadowConstants), "ScreenSpaceShadowCB", 1);
+                const nvrhi::BufferHandle sssCB = device->createBuffer(sssCBDesc);
+
+                srrhi::ScreenSpaceShadowConstants sssCBData;
+                sssCBData.SetLightCoordinate(Vector4{
+                    dispatchList.LightCoordinate_Shader[0],
+                    dispatchList.LightCoordinate_Shader[1],
+                    dispatchList.LightCoordinate_Shader[2],
+                    dispatchList.LightCoordinate_Shader[3]
+                });
+                sssCBData.SetWaveOffset(Vector2I{ dd.WaveOffset_Shader[0], dd.WaveOffset_Shader[1] });
+                sssCBData.SetInvDepthTextureSize(Vector2{ 1.0f / (float)width, 1.0f / (float)height });
+                sssCBData.SetFarDepthValue(0.0f);   // Reversed-Z: far = 0
+                sssCBData.SetNearDepthValue(1.0f);  // Reversed-Z: near = 1
+                sssCBData.SetSurfaceThickness(g_Renderer.m_SSS_SurfaceThickness);
+                sssCBData.SetBilinearThreshold(g_Renderer.m_SSS_BilinearThreshold);
+                sssCBData.SetShadowContrast(g_Renderer.m_SSS_ShadowContrast);
+                sssCBData.SetFlags(flags);
+                sssCBData.SetDepthBounds(Vector2{ 0.0f, 1.0f }); // Full range for directional light
+                sssCBData.SetPadding(Vector2{ 0.0f, 0.0f });
+
+                commandList->writeBuffer(sssCB, &sssCBData, sizeof(sssCBData), 0);
+
+                srrhi::ScreenSpaceShadowInputs sssInputs;
+                sssInputs.SetCB(sssCB);
+                sssInputs.SetDepthTexture(depth);
+                sssInputs.SetOutputTexture(shadowMask, 0);
+                sssInputs.SetPointBorderSampler(cr.ShadowSamplerPoint);
+
+                Renderer::RenderPassParams sssParams;
+                sssParams.commandList    = commandList;
+                sssParams.shaderID       = ShaderID::SCREENSPACESHADOWS_SCREENSPACESHADOWS_CSMAIN_SS_SHADOW_SAMPLE_COUNT_60;
+                sssParams.bindingSetDesc = Renderer::CreateBindingSetDesc(sssInputs);
+                sssParams.dispatchParams = {
+                    .x = (uint32_t)dd.WaveCount[0],
+                    .y = (uint32_t)dd.WaveCount[1],
+                    .z = (uint32_t)dd.WaveCount[2]
+                };
+                g_Renderer.AddComputePass(sssParams);
+            }
         }
     }
 
