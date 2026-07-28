@@ -2,25 +2,45 @@
 
 cbuffer ShadowMaskConstants
 {
-    float4x4 m_ShadowViewProj[4];   // Per-cascade light-space VP matrices (256 bytes)
-    float4x4 m_ClipToWorld;         // Inverse view-proj for world pos reconstruction (64 bytes)
-    float4x4 m_WorldToView;         // For view-space depth (cascade selection) (64 bytes)
-    float4   m_CascadeSplits;       // View-space far depths of cascades 0-3 (16 bytes)
-    float2   m_OutputSize;          // Screen resolution (width, height) (8 bytes)
-    float    m_NormalBias;          // Normal-offset bias in shadow-map texels (default: 3.0) (4 bytes)
-    uint     m_EnableCascadeBlend;  // 0 = off, 1 = blend adjacent cascades at boundaries (4 bytes)
-    uint     m_CSMDebugMode;        // CSMDebugMode enum value; 0 = off (4 bytes)
+    float4x4 m_ShadowViewProj[4];       // Per-cascade light-space VP matrices (256 bytes)
+    float4x4 m_ClipToWorld;             // Inverse view-proj for world pos reconstruction (64 bytes)
+    float4x4 m_WorldToView;             // For view-space depth (cascade selection) (64 bytes)
+    float4x4 m_ClipToView;              // For contact shadow view-space depth tolerance (64 bytes)
+    float4x4 m_WorldToClip;             // View-proj matrix for screen-space ray projection (64 bytes)
+    float4   m_CascadeSplits;           // View-space far depths of cascades 0-3 (16 bytes)
+    float4   m_ProjectionParam;         // Per-cascade (far-near) for directional EVSSM (16 bytes)
+    float3   m_LightDirectionWS;        // World-space direction toward light (12 bytes)
+    float    m_ContactShadowDistance;   // Max contact shadow ray length (4 bytes)
+    float2   m_OutputSize;              // Screen resolution (8 bytes)
+    float    m_ConstantDepthBias;       // Constant depth bias subtracted from receiver NDC depth (4 bytes)
+    float4   m_NormalBias[2];           // Per-cascade pre-multiplied normal bias: [0].xy=cascade0, [0].zw=cascade1, [1].xy=cascade2, [1].zw=cascade3 (32 bytes)
+    float    m_VsmExponent;             // EVSM c exponent (4 bytes)
+    float    m_BulbRadius;              // Light angular radius (4 bytes)
+    float    m_MaxMipLevel;             // floor(log2(shadowMapResolution)) (4 bytes)
+    float    m_MaxSearchRadius;         // World-space blocker search cap (4 bytes)
+    float    m_PenumbraRatioScale;      // Artistic penumbra multiplier (4 bytes)
+    float    m_MaxPenumbraRatio;        // Soft cap on penumbra ratio (4 bytes)
+    float    m_LightBleedReduction;     // LBR amount (4 bytes)
+    uint     m_CSMDebugMode;            // CSMDebugMode enum value; 0 = off (4 bytes)
+    uint     m_ContactShadowSteps;      // Ray march step count (4 bytes)
+    uint     m_ContactShadowsUseBlueNoise; // 1 = blue noise dither for contact shadows, 0 = IGN (4 bytes)
+    uint     m_FrameIndex;          // Frame counter for animated noise (4 bytes)
 };
 
 srinput ShadowMaskInputs
 {
     ShadowMaskConstants m_CB;
 
-    Texture2D<float>      Depth;              // t0 — scene depth (reversed-Z)
-    Texture2D<float2>     GBufferNormals;     // t1 — RG16_FLOAT octahedral-encoded world normals
-    Texture2DArray<float> CSMShadowMap;       // t2 — 4-slice D32_FLOAT shadow map array
+    Texture2D<float>       Depth;           // t0 — scene depth (reversed-Z)
+    Texture2D<float2>      GBufferNormals;  // t1 — RG16_FLOAT octahedral-encoded world normals
+    Texture2DArray<float>  CSMShadowMap;    // t2 — 4-slice D32_FLOAT shadow map array (PCF path)
+    Texture2DArray<float4> EVSMShadowMap;   // t3 — 4-slice RGBA16_FLOAT EVSM moments (EVSSM path)
+    Texture2D<float2>      BlueNoiseTexture; // t4 — RG8 tiling blue noise (LDR_RG01_0)
 
-    RWTexture2D<float>    RWShadowMask;       // u0 — R8_UNORM output shadow mask
+    RWTexture2D<float>     RWShadowMask;    // u0 — R8_UNORM output shadow mask
 
-    SamplerComparisonState ShadowSampler;       // s0 — comparison linear, clamp-to-border white
+    SamplerComparisonState ShadowSampler;   // s0 — comparison linear, clamp-to-border white (PCF)
+    SamplerState           LinearClamp;     // s1 — bilinear clamp (EVSM)
+    SamplerState           PointClamp;      // s2 — point clamp (contact shadow depth fetch)
+    SamplerState           PointWrap;       // s3 — point wrap (blue noise tiling fetch)
 };

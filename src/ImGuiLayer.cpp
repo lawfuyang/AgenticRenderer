@@ -123,10 +123,28 @@ void ImGuiLayer::UpdateFrame()
 
                         ImGui::SeparatorText("Shadow Bias");
                         ImGui::SliderFloat("Normal Bias", &g_Renderer.m_CSMNormalBias, 0.5f, 50.0f, "%.1f texels");
-                        ImGui::SliderFloat("Cascade Bias Scale", &g_Renderer.m_CSMCascadeBiasScale, 0.0f, 1.0f, "%.2f");
+                        ImGui::SliderFloat("Constant Depth Bias", &g_Renderer.m_CSMConstantDepthBias, 0.0f, 0.01f, "%.4f");
 
-                        ImGui::SeparatorText("Quality");
-                        ImGui::Checkbox("Cascade Blend", &g_Renderer.m_EnableCascadeBlend);
+                        ImGui::SeparatorText("Shadow Mode");
+                        ImGui::Checkbox("Enable EVSSM", &g_Renderer.m_EnableEVSSM);
+                        if (g_Renderer.m_EnableEVSSM)
+                        {
+                            ImGui::SliderFloat("VSM Exponent (c)", &g_Renderer.m_VsmExponent, 10.0f, 80.0f, "%.0f");
+                            ImGui::SliderFloat("Bulb Radius",       &g_Renderer.m_BulbRadius,  0.001f, 0.1f, "%.4f");
+                            ImGui::SliderFloat("Max Search Radius", &g_Renderer.m_MaxSearchRadius, 0.01f, 1.0f, "%.3f");
+                            ImGui::SliderFloat("Penumbra Scale",    &g_Renderer.m_PenumbraRatioScale, 0.1f, 3.0f, "%.2f");
+                            ImGui::SliderFloat("Max Penumbra",      &g_Renderer.m_MaxPenumbraRatio,   0.1f, 3.0f, "%.2f");
+                            ImGui::SliderFloat("Light Bleed Red.",  &g_Renderer.m_LightBleedReduction, 0.0f, 0.5f, "%.3f");
+                        }
+
+                        ImGui::SeparatorText("Contact Shadows");
+                        ImGui::Checkbox("Enable Contact Shadows", &g_Renderer.m_EnableContactShadows);
+                        if (g_Renderer.m_EnableContactShadows)
+                        {
+                            ImGui::SliderFloat("CS Distance", &g_Renderer.m_ContactShadowDistance, 0.1f, 5.0f, "%.2f m");
+                            ImGui::SliderInt("CS Steps",      &g_Renderer.m_ContactShadowSteps, 4, 32);
+                            ImGui::Checkbox("Blue Noise Dither", &g_Renderer.m_ContactShadowsUseBlueNoise);
+                        }
 
                     } // if (m_EnableCSMShadows)
                     ImGui::TreePop();

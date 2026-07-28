@@ -1,6 +1,13 @@
 #include "Common.hlsli"
-#include "CommonShadow.hlsli"
 #include "srrhi/hlsl/CSMDebug.hlsli"
+
+// ---------------------------------------------------------------------------
+// Cascade selection (inlined from CommonShadow.hlsli)
+// ---------------------------------------------------------------------------
+uint SelectCascade(float viewDepth, float4 cascadeSplits)
+{
+    return dot(uint3(viewDepth >= cascadeSplits.xyz), 1);
+}
 
 // ---------------------------------------------------------------------------
 // Cascade color palette — shared across all debug modes
@@ -63,20 +70,6 @@ float3 DebugDepthCompare(float shadowFactor)
     float3 shadowedColor = float3(0.8f, 0.1f, 0.1f);
     float3 litColor      = float3(0.1f, 0.8f, 0.1f);
     return lerp(shadowedColor, litColor, shadowFactor);
-}
-
-// Mode 8: Blend Zone — white = in blend band, cascade color = outside
-float3 DebugBlendZone(float viewDepth, float4 cascadeSplits)
-{
-    uint cascadeIndex = SelectCascade(viewDepth, cascadeSplits);
-
-    float splitNear   = (cascadeIndex == 0) ? 0.0f : cascadeSplits[cascadeIndex - 1];
-    float splitFar    = cascadeSplits[min(cascadeIndex, 3u)];
-    float bandSize    = (splitFar - splitNear) * 0.1f;
-    float blendFactor = saturate((viewDepth - (splitFar - bandSize)) / max(bandSize, 1e-5f));
-
-    float3 cascadeColor = kCascadeColors[min(cascadeIndex, 3u)];
-    return lerp(cascadeColor, float3(1.0f, 1.0f, 1.0f), blendFactor);
 }
 
 // ---------------------------------------------------------------------------
@@ -183,16 +176,6 @@ float4 CSMDebug_PSMain(FullScreenVertexOut input) : SV_Target
         case srrhi::CSMDebugMode::CSM_DEBUG_FRUSTUM_WIRE:
         {
             output = g_Albedo.Load(uint3(uvInt, 0)).rgb;
-            break;
-        }
-
-        // ── Mode 8: Blend Zone ──────────────────────────────────────────────
-        case srrhi::CSMDebugMode::CSM_DEBUG_BLEND_ZONE:
-        {
-            output = DebugBlendZone(viewDepth, g_CB.m_CascadeSplits);
-            // Blend 60/40 with albedo so scene is still readable
-            float3 albedo = g_Albedo.Load(uint3(uvInt, 0)).rgb;
-            output = output * 0.6f + albedo * 0.4f;
             break;
         }
 

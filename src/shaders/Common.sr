@@ -183,5 +183,4 @@ srinput CSMDebugMode
     static const uint CSM_DEBUG_ALPHA_MASKED    = 5;  // Alpha-masked geometry overlay
     static const uint CSM_DEBUG_DEPTH_COMPARE   = 6;  // Red=shadowed, Green=lit
     static const uint CSM_DEBUG_FRUSTUM_WIRE    = 7;  // Cascade frustum wireframe
-    static const uint CSM_DEBUG_BLEND_ZONE      = 8;  // Cascade blend band visualization
 };

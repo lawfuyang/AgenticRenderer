@@ -5,12 +5,14 @@
 
 #include "shaders/srrhi/cpp/ShadowDepth.h"
 #include "shaders/srrhi/cpp/GPUCulling.h"
+#include "shaders/srrhi/cpp/EVSMConvert.h"
 
 // ---------------------------------------------------------------------------
-// Render Graph handle — defined here, extern'd by ShadowMaskRenderer and
+// Render Graph handles — defined here, extern'd by ShadowMaskRenderer and
 // CSMDebugRenderer.
 // ---------------------------------------------------------------------------
 RGTextureHandle g_RG_CSMShadowMap;
+RGTextureHandle g_RG_EVSMShadowMap;
 
 // ---------------------------------------------------------------------------
 // ShadowRenderer — 4-cascade CSM depth array (4 × 2048² D32_FLOAT)
@@ -42,6 +44,24 @@ public:
         shadowMapDesc.m_NvrhiDesc.keepInitialState = true;
         shadowMapDesc.m_NvrhiDesc.setClearValue(nvrhi::Color{ srrhi::CommonConsts::DEPTH_FAR, 0.0f, 0.0f, 0.0f }); // reversed-Z: far=0.0
         renderGraph.DeclareTexture(shadowMapDesc, g_RG_CSMShadowMap);
+
+        // EVSM moments map — RGBA16_FLOAT, full mip chain, UAV-capable
+        if (g_Renderer.m_EnableEVSSM)
+        {
+            RGTextureDesc evsmDesc;
+            evsmDesc.m_NvrhiDesc.dimension        = nvrhi::TextureDimension::Texture2DArray;
+            evsmDesc.m_NvrhiDesc.width            = srrhi::CommonConsts::kShadowMapResolution;
+            evsmDesc.m_NvrhiDesc.height           = srrhi::CommonConsts::kShadowMapResolution;
+            evsmDesc.m_NvrhiDesc.arraySize        = g_Renderer.m_NumCSMCascades;
+            evsmDesc.m_NvrhiDesc.format           = nvrhi::Format::RGBA16_FLOAT;
+            evsmDesc.m_NvrhiDesc.isUAV            = true;
+            evsmDesc.m_NvrhiDesc.isRenderTarget   = false;
+            evsmDesc.m_NvrhiDesc.mipLevels        = ComputeMipCount(srrhi::CommonConsts::kShadowMapResolution);
+            evsmDesc.m_NvrhiDesc.debugName        = "EVSMShadowMap_RG";
+            evsmDesc.m_NvrhiDesc.initialState     = nvrhi::ResourceStates::UnorderedAccess;
+            evsmDesc.m_NvrhiDesc.keepInitialState = true;
+            renderGraph.DeclareTexture(evsmDesc, g_RG_EVSMShadowMap);
+        }
 
         // Declare GPU culling buffers for opaque and masked buckets
         m_OpaqueResources.DeclareResources(renderGraph, "Shadow_Opaque");
@@ -104,17 +124,6 @@ private:
         snprintf(marker, sizeof(marker), "Shadow Cascade %u", cascadeIndex);
         PROFILE_GPU_SCOPED(marker, commandList);
 
-        nvrhi::DeviceHandle device = g_Renderer.m_RHI->m_NvrhiDevice;
-
-        // Build ShadowDepthCB
-        const nvrhi::BufferDesc cbDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::ShadowDepthConstants), "ShadowDepthCB", 1);
-        const nvrhi::BufferHandle shadowDepthCB = device->createBuffer(cbDesc);
-
-        srrhi::ShadowDepthConstants cb;
-        cb.SetShadowViewProj(g_Renderer.m_CSMCascades[cascadeIndex].m_ViewProj);
-        cb.SetCascadeIndex(cascadeIndex);
-        commandList->writeBuffer(shadowDepthCB, &cb, sizeof(cb), 0);
-
         // Compute axis-aligned frustum planes in light view space from the cascade AABB.
         // These planes have inward-facing normals, matching FrustumSphereTest convention.
         using namespace DirectX;
@@ -130,8 +139,8 @@ private:
         XMStoreFloat4(&frustumPlanes[5], XMVectorSet( 0.0f,  0.0f, -1.0f,  aabbMax.z)); // Far:  z <= max
 
         // Cull and draw both buckets
-        CullAndDraw(cascadeIndex, commandList, shadowMap, shadowDepthCB, frustumPlanes, opaque, /*bAlphaTest=*/false);
-        CullAndDraw(cascadeIndex, commandList, shadowMap, shadowDepthCB, frustumPlanes, masked, /*bAlphaTest=*/true);
+        CullAndDraw(cascadeIndex, commandList, shadowMap, frustumPlanes, opaque, /*bAlphaTest=*/false);
+        CullAndDraw(cascadeIndex, commandList, shadowMap, frustumPlanes, masked, /*bAlphaTest=*/true);
     }
 
     // -----------------------------------------------------------------------
@@ -140,7 +149,6 @@ private:
     void CullAndDraw(uint32_t cascadeIndex,
                      nvrhi::CommandListHandle commandList,
                      nvrhi::TextureHandle shadowMap,
-                     nvrhi::BufferHandle shadowDepthCB,
                      const Vector4 frustumPlanes[6],
                      const BucketHandles& h,
                      bool bAlphaTest)
@@ -212,7 +220,7 @@ private:
         }
 
         // ---- Depth-only draw ----
-        DrawShadowMeshlets(cascadeIndex, commandList, shadowMap, shadowDepthCB, h.meshletJobs, h.meshletJobCount, h.meshletIndirect, bAlphaTest);
+        DrawShadowMeshlets(cascadeIndex, commandList, shadowMap, h.meshletJobs, h.meshletJobCount, h.meshletIndirect, bAlphaTest);
     }
 
     // -----------------------------------------------------------------------
@@ -221,7 +229,6 @@ private:
     void DrawShadowMeshlets(uint32_t cascadeIndex,
                             nvrhi::CommandListHandle commandList,
                             nvrhi::TextureHandle shadowMap,
-                            nvrhi::BufferHandle shadowDepthCB,
                             nvrhi::BufferHandle meshletJobs,
                             nvrhi::BufferHandle meshletJobCount,
                             nvrhi::BufferHandle meshletIndirect,
@@ -247,9 +254,13 @@ private:
         viewportState.scissorRects.resize(1);
         viewportState.scissorRects[0] = { 0, 0, (int)resolution, (int)resolution };
 
+        srrhi::ShadowDepthConstants shadowDepthCB;
+        shadowDepthCB.SetShadowViewProj(g_Renderer.m_CSMCascades[cascadeIndex].m_ViewProj);
+        shadowDepthCB.SetCascadeIndex(cascadeIndex);
+
         // Build binding set
         srrhi::ShadowDepthInputs inputs;
-        inputs.SetShadowDepthCB(shadowDepthCB);
+        inputs.SetShadowDepthCB(&shadowDepthCB);
         inputs.SetInstances(g_Renderer.m_Scene.m_InstanceDataBuffer);
         inputs.SetMaterials(g_Renderer.m_Scene.m_MaterialConstantsBuffer);
         inputs.SetVertices(g_Renderer.m_Scene.m_VertexBufferQuantized);
@@ -295,8 +306,93 @@ private:
         meshState.indirectCountBuffer = meshletJobCount;
 
         commandList->setMeshletState(meshState);
+        commandList->setPushConstants(&shadowDepthCB, srrhi::ShadowDepthInputs::PushConstantBytes);
         commandList->dispatchMeshIndirectCount(0, 0, (uint32_t)g_Renderer.m_Scene.m_InstanceData.size());
     }
 };
 
 REGISTER_RENDERER(ShadowRenderer);
+
+// ---------------------------------------------------------------------------
+// EVSMConvertRenderer — depth → EVSM moments (mip 0), one dispatch per cascade
+// ---------------------------------------------------------------------------
+class EVSMConvertRenderer : public IRenderer
+{
+public:
+    bool Setup(RenderGraph& renderGraph) override
+    {
+        if (g_Renderer.m_Mode != RenderingMode::NormalBasic || !g_Renderer.m_EnableCSMShadows || !g_Renderer.m_EnableEVSSM)
+            return false;
+
+        renderGraph.ReadTexture(g_RG_CSMShadowMap);
+        renderGraph.WriteTexture(g_RG_EVSMShadowMap);
+        
+        return true;
+    }
+
+    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    {
+        nvrhi::TextureHandle depth = renderGraph.GetTexture(g_RG_CSMShadowMap,  RGResourceAccessMode::Read);
+        nvrhi::TextureHandle evsm  = renderGraph.GetTexture(g_RG_EVSMShadowMap, RGResourceAccessMode::Write);
+
+        const uint32_t res = srrhi::CommonConsts::kShadowMapResolution;
+
+        srrhi::EVSMConvertInputs inputs;
+        inputs.SetDepthMap(depth);
+        inputs.SetEVSMMap(evsm, 0, 0, (int32_t)g_Renderer.m_NumCSMCascades);
+
+        for (uint32_t i = 0; i < g_Renderer.m_NumCSMCascades; i++)
+        {
+            srrhi::EVSMConvertConstants constants;
+            constants.SetVsmExponent(g_Renderer.m_VsmExponent);
+            constants.SetCascadeIndex(i);
+
+            Renderer::RenderPassParams params;
+            params.commandList      = commandList;
+            params.shaderID         = ShaderID::EVSMCONVERT_EVSMCONVERT_CSMAIN;
+            params.bindingSetDesc   = Renderer::CreateBindingSetDesc(inputs);
+            params.pushConstants    = &constants;
+            params.pushConstantsSize = srrhi::EVSMConvertInputs::PushConstantBytes;
+            params.dispatchParams   = {
+                .x = DivideAndRoundUp(res, 8u),
+                .y = DivideAndRoundUp(res, 8u),
+                .z = 1u
+            };
+            g_Renderer.AddComputePass(params);
+        }
+    }
+
+    const char* GetName() const override { return "EVSMConvert"; }
+};
+REGISTER_RENDERER(EVSMConvertRenderer);
+
+// ---------------------------------------------------------------------------
+// EVSMMipRenderer — generate full mip chain for the EVSM map via SPD
+// ---------------------------------------------------------------------------
+class EVSMMipRenderer : public IRenderer
+{
+public:
+    bool Setup(RenderGraph& renderGraph) override
+    {
+        if (g_Renderer.m_Mode != RenderingMode::NormalBasic || !g_Renderer.m_EnableCSMShadows || !g_Renderer.m_EnableEVSSM)
+            return false;
+
+        renderGraph.WriteTexture(g_RG_EVSMShadowMap);
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("EVSM SPD Atomic Counter", g_Renderer.m_NumCSMCascades), m_RG_SpdCounter);
+
+        return true;
+    }
+
+    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
+    {
+        nvrhi::TextureHandle evsm       = renderGraph.GetTexture(g_RG_EVSMShadowMap, RGResourceAccessMode::Write);
+        nvrhi::BufferHandle  spdCounter = renderGraph.GetBuffer(m_RG_SpdCounter,      RGResourceAccessMode::Write);
+        g_Renderer.GenerateMipsUsingSPD(evsm, spdCounter, commandList, "EVSM Mips", srrhi::CommonConsts::SPD_REDUCTION_AVERAGE);
+    }
+
+    const char* GetName() const override { return "EVSMMips"; }
+
+private:
+    RGBufferHandle m_RG_SpdCounter;
+};
+REGISTER_RENDERER(EVSMMipRenderer);

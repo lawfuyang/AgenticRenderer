@@ -322,9 +322,22 @@ struct Renderer
 
     // Shadow bias — normal-offset only
     float    m_CSMNormalBias       = 3.0f;    // Normal-offset bias in shadow-map texels
-    float    m_CSMCascadeBiasScale = 1.0f;    // Per-cascade bias scale (0=uniform, 1=proportional)
+    float    m_CSMConstantDepthBias = 0.001f; // Constant depth bias subtracted from receiver NDC depth
 
-    bool     m_EnableCascadeBlend  = false;   // Blend adjacent cascades at boundaries
+    // ── EVSSM settings ────────────────────────────────────────────────────────
+    bool    m_EnableEVSSM            = false;
+    float   m_VsmExponent            = 40.0f;   // c: exponential warp factor
+    float   m_BulbRadius             = 0.01f;   // light angular radius (world units at 1m)
+    float   m_MaxSearchRadius        = 0.1f;    // world-space blocker search cap
+    float   m_PenumbraRatioScale     = 1.0f;    // artistic penumbra multiplier
+    float   m_MaxPenumbraRatio       = 1.0f;    // soft cap on penumbra ratio
+    float   m_LightBleedReduction    = 0.1f;    // LBR amount [0, 0.5]
+
+    // ── Contact Shadow settings ───────────────────────────────────────────────
+    bool    m_EnableContactShadows   = false;
+    float   m_ContactShadowDistance  = 0.5f;    // max ray length (world units)
+    int     m_ContactShadowSteps     = 8;       // ray march step count
+    bool    m_ContactShadowsUseBlueNoise = false;   // use blue noise dither for contact shadows (vs IGN)
 
     // bloom
     float m_BloomKnee = 0.1f;

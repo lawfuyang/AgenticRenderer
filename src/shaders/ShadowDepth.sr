@@ -10,6 +10,7 @@ cbuffer ShadowDepthConstants
 
 srinput ShadowDepthInputs
 {
+    [push_constant]
     ShadowDepthConstants m_ShadowDepthCB;
 
     StructuredBuffer<PerInstanceData>  Instances;         // t0
