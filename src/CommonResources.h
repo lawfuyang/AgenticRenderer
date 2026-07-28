@@ -83,6 +83,9 @@ public:
     nvrhi::TextureHandle BrunetonScattering;
     nvrhi::TextureHandle BrunetonIrradiance;
 
+    // Blue noise texture (LDR_RG01_0.png — 2-channel, tiling)
+    nvrhi::TextureHandle BlueNoiseTexture;
+
     // Default buffers
     nvrhi::BufferHandle DummySRVByteAddressBuffer;
     nvrhi::BufferHandle DummyUAVByteAddressBuffer;

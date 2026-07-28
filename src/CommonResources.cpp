@@ -443,6 +443,18 @@ void CommonResources::Initialize()
         LoadBruneton("scattering.dat", "BrunetonScattering", BrunetonScattering, srrhi::CommonConsts::SCATTERING_TEXTURE_WIDTH, srrhi::CommonConsts::SCATTERING_TEXTURE_HEIGHT, srrhi::CommonConsts::SCATTERING_TEXTURE_DEPTH); // WIDTH=NU_SIZE*MU_S_SIZE, HEIGHT=srrhi::CommonConsts::SCATTERING_TEXTURE_MU_SIZE, DEPTH=srrhi::CommonConsts::SCATTERING_TEXTURE_R_SIZE
         LoadBruneton("irradiance.dat", "BrunetonIrradiance", BrunetonIrradiance, srrhi::CommonConsts::IRRADIANCE_TEXTURE_WIDTH, srrhi::CommonConsts::IRRADIANCE_TEXTURE_HEIGHT);
 
+        // Blue noise texture (2-channel, tiling LDR)
+        {
+            nvrhi::TextureDesc desc;
+            std::unique_ptr<MemoryMappedDataReader> data;
+            std::filesystem::path bnPath = std::filesystem::path(basePath) / ".." / "external" / "LDR_RG01_0.png";
+            LoadSTBITexture(bnPath.generic_string(), desc, data);
+            desc.debugName = "BlueNoiseTexture";
+            BlueNoiseTexture = device->createTexture(desc);
+            SDL_assert(BlueNoiseTexture);
+            ::UploadTexture(commandList, BlueNoiseTexture, desc, data->GetData(), data->GetSize());
+        }
+
         // Black texture
         uint32_t blackPixel = 0xFF000000; // RGBA(0,0,0,255)
         commandList->writeTexture(DefaultTextureBlack, 0, 0, &blackPixel, sizeof(uint32_t), 0);
@@ -523,6 +535,7 @@ void CommonResources::RegisterDefaultTextures()
 
 void CommonResources::Shutdown()
 {
+    BlueNoiseTexture = nullptr;
     BrunetonIrradiance = nullptr;
     BrunetonScattering = nullptr;
     BrunetonTransmittance = nullptr;
