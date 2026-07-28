@@ -1151,26 +1151,46 @@ void Renderer::ComputeCascadeViewProj()
 
         XMMATRIX lightView = XMMatrixLookAtLH(lightPos, lightTarget, up);
 
-        // --- 3. Compute AABB of frustum corners in light space ---
-        Vector3 minLS = {  FLT_MAX,  FLT_MAX,  FLT_MAX };
-        Vector3 maxLS = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+        // --- 3. Fit a bounding sphere around the frustum corners (world space) ---
+        // Using a sphere instead of a tight AABB makes the XY extents rotation-invariant:
+        // the shadow map covers the same world-space area regardless of camera orientation,
+        // eliminating shimmering when the camera rotates.
+        Vector3 sphereCenter = { 0.0f, 0.0f, 0.0f };
+        for (int i = 0; i < 8; i++)
+            sphereCenter = { sphereCenter.x + worldCorners[i].x,
+                             sphereCenter.y + worldCorners[i].y,
+                             sphereCenter.z + worldCorners[i].z };
+        sphereCenter = { sphereCenter.x / 8.0f, sphereCenter.y / 8.0f, sphereCenter.z / 8.0f };
 
+        float sphereRadius = 0.0f;
+        for (int i = 0; i < 8; i++)
+        {
+            float dx = worldCorners[i].x - sphereCenter.x;
+            float dy = worldCorners[i].y - sphereCenter.y;
+            float dz = worldCorners[i].z - sphereCenter.z;
+            sphereRadius = std::max(sphereRadius, std::sqrt(dx*dx + dy*dy + dz*dz));
+        }
+
+        // Project sphere center into light space to get the XY center of the ortho frustum.
+        Vector  sphereCenterV = XMLoadFloat3(&sphereCenter);
+        Vector  lsCenter      = XMVector3TransformCoord(sphereCenterV, lightView);
+        Vector3 lsCenterF;
+        XMStoreFloat3(&lsCenterF, lsCenter);
+
+        // Build a square ortho frustum of fixed half-extent = sphereRadius.
+        Vector3 minLS = { lsCenterF.x - sphereRadius, lsCenterF.y - sphereRadius, lsCenterF.z };
+        Vector3 maxLS = { lsCenterF.x + sphereRadius, lsCenterF.y + sphereRadius, lsCenterF.z };
+
+        // --- 4. Compute Z range from all corners + expand for casters behind the frustum ---
         for (int i = 0; i < 8; i++)
         {
             Vector  wc  = XMLoadFloat3(&worldCorners[i]);
             Vector  lc  = XMVector3TransformCoord(wc, lightView);
             Vector3 lcF;
             XMStoreFloat3(&lcF, lc);
-
-            minLS.x = std::min(minLS.x, lcF.x);
-            minLS.y = std::min(minLS.y, lcF.y);
             minLS.z = std::min(minLS.z, lcF.z);
-            maxLS.x = std::max(maxLS.x, lcF.x);
-            maxLS.y = std::max(maxLS.y, lcF.y);
             maxLS.z = std::max(maxLS.z, lcF.z);
         }
-
-        // --- 4. Expand Z to capture shadow casters behind the frustum ---
         const float kShadowCasterEnlarge = sceneRadius;
         minLS.z -= kShadowCasterEnlarge;
         maxLS.z += kShadowCasterEnlarge;
@@ -1184,7 +1204,10 @@ void Renderer::ComputeCascadeViewProj()
 
         XMMATRIX lightViewProj = lightView * lightProj;
 
-        // --- 6. Texel snapping for temporal stability ---
+        // --- 6. Texel snapping for translation stability ---
+        // Snap the world-space origin (0,0,0) to the nearest shadow-map texel.
+        // Because the ortho scale is now fixed (sphere-derived), only translation
+        // changes frame-to-frame, and this snapping eliminates that jitter too.
         const float shadowMapSize = (float)srrhi::CommonConsts::kShadowMapResolution;
 
         Vector  origin       = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1200,7 +1223,6 @@ void Renderer::ComputeCascadeViewProj()
             0.0f, 0.0f
         };
 
-        // Re-read lightProjF in case lightProj was modified by texel snapping above
         Matrix lightProjF;
         XMStoreFloat4x4(&lightProjF, lightProj);
         lightProjF._41 += roundOffset.x;
