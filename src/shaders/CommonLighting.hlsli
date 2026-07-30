@@ -666,6 +666,21 @@ float SampleGGX_VNDF_PDF(float roughness, float3 N, float3 V, float3 L)
     return (VdotH > 0.0f) ? D / (4.0f * VdotH) : 0.0f;
 }
 
+// GGX VNDF solid-angle PDF: D(h) * G1(v) / (4 * NdotV)
+// Use when you have NdotH/NdotV but not VdotH (e.g. SSGI ray march).
+float GGXVNDFPdf(float NdotH, float NdotV, float roughness)
+{
+    float D  = D_GGX(NdotH, roughness);
+    float G1 = G1_Smith(roughness, NdotV);
+    return (D * G1) / max(4.0f * NdotV, 1e-5f);
+}
+
+// Power heuristic MIS weight: a^2 / (a^2 + b^2)
+float MisHeuristic(float a, float b)
+{
+    return (a * a) / max(a * a + b * b, 1e-10f);
+}
+
 // Evaluate the BRDF weight (reflectance / PDF) for a GGX VNDF-sampled specular bounce.
 // Weight = F * G2/G1  (the distribution D and PDF cancel, leaving only the masking ratio).
 float3 EvalGGX_VNDF_Weight(float3 F0, float3 N, float3 V, float3 L, float3 H, float roughness)
