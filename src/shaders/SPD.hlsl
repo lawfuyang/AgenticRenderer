@@ -112,7 +112,9 @@ groupshared FfxFloat32 spdIntermediateA[16][16];
 
 FfxFloat32x4 SpdLoadSourceImage(FfxInt32x2 tex, FfxUInt32 slice)
 {
-#if SPD_NUM_CHANNELS == 3
+#if SPD_NUM_CHANNELS == 4
+    return g_Mip0.SPD_LOAD(tex, slice);
+#elif SPD_NUM_CHANNELS == 3
     return float4(g_Mip0.SPD_LOAD(tex, slice).xyz, 0);
 #else
     return g_Mip0.SPD_LOAD(tex, slice).xxxx;
@@ -122,7 +124,9 @@ FfxFloat32x4 SpdLoadSourceImage(FfxInt32x2 tex, FfxUInt32 slice)
 FfxFloat32x4 SpdLoad(FfxInt32x2 tex, FfxUInt32 slice)
 {
     // SPD uses this to load from mip 5 when processing more than 6 mips
-#if SPD_NUM_CHANNELS == 3
+#if SPD_NUM_CHANNELS == 4
+    return g_Out6[SPD_IDX(tex, slice)];
+#elif SPD_NUM_CHANNELS == 3
     return float4(g_Out6[SPD_IDX(tex, slice)].xyz, 0);
 #else
     return g_Out6[SPD_IDX(tex, slice)].xxxx;
@@ -132,7 +136,9 @@ FfxFloat32x4 SpdLoad(FfxInt32x2 tex, FfxUInt32 slice)
 void SpdStore(FfxInt32x2 pix, FfxFloat32x4 v, FfxUInt32 mip, FfxUInt32 slice)
 {
     SPD_TYPE val;
-#if SPD_NUM_CHANNELS == 3
+#if SPD_NUM_CHANNELS == 4
+    val = v;
+#elif SPD_NUM_CHANNELS == 3
     val = v.xyz;
 #else
     val = v.x;

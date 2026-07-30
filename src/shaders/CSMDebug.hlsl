@@ -72,6 +72,24 @@ float3 DebugDepthCompare(float shadowFactor)
     return lerp(shadowedColor, litColor, shadowFactor);
 }
 
+// Heat-map ramp for scalar debug values: black -> blue -> cyan -> green -> yellow -> red
+float3 DebugHeatmap(float t)
+{
+    t = saturate(t);
+    float3 c0 = float3(0.0f, 0.0f, 0.0f);
+    float3 c1 = float3(0.0f, 0.0f, 1.0f);
+    float3 c2 = float3(0.0f, 1.0f, 1.0f);
+    float3 c3 = float3(0.0f, 1.0f, 0.0f);
+    float3 c4 = float3(1.0f, 1.0f, 0.0f);
+    float3 c5 = float3(1.0f, 0.0f, 0.0f);
+    float  s  = t * 5.0f;
+    if (s < 1.0f) return lerp(c0, c1, s);
+    if (s < 2.0f) return lerp(c1, c2, s - 1.0f);
+    if (s < 3.0f) return lerp(c2, c3, s - 2.0f);
+    if (s < 4.0f) return lerp(c3, c4, s - 3.0f);
+    return lerp(c4, c5, s - 4.0f);
+}
+
 // ---------------------------------------------------------------------------
 
 static const srrhi::CSMDebugConstants g_CB          = srrhi::CSMDebugInputs::GetCSMDebugCB();
@@ -176,6 +194,18 @@ float4 CSMDebug_PSMain(FullScreenVertexOut input) : SV_Target
         case srrhi::CSMDebugMode::CSM_DEBUG_FRUSTUM_WIRE:
         {
             output = g_Albedo.Load(uint3(uvInt, 0)).rgb;
+            break;
+        }
+
+        // ── Modes 9-11: EVSSM internals ─────────────────────────────────────
+        // ShadowMask writes the normalized debug quantity into the R8 mask for
+        // these modes; heat-map it here. Only meaningful when EVSSM is enabled.
+        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_PENUMBRA:
+        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_BLOCKER:
+        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_TARGET_LOD:
+        {
+            float v = g_ShadowMask.Load(uint3(uvInt, 0));
+            output  = DebugHeatmap(v);
             break;
         }
 

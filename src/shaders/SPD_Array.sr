@@ -7,7 +7,9 @@ cbuffer SpdArrayConstants
     uint m_NumSlices;
 };
 
-#if SPD_NUM_CHANNELS == 3
+#if SPD_NUM_CHANNELS == 4
+    #define SPD_TYPE float4
+#elif SPD_NUM_CHANNELS == 3
     #define SPD_TYPE float3
 #else
     #define SPD_TYPE float

@@ -21,9 +21,9 @@ static const SamplerState               g_LinearClamp    = srrhi::ShadowMaskInpu
 // ---------------------------------------------------------------------------
 // Cascade selection
 // ---------------------------------------------------------------------------
-uint SelectCascade(float viewDepth, float4 cascadeSplits)
+uint SelectCascade(float viewDepth)
 {
-    return dot(uint3(viewDepth >= cascadeSplits.xyz), 1);
+    return dot(uint3(viewDepth >= g_CB.m_CascadeSplits.xyz), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -63,8 +63,9 @@ float ComputePCF(float3 shadowUV, float compareDepth, float texelSize)
 // Projects the world normal onto the shadow map's 2D grid (rows 0,1 of the
 // row-major VP matrix) and computes the L1 norm of the anisotropic footprint.
 // This inherently contains sin(theta) slope-scaling because the normal is unit-length.
-float3 ApplyNormalBias(float3 worldPos, float3 worldNormal, float2 bias, float4x4 shadowVP)
+float3 ApplyNormalBias(float3 worldPos, float3 worldNormal, float2 bias, uint cascadeIndex)
 {
+    float4x4 shadowVP = g_CB.m_ShadowViewProj[cascadeIndex];
     // Row 0 and Row 1 of the row-major VP matrix are the light X/Y basis in world space.
     float2 n_L = float2(
         dot(float3(shadowVP._11, shadowVP._12, shadowVP._13), worldNormal),
@@ -86,11 +87,11 @@ float2 GetCascadeNormalBias(uint cascadeIndex)
 // ---------------------------------------------------------------------------
 float ComputeCSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
 {
-    uint cascadeIndex = SelectCascade(viewDepth, g_CB.m_CascadeSplits);
+    uint cascadeIndex = SelectCascade(viewDepth);
 
-    // Filament-style anisotropic normal bias (pre-computed on CPU)
+    // Anisotropic normal bias (pre-computed on CPU)
     float2 bias           = GetCascadeNormalBias(cascadeIndex);
-    float3 offsetWorldPos = ApplyNormalBias(worldPos, worldNormal, bias, g_CB.m_ShadowViewProj[cascadeIndex]);
+    float3 offsetWorldPos = ApplyNormalBias(worldPos, worldNormal, bias, cascadeIndex);
 
     float4 lightSpacePos = mul(float4(offsetWorldPos, 1.0f), g_CB.m_ShadowViewProj[cascadeIndex]);
     float3 shadowUV      = lightSpacePos.xyz / lightSpacePos.w;
@@ -114,24 +115,28 @@ float ChebyshevUpperBound(float2 moments, float depth, float minVariance, float 
     float variance = max(moments.y - moments.x * moments.x, minVariance);
     float d        = depth - moments.x;
     float p_max    = variance / (variance + d * d);
-    return saturate((p_max - lbrAmount) / max(1.0f - lbrAmount, 1e-6f));
+    return saturate((p_max - lbrAmount) / (1.0f - lbrAmount));
 }
 
 // ---------------------------------------------------------------------------
-// ELVSM evaluation
+// EVSM evaluation
+// zReceiver is in [0,1] linear light-space (0=near, 1=far)
 // ---------------------------------------------------------------------------
-float EvaluateEVSMFull(float c, float4 moments, float zReceiver, float lbrAmount)
+float EvaluateEVSM(float4 moments, float zReceiver)
 {
-    const float EPSILON_MULTIPLIER = 0.002f;
+    const float EPSILON_MULTIPLIER = 0.00001f; // fp32 moments: tighter variance floor than fp16's 0.002 -> less light bleeding
+    // Remap to [-1, 1]: near(0)->-1, far(1)->+1
     float depth = zReceiver * 2.0f - 1.0f;
 
-    float pw           = exp( c * depth);
+    // Positive warp
+    float pw           = exp(g_CB.m_VsmExponent * depth);
     float pMinVariance = EPSILON_MULTIPLIER * (pw * pw);
-    float p            = ChebyshevUpperBound(moments.xy, pw, pMinVariance, lbrAmount);
+    float p            = ChebyshevUpperBound(moments.xy, pw, pMinVariance, g_CB.m_LightBleedReduction);
 
-    float nw           = exp(-c * depth);
+    // Negative warp: nw = -1/pw (stored negative in texture)
+    float nw           = -1.0f / pw;
     float nMinVariance = EPSILON_MULTIPLIER * (nw * nw);
-    float n            = ChebyshevUpperBound(moments.zw, nw, nMinVariance, lbrAmount);
+    float n            = ChebyshevUpperBound(moments.zw, nw, nMinVariance, g_CB.m_LightBleedReduction);
 
     return min(p, n);
 }
@@ -141,29 +146,31 @@ float EvaluateEVSMFull(float c, float4 moments, float zReceiver, float lbrAmount
 // ---------------------------------------------------------------------------
 float ComputeEVSSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
 {
-    uint cascadeIndex = SelectCascade(viewDepth, g_CB.m_CascadeSplits);
+    uint cascadeIndex = SelectCascade(viewDepth);
 
-    // Filament-style anisotropic normal bias (pre-computed on CPU)
+    // Anisotropic normal bias (pre-computed on CPU)
     float2 bias      = GetCascadeNormalBias(cascadeIndex);
-    float3 offsetPos = ApplyNormalBias(worldPos, worldNormal, bias, g_CB.m_ShadowViewProj[cascadeIndex]);
+    float3 offsetPos = ApplyNormalBias(worldPos, worldNormal, bias, cascadeIndex);
 
     float4 lsPos = mul(float4(offsetPos, 1.0f), g_CB.m_ShadowViewProj[cascadeIndex]);
     float3 uvz   = lsPos.xyz / lsPos.w;
     uvz.xy       = uvz.xy * float2(0.5f, -0.5f) + 0.5f;
-    uvz.z       += g_CB.m_ConstantDepthBias; // Reversed-Z + GREATER comparison: push receiver toward near (higher Z) to reduce acne
 
     if (any(uvz.xy < 0.0f) || any(uvz.xy > 1.0f))
         return 1.0f;
 
-    float  shadowDepth        = uvz.z;
+    // Convert reversed-Z NDC depth [1=near, 0=far] to linear [0=near, 1=far]
+    float  shadowDepth        = 1.0f - uvz.z;
     float2 uv                 = uvz.xy;
     float  slice              = (float)cascadeIndex;
     float  texelSize          = 1.0f / (float)srrhi::CommonConsts::kShadowMapResolution;
 
-    // Compute world-space-to-texel conversion for penumbra estimation (not bias-related)
+    // Compute world-space-to-texel conversion for penumbra estimation
     float3 lightX             = float3(g_CB.m_ShadowViewProj[cascadeIndex]._11, g_CB.m_ShadowViewProj[cascadeIndex]._12, g_CB.m_ShadowViewProj[cascadeIndex]._13);
     float  wsOneOverTexelSize = srrhi::CommonConsts::kShadowMapResolution * max(length(lightX), 1e-10f) * 0.5f;
 
+    // projectionParam = (far - near) for directional lights
+    // shadowDepth * projectionParam = distance from near plane in world units
     float proj             = g_CB.m_ProjectionParam[cascadeIndex];
     float distToNear       = shadowDepth * proj;
     float physSearchRadius = min(g_CB.m_BulbRadius * distToNear, g_CB.m_MaxSearchRadius);
@@ -171,9 +178,12 @@ float ComputeEVSSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
     float searchLod        = clamp(log2(max(searchRadiusTex, 1.0f)), 0.0f, g_CB.m_MaxMipLevel);
 
     float4 searchMoments = g_EVSMShadowMap.SampleLevel(g_LinearClamp, float3(uv, slice), searchLod);
+    // Negative warp is stored as negative value; negate to get positive for log
     float  negMoment     = max(-searchMoments.z, 1e-8f);
+    // Recover blocker depth: negMoment = exp(-c * (zBlocker*2-1)) => solve for zBlocker
     float  zBlocker      = clamp((log(negMoment) / -g_CB.m_VsmExponent + 1.0f) * 0.5f, 0.0f, shadowDepth);
 
+    // Penumbra estimation
     float geoRatio = (shadowDepth - zBlocker) * proj * g_CB.m_PenumbraRatioScale;
     if (geoRatio > g_CB.m_MaxPenumbraRatio)
         geoRatio = g_CB.m_MaxPenumbraRatio + (1.0f - exp(-(geoRatio - g_CB.m_MaxPenumbraRatio)));
@@ -194,7 +204,16 @@ float ComputeEVSSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
                         +  EVSSM_FETCH(-rotX + rotY) + EVSSM_FETCH(-rotX - rotY)) * 0.125f;
     #undef EVSSM_FETCH
 
-    return EvaluateEVSMFull(g_CB.m_VsmExponent, finalMoments, shadowDepth, g_CB.m_LightBleedReduction);
+    // Debug visualizations — write a normalized [0,1] quantity into the mask so the
+    // CSMDebug pass can heat-map it. These override the shadow factor only in debug modes.
+    if (g_CB.m_CSMDebugMode == srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_PENUMBRA)
+        return saturate(penumbraWidthTex / 64.0f);           // penumbra width in texels, normalized to 64
+    if (g_CB.m_CSMDebugMode == srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_BLOCKER)
+        return saturate((shadowDepth - zBlocker) * proj / 10.0f); // receiver->blocker world distance, normalized to 10m
+    if (g_CB.m_CSMDebugMode == srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_TARGET_LOD)
+        return saturate(targetLod / max(g_CB.m_MaxMipLevel, 1.0f));
+
+    return EvaluateEVSM(finalMoments, shadowDepth);
 }
 
 [numthreads(8, 8, 1)]

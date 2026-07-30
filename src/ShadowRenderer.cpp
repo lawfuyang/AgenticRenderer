@@ -53,10 +53,10 @@ public:
             evsmDesc.m_NvrhiDesc.width            = srrhi::CommonConsts::kShadowMapResolution;
             evsmDesc.m_NvrhiDesc.height           = srrhi::CommonConsts::kShadowMapResolution;
             evsmDesc.m_NvrhiDesc.arraySize        = g_Renderer.m_NumCSMCascades;
-            evsmDesc.m_NvrhiDesc.format           = nvrhi::Format::RGBA16_FLOAT;
+            evsmDesc.m_NvrhiDesc.format           = nvrhi::Format::RGBA32_FLOAT; // fp32 moments: allows VSM exponent up to ~42 without overflow
             evsmDesc.m_NvrhiDesc.isUAV            = true;
             evsmDesc.m_NvrhiDesc.isRenderTarget   = false;
-            evsmDesc.m_NvrhiDesc.mipLevels        = ComputeMipCount(srrhi::CommonConsts::kShadowMapResolution);
+            evsmDesc.m_NvrhiDesc.mipLevels        = std::min(ComputeMipCount(srrhi::CommonConsts::kShadowMapResolution), srrhi::CommonConsts::kPCSSMipLevels);
             evsmDesc.m_NvrhiDesc.debugName        = "EVSMShadowMap_RG";
             evsmDesc.m_NvrhiDesc.initialState     = nvrhi::ResourceStates::UnorderedAccess;
             evsmDesc.m_NvrhiDesc.keepInitialState = true;
@@ -326,7 +326,8 @@ public:
 
         renderGraph.ReadTexture(g_RG_CSMShadowMap);
         renderGraph.WriteTexture(g_RG_EVSMShadowMap);
-        
+        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("EVSM SPD Atomic Counter", g_Renderer.m_NumCSMCascades), m_RG_SpdCounter);
+
         return true;
     }
 
@@ -360,39 +361,14 @@ public:
             };
             g_Renderer.AddComputePass(params);
         }
-    }
 
-    const char* GetName() const override { return "EVSMConvert"; }
-};
-REGISTER_RENDERER(EVSMConvertRenderer);
-
-// ---------------------------------------------------------------------------
-// EVSMMipRenderer — generate full mip chain for the EVSM map via SPD
-// ---------------------------------------------------------------------------
-class EVSMMipRenderer : public IRenderer
-{
-public:
-    bool Setup(RenderGraph& renderGraph) override
-    {
-        if (g_Renderer.m_Mode != RenderingMode::NormalBasic || !g_Renderer.m_EnableCSMShadows || !g_Renderer.m_EnableEVSSM)
-            return false;
-
-        renderGraph.WriteTexture(g_RG_EVSMShadowMap);
-        renderGraph.DeclareBuffer(RenderGraph::GetSPDAtomicCounterDesc("EVSM SPD Atomic Counter", g_Renderer.m_NumCSMCascades), m_RG_SpdCounter);
-
-        return true;
-    }
-
-    void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
-    {
-        nvrhi::TextureHandle evsm       = renderGraph.GetTexture(g_RG_EVSMShadowMap, RGResourceAccessMode::Write);
-        nvrhi::BufferHandle  spdCounter = renderGraph.GetBuffer(m_RG_SpdCounter,      RGResourceAccessMode::Write);
+        nvrhi::BufferHandle spdCounter = renderGraph.GetBuffer(m_RG_SpdCounter, RGResourceAccessMode::Write);
         g_Renderer.GenerateMipsUsingSPD(evsm, spdCounter, commandList, "EVSM Mips", srrhi::CommonConsts::SPD_REDUCTION_AVERAGE);
     }
 
-    const char* GetName() const override { return "EVSMMips"; }
+    const char* GetName() const override { return "EVSMConvert"; }
 
 private:
     RGBufferHandle m_RG_SpdCounter;
 };
-REGISTER_RENDERER(EVSMMipRenderer);
+REGISTER_RENDERER(EVSMConvertRenderer);

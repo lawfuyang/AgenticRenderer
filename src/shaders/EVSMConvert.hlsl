@@ -14,9 +14,14 @@ void EVSMConvert_CSMain(uint3 id : SV_DispatchThreadID)
     if (any(xy >= uint2(W, H))) return;
 
     float d  = g_Depth.Load(int4(xy, g_CB.m_CascadeIndex, 0));
-    float nd = d * 2.0f - 1.0f;   // reversed-Z [0,1] -> [-1,1]: near(1)->+1, far(0)->-1
+    // Convert reversed-Z [1=near, 0=far] to linear [0=near, 1=far]
+    float linearDepth = 1.0f - d;
+    // Remap to [-1, 1] range: near(0)->-1, far(1)->+1
+    float depth = linearDepth * 2.0f - 1.0f;
     float c  = g_CB.m_VsmExponent;
-    float pw = exp( c * nd);
-    float nw = exp(-c * nd);
+    // Positive warp
+    float pw = exp(c * depth);
+    // Negative warp (stored as negative)
+    float nw = -1.0f / pw;
     g_EVSM[uint3(xy, g_CB.m_CascadeIndex)] = float4(pw, pw * pw, nw, nw * nw);
 }

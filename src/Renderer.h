@@ -326,12 +326,12 @@ struct Renderer
 
     // ── EVSSM settings ────────────────────────────────────────────────────────
     bool    m_EnableEVSSM            = false;
-    float   m_VsmExponent            = 40.0f;   // c: exponential warp factor
+    float   m_VsmExponent            = 5.5f;    // c: EVSM warp factor. Its ONLY job is bleed suppression; softness comes from the spatial mip/quincunx machinery. HIGH c makes the Chebyshev test switch sharply => HARD shadows + flicker
     float   m_BulbRadius             = 0.01f;   // light angular radius (world units at 1m)
-    float   m_MaxSearchRadius        = 0.1f;    // world-space blocker search cap
+    float   m_MaxSearchRadius        = 1.0f;    // world-space blocker search cap
     float   m_PenumbraRatioScale     = 1.0f;    // artistic penumbra multiplier
-    float   m_MaxPenumbraRatio       = 1.0f;    // soft cap on penumbra ratio
-    float   m_LightBleedReduction    = 0.1f;    // LBR amount [0, 0.5]
+    float   m_MaxPenumbraRatio       = 10.0f;   // soft cap on penumbra ratio
+    float   m_LightBleedReduction    = 0.3f;    // LBR amount [0, 0.5] — the correct lever for darkening contact bleed (NOT the exponent)
 
     // ── Screen-Space Shadows ────────────────────────────────────────────────
     bool    m_EnableScreenSpaceShadows = true;
