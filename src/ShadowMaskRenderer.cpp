@@ -6,10 +6,9 @@
 #include "../external/bend_sss_cpu.h"
 
 // ---------------------------------------------------------------------------
-// Render Graph handles — g_RG_CSMShadowMap / g_RG_EVSMShadowMap defined in ShadowRenderer.cpp
+// Render Graph handles — g_RG_CSMShadowMap defined in ShadowRenderer.cpp
 // ---------------------------------------------------------------------------
 extern RGTextureHandle g_RG_CSMShadowMap;
-extern RGTextureHandle g_RG_EVSMShadowMap;
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_GBufferNormals;
 RGTextureHandle        g_RG_ShadowMask;
@@ -45,9 +44,6 @@ public:
         renderGraph.ReadTexture(g_RG_CSMShadowMap);
         renderGraph.ReadTexture(g_RG_DepthTexture);
         renderGraph.ReadTexture(g_RG_GBufferNormals);
-
-        if (g_Renderer.m_EnableEVSSM)
-            renderGraph.ReadTexture(g_RG_EVSMShadowMap);
 
         return true;
     }
@@ -120,33 +116,6 @@ public:
         }
         cb.SetCSMDebugMode(g_Renderer.m_CSMDebugMode);
 
-        // EVSSM fields
-        cb.SetVsmExponent(g_Renderer.m_VsmExponent);
-        cb.SetBulbRadius(g_Renderer.m_BulbRadius);
-        // Limit penumbra search/filter to the PCSS mip range
-        // NOT the full mip chain — coarser mips over-blur, collapse the blocker search, and jitter under camera motion.
-        const float maxMipLevel = (float)(srrhi::CommonConsts::kPCSSMipLevels - 1);
-        cb.SetMaxMipLevel(maxMipLevel);
-        // Dynamically cap the world-space blocker search radius so searchLod never exceeds maxMipLevel.
-        // searchRadiusInTexels = radius / wsTexelSize0, so radius <= wsTexelSize0 * 2^maxMipLevel keeps searchLod <= maxMipLevel.
-        const Matrix& vp0        = g_Renderer.m_CSMCascades[0].m_ViewProj;
-        const float   lx0        = std::sqrt(vp0._11 * vp0._11 + vp0._12 * vp0._12 + vp0._13 * vp0._13);
-        const float   wsTexelSize0 = 2.0f / ((float)srrhi::CommonConsts::kShadowMapResolution * std::max(lx0, 1e-10f));
-        const float   dynamicMaxSearchRadius = wsTexelSize0 * exp2f(maxMipLevel);
-        cb.SetMaxSearchRadius(std::min(g_Renderer.m_MaxSearchRadius, dynamicMaxSearchRadius));
-        cb.SetPenumbraRatioScale(g_Renderer.m_PenumbraRatioScale);
-        cb.SetMaxPenumbraRatio(g_Renderer.m_MaxPenumbraRatio);
-        cb.SetLightBleedReduction(g_Renderer.m_LightBleedReduction);
-        // Directional projectionParam = (far - near) of the light-space ortho projection
-        // For this renderer that is the light-view-space Z extent of the cascade, i.e. maxLS.z - minLS.z.
-        // (m_SplitFar/Near are camera view-space split distances — a different quantity — do NOT use them here.)
-        cb.SetProjectionParam(Vector4{
-            g_Renderer.m_CSMCascades[0].m_LightAABBMax.z - g_Renderer.m_CSMCascades[0].m_LightAABBMin.z,
-            g_Renderer.m_CSMCascades[1].m_LightAABBMax.z - g_Renderer.m_CSMCascades[1].m_LightAABBMin.z,
-            g_Renderer.m_CSMCascades[2].m_LightAABBMax.z - g_Renderer.m_CSMCascades[2].m_LightAABBMin.z,
-            g_Renderer.m_CSMCascades[3].m_LightAABBMax.z - g_Renderer.m_CSMCascades[3].m_LightAABBMin.z,
-        });
-
         cb.SetFrameIndex(g_Renderer.m_FrameNumber);
 
         commandList->writeBuffer(shadowMaskCB, &cb, sizeof(cb), 0);
@@ -159,9 +128,6 @@ public:
         nvrhi::TextureHandle depth     = renderGraph.GetTexture(g_RG_DepthTexture,   RGResourceAccessMode::Read);
         nvrhi::TextureHandle normals   = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Read);
         nvrhi::TextureHandle shadowMap = renderGraph.GetTexture(g_RG_CSMShadowMap,   RGResourceAccessMode::Read);
-        nvrhi::TextureHandle evsmMap   = g_Renderer.m_EnableEVSSM
-            ? renderGraph.GetTexture(g_RG_EVSMShadowMap, RGResourceAccessMode::Read)
-            : cr.DummySRVFloat4Array;
 
         // -----------------------------------------------------------------------
         // Dispatch
@@ -172,15 +138,10 @@ public:
             inputs.SetDepth(depth);
             inputs.SetGBufferNormals(normals);
             inputs.SetCSMShadowMap(shadowMap);
-            inputs.SetEVSMShadowMap(evsmMap);
             inputs.SetRWShadowMask(shadowMask, 0);
             inputs.SetShadowSampler(cr.ShadowComparison);
-            inputs.SetLinearClamp(cr.LinearClamp);
 
-            const bool bEVSSM = g_Renderer.m_EnableEVSSM;
-            uint32_t shaderID = bEVSSM
-                ? ShaderID::SHADOWMASK_SHADOWMASK_CSMAIN_EVSSM_EVSSM_1
-                : ShaderID::SHADOWMASK_SHADOWMASK_CSMAIN;
+            uint32_t shaderID = ShaderID::SHADOWMASK_SHADOWMASK_CSMAIN;
 
             Renderer::RenderPassParams params;
             params.commandList    = commandList;

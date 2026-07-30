@@ -115,8 +115,7 @@ void ImGuiLayer::UpdateFrame()
                         static const char* kCSMDebugModes[] = {
                             "Off", "Cascade Splits", "Shadow Map Array", "Raw Shadow Mask",
                             "PCF Footprint", "Alpha-Masked Overlay", "Depth Compare",
-                            "Frustum Wireframe", "Blend Zone",
-                            "EVSSM Penumbra", "EVSSM Blocker Dist", "EVSSM Target LOD"
+                            "Frustum Wireframe", "Blend Zone"
                         };
                         ImGui::Combo("CSM Debug", (int*)&g_Renderer.m_CSMDebugMode,
                             kCSMDebugModes, IM_ARRAYSIZE(kCSMDebugModes));
@@ -125,18 +124,6 @@ void ImGuiLayer::UpdateFrame()
                         ImGui::SeparatorText("Shadow Bias");
                         ImGui::SliderFloat("Normal Bias", &g_Renderer.m_CSMNormalBias, 0.5f, 50.0f, "%.1f texels");
                         ImGui::SliderFloat("Constant Depth Bias", &g_Renderer.m_CSMConstantDepthBias, 0.0f, 0.01f, "%.4f");
-
-                        ImGui::SeparatorText("Shadow Mode");
-                        ImGui::Checkbox("Enable EVSSM", &g_Renderer.m_EnableEVSSM);
-                        if (g_Renderer.m_EnableEVSSM)
-                        {
-                            ImGui::SliderFloat("VSM Exponent (c)", &g_Renderer.m_VsmExponent, 4.0f, 12.0f, "%.1f");
-                            ImGui::SliderFloat("Bulb Radius",       &g_Renderer.m_BulbRadius,  0.001f, 0.1f, "%.4f");
-                            ImGui::SliderFloat("Max Search Radius", &g_Renderer.m_MaxSearchRadius, 0.01f, 1.0f, "%.3f");
-                            ImGui::SliderFloat("Penumbra Scale",    &g_Renderer.m_PenumbraRatioScale, 0.1f, 3.0f, "%.2f");
-                            ImGui::SliderFloat("Max Penumbra",      &g_Renderer.m_MaxPenumbraRatio,   0.1f, 20.0f, "%.2f");
-                            ImGui::SliderFloat("Light Bleed Red.",  &g_Renderer.m_LightBleedReduction, 0.0f, 0.5f, "%.3f");
-                        }
 
                         ImGui::SeparatorText("Screen-Space Shadows");
                         ImGui::Checkbox("Enable SS Shadows", &g_Renderer.m_EnableScreenSpaceShadows);

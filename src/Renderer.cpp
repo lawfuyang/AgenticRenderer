@@ -1265,7 +1265,6 @@ void Renderer::ScheduleAndRunAllRenderers()
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("MaskedPassRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("HZBGeneratorPhase2"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowRenderer"));        // CSM depth array (4 × 2048²)
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("EVSMConvertRenderer"));   // depth → EVSM moments + mip chain (SPD), EVSSM only
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowMaskRenderer"));    // fullscreen compute → R8 shadow mask
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("CSMDebugRenderer"));      // debug overlay (skips when mode == Off)
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DeferredRenderer"));
@@ -1889,8 +1888,7 @@ void Renderer::GenerateMipsUsingSPD(nvrhi::TextureHandle texture, nvrhi::BufferH
     nvrhi::utils::ScopedMarker spdMarker{ commandList, markerName };
 
     const nvrhi::FormatInfo& formatInfo = nvrhi::getFormatInfo(texture->getDesc().format);
-    // 4 channels (RGBA) must be averaged independently — required for EVSM moments (pw, pw^2, nw, nw^2),
-    // where dropping the 4th channel corrupts the negative-warp variance in coarse mips (ring artefacts).
+    // 4 channels (RGBA) must be averaged independently.
     const uint32_t numChannels = formatInfo.hasAlpha ? 4 : (formatInfo.hasBlue ? 3 : 1);
 
     const uint32_t numMips = texture->getDesc().mipLevels;

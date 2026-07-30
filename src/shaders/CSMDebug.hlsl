@@ -197,18 +197,6 @@ float4 CSMDebug_PSMain(FullScreenVertexOut input) : SV_Target
             break;
         }
 
-        // ── Modes 9-11: EVSSM internals ─────────────────────────────────────
-        // ShadowMask writes the normalized debug quantity into the R8 mask for
-        // these modes; heat-map it here. Only meaningful when EVSSM is enabled.
-        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_PENUMBRA:
-        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_BLOCKER:
-        case srrhi::CSMDebugMode::CSM_DEBUG_EVSSM_TARGET_LOD:
-        {
-            float v = g_ShadowMask.Load(uint3(uvInt, 0));
-            output  = DebugHeatmap(v);
-            break;
-        }
-
         default:
             discard;
             break;

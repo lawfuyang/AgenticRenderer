@@ -142,11 +142,6 @@ srinput CommonConsts
 
     // Shadow map resolution (per-cascade, square)
     static const uint kShadowMapResolution = 2048;
-
-    // EVSSM/PCSS mip levels. The penumbra search/filter is limited to this many mips
-    // so it never samples ultra-coarse mips of the full chain,
-    // which would over-blur, collapse the blocker search, and destabilize under camera motion.
-    static const uint kPCSSMipLevels = 8;
 };
 
 // ---------------------------------------------------------------------------
@@ -189,7 +184,4 @@ srinput CSMDebugMode
     static const uint CSM_DEBUG_DEPTH_COMPARE   = 6;  // Red=shadowed, Green=lit
     static const uint CSM_DEBUG_FRUSTUM_WIRE    = 7;  // Cascade frustum wireframe
     static const uint CSM_DEBUG_BLEND_ZONE      = 8;  // (reserved — UI entry, no shader visualization)
-    static const uint CSM_DEBUG_EVSSM_PENUMBRA  = 9;  // EVSSM estimated penumbra width (texels), heat-mapped
-    static const uint CSM_DEBUG_EVSSM_BLOCKER   = 10; // EVSSM receiver->blocker world distance, heat-mapped
-    static const uint CSM_DEBUG_EVSSM_TARGET_LOD = 11; // EVSSM selected mip LOD for penumbra fetch, heat-mapped
 };
