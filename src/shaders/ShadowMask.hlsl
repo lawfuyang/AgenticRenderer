@@ -27,10 +27,87 @@ uint SelectCascade(float viewDepth)
 }
 
 // ---------------------------------------------------------------------------
-// PCF — 4-tap bilinear Gaussian filter (Castaño, 2013 "Shadow Mapping Summary Part 1")
-// Produces a smooth 3x3 Gaussian-weighted result with only 4 hardware PCF taps.
+// PCF filter selection
+//   1 = Rotated Poisson disk, 16 taps, per-pixel random rotation
+//   0 = 9-tap bilinear Gaussian (Castaño / The Witness)
 // ---------------------------------------------------------------------------
-float ComputePCF(float3 shadowUV, float compareDepth, float texelSize)
+#define PCF_ROTATED_POISSON 1
+
+float SamplePCFTap(float2 base, float2 offset, float texelSize, float slice, float compareDepth)
+{
+    float3 uv = float3(base + offset * texelSize, slice);
+    return 1.0f - g_CSMShadowMap.SampleCmpLevelZero(g_ShadowSampler, uv, compareDepth);
+}
+
+#if PCF_ROTATED_POISSON
+
+// ---------------------------------------------------------------------------
+// PCF — 16-tap rotated Poisson disk
+// Kernel radius in texels. Larger = softer penumbra but more visible noise.
+static const float kPoissonRadiusTexels = 4.0f;
+
+// Poisson disk offsets on the unit disk, stratified from MJP's 64-tap progressive
+// table (every 4th entry) so all quadrants are covered. Taking the raw leading 16
+// entries of that table would bias the kernel toward -X and skew the penumbra.
+static const float2 kPoissonDisk16[16] =
+{
+    float2(-0.5119625f,  -0.4827938f),
+    float2(-0.5938849f,  -0.6895654f),
+    float2(-0.8409063f,  -0.03465778f),
+    float2(-0.1041822f,  -0.02521214f),
+    float2(-0.9879128f,   0.1113683f),
+    float2(-0.1925334f,   0.1787288f),
+    float2( 0.1975043f,   0.2221317f),
+    float2( 0.1558783f,  -0.08460935f),
+    float2( 0.3956799f,  -0.1469177f),
+    float2( 0.3928624f,  -0.4417621f),
+    float2( 0.0005130528f, -0.8058334f),
+    float2( 0.4060591f,  -0.7100726f),
+    float2( 0.1268544f,  -0.9874692f),
+    float2( 0.5663417f,   0.7708698f),
+    float2( 0.4216993f,   0.9002838f),
+    float2(-0.09640376f,  0.9843736f),
+};
+
+// Per-pixel rotation angle. Hashing the pixel coordinate turns the fixed 16-tap
+// pattern into an effectively unique kernel per pixel, trading banding for
+// high-frequency noise that reads as film grain (and is TAA-resolvable).
+// Note: m_FrameIndex is deliberately NOT hashed in — a per-frame-varying kernel
+// makes static shadows crawl when there is no temporal filter on this mask.
+float2 GetPoissonRotation(uint2 pixelCoord)
+{
+    uint  h     = PCGHash(pixelCoord.x + PCGHash(pixelCoord.y));
+    h = h ^ PCGHash(g_CB.m_FrameIndex);
+    float theta = (float)h * (1.0f / 4294967296.0f) * 6.28318530718f;
+    return float2(cos(theta), sin(theta));
+}
+
+float ComputePCF(float3 shadowUV, float compareDepth, float texelSize, uint2 pixelCoord)
+{
+    float2 cs    = GetPoissonRotation(pixelCoord);
+    float  slice = shadowUV.z;
+    float  sum   = 0.0f;
+
+    [unroll]
+    for (uint i = 0; i < 16; ++i)
+    {
+        // Rotate the disk offset, then scale into texel space.
+        float2 o = kPoissonDisk16[i];
+        float2 rotated = float2(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x);
+        sum += SamplePCFTap(shadowUV.xy, rotated * kPoissonRadiusTexels, texelSize, slice, compareDepth);
+    }
+
+    return sum * (1.0f / 16.0f);
+}
+
+#else // PCF_ROTATED_POISSON
+
+// ---------------------------------------------------------------------------
+// PCF — 9-tap bilinear Gaussian filter (Castaño, 2013 "Shadow Mapping Summary Part 1")
+// Produces a smooth 5x5 Gaussian-weighted result with only 9 hardware PCF taps.
+// This is the filter shipped in The Witness and used by Unity since 5.0.
+// ---------------------------------------------------------------------------
+float ComputePCF(float3 shadowUV, float compareDepth, float texelSize, uint2 pixelCoord)
 {
     float size = (float)srrhi::CommonConsts::kShadowMapResolution;
 
@@ -41,20 +118,33 @@ float ComputePCF(float3 shadowUV, float compareDepth, float texelSize)
     float2 base = (floor(uv) - 0.5f) * texelSize;
     float2 st   = frac(uv);
 
-    float2 uw = float2(3.0f - 2.0f * st.x, 1.0f + 2.0f * st.x);
-    float2 vw = float2(3.0f - 2.0f * st.y, 1.0f + 2.0f * st.y);
+    // Separable 5x5 kernel with taps (a, b, c) = (1, 3, 4) — a crude Gaussian.
+    // Each PCF tap covers a non-overlapping 2x2 footprint; uw/vw are the tap weights and
+    // u/v the sub-texel offsets that reproduce the exact Gaussian-weighted 5x5 sum.
+    float3 uw = float3(4.0f - 3.0f * st.x, 7.0f, 1.0f + 3.0f * st.x);
+    float3 vw = float3(4.0f - 3.0f * st.y, 7.0f, 1.0f + 3.0f * st.y);
 
-    float2 u = float2((2.0f - st.x) / uw.x - 1.0f, st.x / uw.y + 1.0f) * texelSize;
-    float2 v = float2((2.0f - st.y) / vw.x - 1.0f, st.y / vw.y + 1.0f) * texelSize;
+    float3 u = float3((3.0f - 2.0f * st.x) / uw.x - 2.0f, (3.0f + st.x) / uw.y, st.x / uw.z + 2.0f);
+    float3 v = float3((3.0f - 2.0f * st.y) / vw.x - 2.0f, (3.0f + st.y) / vw.y, st.y / vw.z + 2.0f);
 
     float slice = shadowUV.z;
     float sum = 0.0f;
-    sum += uw.x * vw.x * (1.0f - g_CSMShadowMap.SampleCmpLevelZero(g_ShadowSampler, float3(base + float2(u.x, v.x), slice), compareDepth));
-    sum += uw.y * vw.x * (1.0f - g_CSMShadowMap.SampleCmpLevelZero(g_ShadowSampler, float3(base + float2(u.y, v.x), slice), compareDepth));
-    sum += uw.x * vw.y * (1.0f - g_CSMShadowMap.SampleCmpLevelZero(g_ShadowSampler, float3(base + float2(u.x, v.y), slice), compareDepth));
-    sum += uw.y * vw.y * (1.0f - g_CSMShadowMap.SampleCmpLevelZero(g_ShadowSampler, float3(base + float2(u.y, v.y), slice), compareDepth));
-    return sum * 0.0625f;  // 1/16 — normalizes the 4x4 bilinear weight sum
+    sum += uw.x * vw.x * SamplePCFTap(base, float2(u.x, v.x), texelSize, slice, compareDepth);
+    sum += uw.y * vw.x * SamplePCFTap(base, float2(u.y, v.x), texelSize, slice, compareDepth);
+    sum += uw.z * vw.x * SamplePCFTap(base, float2(u.z, v.x), texelSize, slice, compareDepth);
+
+    sum += uw.x * vw.y * SamplePCFTap(base, float2(u.x, v.y), texelSize, slice, compareDepth);
+    sum += uw.y * vw.y * SamplePCFTap(base, float2(u.y, v.y), texelSize, slice, compareDepth);
+    sum += uw.z * vw.y * SamplePCFTap(base, float2(u.z, v.y), texelSize, slice, compareDepth);
+
+    sum += uw.x * vw.z * SamplePCFTap(base, float2(u.x, v.z), texelSize, slice, compareDepth);
+    sum += uw.y * vw.z * SamplePCFTap(base, float2(u.y, v.z), texelSize, slice, compareDepth);
+    sum += uw.z * vw.z * SamplePCFTap(base, float2(u.z, v.z), texelSize, slice, compareDepth);
+
+    return sum * (1.0f / 144.0f);  // 12x12 — total bilinear weight is constant in st
 }
+
+#endif // #else PCF_ROTATED_POISSON
 
 // ---------------------------------------------------------------------------
 // Anisotropic normal bias
@@ -85,7 +175,7 @@ float2 GetCascadeNormalBias(uint cascadeIndex)
 // ---------------------------------------------------------------------------
 // Full CSM shadow evaluation (PCF path)
 // ---------------------------------------------------------------------------
-float ComputeCSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
+float ComputeCSMShadow(float3 worldPos, float3 worldNormal, float viewDepth, uint2 pixelCoord)
 {
     uint cascadeIndex = SelectCascade(viewDepth);
 
@@ -102,7 +192,7 @@ float ComputeCSMShadow(float3 worldPos, float3 worldNormal, float viewDepth)
         return 1.0f;
 
     float texelSize = 1.0f / (float)srrhi::CommonConsts::kShadowMapResolution;
-    return ComputePCF(float3(shadowUV.xy, (float)cascadeIndex), shadowUV.z, texelSize);
+    return ComputePCF(float3(shadowUV.xy, (float)cascadeIndex), shadowUV.z, texelSize, pixelCoord);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +324,7 @@ void ShadowMask_CSMain(uint3 dispatchID : SV_DispatchThreadID)
 #if EVSSM
     shadow = ComputeEVSSMShadow(worldPos, worldNorm, viewDepth);
 #else
-    shadow = ComputeCSMShadow(worldPos, worldNorm, viewDepth);
+    shadow = ComputeCSMShadow(worldPos, worldNorm, viewDepth, uvInt);
 #endif
 
     g_RWShadowMask[uvInt] = shadow;
