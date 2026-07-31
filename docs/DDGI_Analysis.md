@@ -868,6 +868,165 @@ Render Pass Order (NormalBasic with DDGI+SSGI):
 | Thin geometry | SSGI preferred | High depth gradient → lower DDGI confidence via probeResRatio → SSGI takes over. |
 | Performance cost | ~1 extra texture sample | The blend adds one `g_DDGIIndirect.Load()` + ~20 ALU ops. No extra passes. |
 
+### 9.8 Tile-Based SSGI Dispatch
+
+#### 9.8.1 Motivation
+
+Running SSGI at full screen is wasteful when DDGI covers most pixels with adequate quality. A tile-based approach classifies the screen into **16×16 pixel tiles** and only dispatches SSGI work on tiles where DDGI confidence is insufficient for any pixel. In typical interior scenes with good probe coverage, this can skip **60-90% of SSGI work** — a massive performance win since SSGI's ray-march pass is the most expensive part of the pipeline.
+
+#### 9.8.2 Classification Pass
+
+A lightweight compute shader (one thread per tile) samples a sparse set of representative pixels within each tile and computes DDGI confidence for each. If ALL sampled pixels exceed a conservative threshold, the tile is classified as "DDGI-sufficient" and SSGI is skipped for that tile.
+
+```hlsl
+// Tile Classification CS — 1 thread per 16×16 tile
+[numthreads(1, 1, 1)]
+void TileClassifyCS(uint3 GroupID : SV_GroupID)
+{
+    uint2 tileCoord = GroupID.xy;
+    uint2 tileOrigin = tileCoord * TILE_SIZE;
+
+    // Sparse sample: check 4 corners + center of the tile
+    uint2 sampleOffsets[5] = {
+        uint2(0, 0), uint2(TILE_SIZE-1, 0), uint2(0, TILE_SIZE-1),
+        uint2(TILE_SIZE-1, TILE_SIZE-1), uint2(TILE_SIZE/2, TILE_SIZE/2)
+    };
+
+    bool bTileNeedsSSGI = false;
+    for (int i = 0; i < 5; i++)
+    {
+        uint2 pixel = tileOrigin + sampleOffsets[i];
+
+        // Compute DDGI confidence at this pixel (metrics from §9.2.1)
+        float ddgiConf = ComputeDDGIConfidence(pixel);
+        float ssgiConf = ComputeSSGIConfidence(pixel);
+
+        // Tile needs SSGI if DDGI confidence is below threshold
+        // AND SSGI could actually contribute (not at screen edge, not disoccluded)
+        if (ddgiConf < g_TileConfidenceThreshold && ssgiConf > 0.1)
+        {
+            bTileNeedsSSGI = true;
+            break;
+        }
+    }
+
+    // Write tile mask (1 bit per tile, packed as uint)
+    if (bTileNeedsSSGI)
+        InterlockedOr(g_TileMask[tileCoord.y * g_TileCountX + tileCoord.x / 32],
+                      1u << (tileCoord.x % 32));
+
+    // Atomic increment for indirect dispatch count
+    uint tileIndex;
+    if (bTileNeedsSSGI)
+        InterlockedAdd(g_TileIndirectArgs[0], 1, tileIndex);
+}
+```
+
+#### 9.8.3 Per-Tile Early-Out in SSGI Passes
+
+Each SSGI pass reads the tile mask. Thread groups for DDGI-sufficient tiles immediately return, avoiding all ray-march, temporal reproject, denoise, and compose work for those tiles:
+
+```hlsl
+// At the top of every SSGI pass (RayMarch, TemporalReproject, Denoise, Compose):
+[numthreads(THREADS_X, THREADS_Y, 1)]
+void SSGIPass(uint3 GroupID : SV_GroupID, uint3 GroupThreadID : SV_GroupThreadID)
+{
+    uint2 tileCoord = GroupID.xy;
+
+    // Check tile mask — skip if DDGI handles this tile entirely
+    uint maskWord = g_TileMask[tileCoord.y * g_TileCountX + tileCoord.x / 32];
+    uint tileBit  = 1u << (tileCoord.x % 32);
+    if ((maskWord & tileBit) == 0)
+        return; // entire thread group early-exits
+
+    // ... normal SSGI per-pixel work ...
+}
+```
+
+This is simpler than true `ExecuteIndirect` dispatch — the cost of launching idle thread groups is negligible on modern GPUs (~0.01ms for a few hundred skipped groups).
+
+#### 9.8.4 Temporal Reprojection Across Tile Boundaries
+
+When a tile transitions from SSGI-active to SSGI-skipped, the SSGI accumulation buffers retain their last computed values. On re-entry (tile becomes active again), the temporal age is stale. Two strategies:
+
+| Strategy | Description | Trade-off |
+|---|---|---|
+| **Age Reset on Re-entry** | When a tile transitions from skipped → active, reset temporal age to 0 for that tile. The SSGI temporal reproject pass detects `age < 1` and uses only the current frame's raw sample (no history blend). | Simple; causes a 2-3 frame noise burst on re-entry. Acceptable since tile transitions are rare (camera movement, light changes). |
+| **Always Run Temporal Reproject** | Run the temporal reprojection pass at full screen (cheap pass, ~0.1ms). Only skip the ray-march and denoise passes. | Eliminates re-entry artifacts at the cost of always running one extra pass. Recommended for quality. |
+
+**Recommended:** Always run temporal reproject at full screen. Its cost is negligible compared to ray-march, and it eliminates all temporal artifacts at tile boundaries.
+
+#### 9.8.5 Tile Boundary Blending
+
+To avoid visible seams between DDGI-only and DDGI+SSGI tiles, the per-pixel confidence cascade from §9.3 naturally feathers across tile boundaries — the DDGI confidence is computed **per-pixel**, not per-tile. The tile mask only controls **dispatch granularity**, not the blend weights themselves.
+
+For additional smoothness, expand the tile mask by 1 tile in each direction (conservative dilation):
+
+```hlsl
+// Post-process the tile mask: dilate by 1 tile to feather boundaries
+// For each marked tile, also mark its 4-connected neighbors
+// This adds ~1 row/column of tiles at the boundary of DDGI/SSGI regions
+```
+
+This dilation costs ~4 extra tiles at each boundary, effectively negligible.
+
+#### 9.8.6 Tile Size Selection
+
+| Tile Size | Tiles at 1080p | Classification Cost | SSGI Skip Granularity |
+|---|---|---|---|
+| 8×8 | 16,200 | ~253 thread groups | Very fine — only skip where DDGI is truly confident |
+| 16×16 | 4,050 | ~64 thread groups | Good balance — matches typical probe cell size at 1.5m spacing |
+| 32×32 | 1,012 | ~16 thread groups | Coarse — may leave visible blocks of DDGI-only at boundaries |
+
+**Recommended: 16×16 tiles.** At 1080p this produces ~4K tiles. The classification pass dispatches ~64 thread groups (1 thread per tile), which completes in <0.01ms. A 16×16 tile at 1.5m near-ISV probe spacing covers roughly the same world-space area as 2-3 probe cells — a natural granularity for the DDGI quality decision.
+
+#### 9.8.7 Confidence Threshold Design
+
+The tile classification threshold must be **conservative** — it's better to run SSGI on a tile that didn't strictly need it than to skip SSGI on a tile where DDGI is borderline:
+
+| Threshold | Behavior |
+|---|---|
+| `ddgiConfidence ≥ 0.95` (very conservative) | Only skip SSGI where DDGI is near-perfect. Still skips ~50% of tiles in well-covered interiors. |
+| `ddgiConfidence ≥ 0.80` (balanced) | Skip SSGI where DDGI is clearly good enough. Skips ~70% of tiles. Rare visible boundary. |
+| `ddgiConfidence ≥ 0.60` (aggressive) | Skip SSGI wherever DDGI is "probably fine." Skips ~85% of tiles. May show occasional blockiness at boundaries. |
+
+**Recommended: 0.80 threshold** with 1-tile conservative dilation. This provides a strong performance win while eliminating virtually all visible tile-boundary artifacts.
+
+#### 9.8.8 Expected Performance Impact
+
+For a typical interior scene at 1080p with 3 ISVs, assuming ~70% of screen pixels are well-covered by near/medium probes:
+
+| Metric | Full-Screen SSGI | Tile-Based SSGI |
+|---|---|---|
+| Ray march cost | 100% | ~30% (only DDGI-weak tiles) |
+| Denoise cost | 100% | ~30% |
+| Compose cost | 100% | 100% (always full-screen for smooth output) |
+| Temporal reproject cost | 100% | 100% (always full-screen, §9.8.4) |
+| Classification cost | — | <0.01ms |
+| Total SSGI cost | 100% | ~40-50% |
+
+The compose pass should remain full-screen to ensure every pixel has a valid `g_RG_SSGIComposed` value for `DeferredRenderer`. For DDGI-only tiles, the compose pass outputs black → DeferredRenderer uses only DDGI indirect via the confidence cascade.
+
+#### 9.8.9 Implementation Steps
+
+1. Add `TileClassificationCS.hlsl` compute shader and register in `shaders.cfg`
+2. In `SSGIRenderer::Setup()`: declare `g_TileMask` (RWStructuredBuffer, uint per tile row) and `g_TileIndirectArgs` (RWStructuredBuffer, indirect dispatch args)
+3. In `SSGIRenderer::Render()`: dispatch tile classification pass, then barrier, then dispatch SSGI passes with per-tile early-out
+4. Add `g_TileConfidenceThreshold` to `SSGIRenderer` tuning params (default 0.80)
+5. Add `g_TileSize` constant (default 16)
+6. Modify `SSGI.hlsl`, `SSGIDenoise.hlsl`: add tile-mask early-out at the top of each entry point
+7. Keep `SSGITemporalReproject.hlsl` and `SSGICompose.hlsl` at full screen
+
+#### 9.8.10 Design Rationale
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Tile early-out vs ExecuteIndirect | Per-tile early-out in shader | Much simpler to implement; idle thread group cost is negligible. Avoids D3D12 indirect dispatch complexity. |
+| Temporal reproject: full-screen | Always run at full screen | Eliminates tile-boundary temporal artifacts. Cost is negligible (~0.1ms). |
+| Compose: full-screen | Always run at full screen | Ensures every pixel has a valid SSGI output for DeferredRenderer. DDGI-only pixels get black → DeferredRenderer uses DDGI via confidence cascade. |
+| Classification sample count | 5 samples (4 corners + center) | Covers the tile adequately. 5 texture loads × 4K tiles = 20K loads, negligible. |
+| Conservative dilation | 1-tile halo | Feathers DDGI/SSGI boundaries at the cost of ~1 row/column of extra tiles. Virtually free. |
+
 ---
 
 ## Appendix A: File Index
