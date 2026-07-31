@@ -1,7 +1,7 @@
 # DDGI Implementation — Analysis & Plan
 
 > **Phase:** DDGI (RTXGI Dynamic Diffuse Global Illumination) — standalone implementation phase  
-> **Goal:** Integrate RTXGI-DDGI SDK for baked/live indirect diffuse lighting (3 ISVs, probe ray tracing, indirect query)
+> **Goal:** Integrate RTXGI-DDGI SDK for baked/live indirect diffuse lighting (3 ISVs, probe ray tracing, indirect query), blended with SSGI for high-frequency detail
 
 ---
 
@@ -15,6 +15,7 @@
 6. [DeferredRenderer Modifications](#6-deferredrenderer-modifications)
 7. [Transparent Lighting in NormalBasic](#7-transparent-lighting-in-normalbasic)
 8. [Implementation Roadmap](#8-implementation-roadmap)
+9. [DDGI + SSGI Hybrid Blending](#9-ddgi--ssgi-hybrid-blending)
 - [Appendix A: File Index](#appendix-a-file-index)
 - [Appendix B: Key Design Decisions](#appendix-b-key-design-decisions)
 
@@ -680,6 +681,192 @@ float3 color = directDiffuse + indirectGI;
 4. Test DDGI bake workflow: enable → wait for convergence → disable → verify zero RT cost + correct indirect
 5. Test corner cases: moving camera with baked probes, thin geometry, outdoor scenes, scroll-edge probe updates
 6. Verify TLAS is not scheduled in bake mode (`m_EnableDDGI = false`)
+
+---
+
+## 9. DDGI + SSGI Hybrid Blending
+
+### 9.1 Problem Statement
+
+DDGI and SSGI have **complementary strengths and weaknesses**. DDGI provides stable, world-space indirect lighting everywhere but at coarse resolution limited by probe density. SSGI provides high-resolution, per-pixel indirect lighting but is screen-space only (fails at screen edges, disocclusions, and off-screen geometry).
+
+A robust hybrid approach gives **DDGI precedence** (it's always correct, just low-res) and falls back to SSGI where DDGI quality is insufficient. The goal is to **never show DDGI blockiness** when SSGI could produce a crisper result, while **never showing SSGI screen-edge artifacts** when DDGI has valid coverage.
+
+### 9.2 Quality Metrics
+
+Six DDGI metrics and five SSGI metrics determine which technique is more trustworthy at each pixel:
+
+#### 9.2.1 DDGI Quality Metrics
+
+| # | Metric | Source | Range | Interpretation |
+|---|--------|--------|-------|----------------|
+| 1 | **Aggregate Volume Coverage** | Σ `DDGIGetVolumeBlendWeight(worldPos, volume_i)` across all volumes | [0, N] | DDGI samples irradiance from every volume with non-zero blend weight and accumulates the result weighted by each volume's contribution (see reference sample `IndirectCS.hlsl`). With 3 overlapping ISVs, most of the visible scene is covered by at least one volume. Only when ALL volumes return zero weight (far outside the combined extent) does DDGI truly have no data → SSGI must take over. |
+| 2 | **Probe Resolution Ratio** | `probeSpacing / pixelFootprintAt(worldPos)` | (0, ∞) | How many screen pixels fit between two adjacent probes. > 4 means each probe covers ≥4×4 pixels → DDGI is visibly coarse → SSGI preferred for detail. |
+| 3 | **Distance to Nearest Probe** | `min(|worldPos - probeWorldPos_i|) / probeSpacing` | [0, √3] | Normalized distance within the probe voxel. 0 = exactly at a probe; ~0.87 = at voxel corner. Higher values mean worse trilinear interpolation quality. |
+| 4 | **DDGI Irradiance Spatial Gradient** | `|∇irradiance|` between adjacent probe texels | (0, ∞) | High gradient means sharp lighting change that DDGI's bilinear/trilinear interpolation cannot capture smoothly → SSGI can resolve it better. |
+| 5 | **DDGI Distance Mean/Variance** | From probe distance texture | (0, ∞) | High variance in probe distance suggests complex geometry near the probes that the coarse grid can not represent well. |
+| 6 | **Temporal Latency** | Probe frame-age (row slicing) | {1, 2, 4} | Near probes updated every 2nd frame; far probes every 4th. In fast-moving scenes, stale DDGI data may lag behind SSGI which is per-frame. |
+
+#### 9.2.2 SSGI Quality Metrics
+
+| # | Metric | Source | Range | Interpretation |
+|---|--------|--------|-------|----------------|
+| 7 | **Temporal Age (Convergence)** | `ssgiAge = 1/(1-blend)-1` from accum alpha | [0, ~9] | 0 = brand new (noisy); 9 = fully converged (~9 frames). Young pixels are unreliable → prefer DDGI. |
+| 8 | **Screen-Edge Distance** | `min(x, y, width-x, height-y) / max(width,height)` | [0, 0.5] | Distance from nearest screen edge in NDC. SSGI data doesn't exist outside the screen — pixels near edges may sample invalid data. |
+| 9 | **Ray March Hit Rate** | Hit mask from SSGI pass 1 | {0, 1} | 0 = ray march found no surface in the allowed distance → SSGI has no data → DDGI must take over. |
+| 10 | **Disocclusion Detection** | `|prevDepth - reprojectedDepth| > threshold` | {0, 1} | Newly visible pixels have no temporal history → noisy SSGI → prefer DDGI. |
+| 11 | **Depth Complexity** | Local depth gradient magnitude | (0, ∞) | High depth variation means thin/detailed geometry. SSGI ray march may miss thin features → DDGI more reliable. |
+
+### 9.3 Recommended Blending Strategy
+
+#### 9.3.1 Primary: Per-Pixel Confidence Cascade
+
+```hlsl
+// ── Step 1: Compute DDGI confidence (0 = untrustworthy, 1 = perfect) ──
+
+// Aggregate volume coverage: accumulate blend weights across all volumes
+float ddgiAggregateCoverage = 0.0;
+for (int vi = 0; vi < RTXGI_DDGI_NUM_VOLUMES; vi++)
+    ddgiAggregateCoverage += DDGIGetVolumeBlendWeight(worldPos, volumes[vi]);
+float ddgiVolWeight = saturate(ddgiAggregateCoverage); // 0 only when outside ALL volumes
+
+// Probe resolution: how many screen pixels span one probe cell?
+float pixelFootprint = length(ddx(worldPos)) + length(ddy(worldPos));
+float probeResRatio = probeSpacing / max(pixelFootprint, 0.001);
+float ddgiResQuality = 1.0 - saturate((probeResRatio - 1.0) / 3.0); // 0 when >4px/probe
+
+// Distance to nearest probe center (normalized to probe spacing)
+float3 probeLocal = (worldPos - volumeOrigin) / probeSpacing;
+float3 probeDist = abs(frac(probeLocal) - 0.5); // [0, 0.5]
+float ddgiProbeDist = 1.0 - saturate(length(probeDist) / 0.7); // 1 at center, 0 at corner
+
+// DDGI confidence: dominated by volume weight
+float ddgiConfidence = ddgiVolWeight * lerp(0.4, 1.0, ddgiResQuality * ddgiProbeDist);
+// Note: even when volWeight=0 (outside), ddgiConfidence=0 → SSGI takes over fully
+
+
+// ── Step 2: Compute SSGI confidence ──
+
+// Temporal age: how converged is the SSGI sample?
+float ssgiAge = g_AccumDiffuse.Load(uint3(uvInt, 0)).a;
+float ssgiAgeConf = saturate(ssgiAge / 5.0); // linearly rises to full confidence after ~5 frames
+
+// Screen-edge falloff
+float2 screenEdgeDist = min(uv, 1.0 - uv);
+float ssgiEdgeConf = smoothstep(0.0, 0.05, min(screenEdgeDist.x, screenEdgeDist.y));
+
+// Hit success: did the SSGI ray march find geometry?
+float ssgiHitConf = float(g_RawDiffuse.Load(uint3(uvInt, 0)).r >= 0.0); // sentinel = -1 on miss
+
+// Disocclusion
+float depthDiff = abs(g_Depth.Load(uint3(uvInt, 0)) - reprojectedDepth);
+float ssgiDisoccConf = 1.0 - saturate(depthDiff / 0.1);
+
+// SSGI confidence
+float ssgiConfidence = ssgiAgeConf * ssgiEdgeConf * ssgiHitConf * ssgiDisoccConf;
+
+
+// ── Step 3: Blend ──
+
+// DDGI takes precedence; SSGI fills where DDGI is weak AND SSGI is confident
+float ddgiWeight = ddgiConfidence;
+float ssgiWeight = (1.0 - ddgiConfidence) * ssgiConfidence;
+
+// Normalize so total weight ≤ 1 (prevent double-lighting at overlap)
+float totalWeight = ddgiWeight + ssgiWeight;
+if (totalWeight > 0.001)
+{
+    ddgiWeight  /= totalWeight;
+    ssgiWeight  /= totalWeight;
+}
+
+float3 indirectGI = ddgiIndirect * ddgiWeight + ssgiIndirect * ssgiWeight;
+```
+
+#### 9.3.2 Secondary: Spatial Variance-Based Demotion
+
+As an additional safety check, detect when DDGI produces **visibly incorrect** results and demote those pixels to SSGI:
+
+```hlsl
+// Detect DDGI blockiness: compute local irradiance gradient
+float3 ddgiCenter = g_DDGIIndirect.Load(uint3(uvInt, 0)).rgb;
+float3 ddgiRight  = g_DDGIIndirect.Load(uint3(uvInt + int2(1,0), 0)).rgb;
+float3 ddgiDown   = g_DDGIIndirect.Load(uint3(uvInt + int2(0,1), 0)).rgb;
+float ddgiGradient = length(ddgiRight - ddgiCenter) + length(ddgiDown - ddgiCenter);
+
+// High gradient + coarse probe resolution = DDGI is undersampled
+float ddgiBlockiness = saturate(ddgiGradient * probeResRatio / 0.05);
+
+// Demote DDGI weight when blocky
+if (ddgiBlockiness > 0.5 && ssgiHitConf > 0.5)
+    ddgiWeight *= (1.0 - ddgiBlockiness);
+```
+
+### 9.4 Artifact Comparison
+
+| Artifact | DDGI-Only | SSGI-Only | Hybrid |
+|---|---|---|---|
+| **Blocky/coarse indirect** | ✅ Visible | ❌ Not present | ✅ Fixed: SSGI fills where DDGI is coarse |
+| **Screen-edge missing GI** | ❌ DDGI covers everywhere | ✅ Visible | ✅ Fixed: DDGI fills where SSGI can't see |
+| **Disocclusion noise** | ❌ No temporal dependency | ✅ Visible | ✅ Fixed: DDGI covers disoccluded regions |
+| **Light leaking through walls** | ✅ Visible with thin geometry | ❌ Handled by ray march | ✅ Fixed: SSGI takes over near thin geometry |
+| **Temporal lag on moving camera** | ✅ With row-sliced ISVs | ❌ Per-frame | ✅ Mitigated: SSGI fills during DDGI latency |
+| **Outside-volume ambient** | ✅ Missing | ❌ SSGI works on-screen | ✅ Fixed: SSGI fills outside volumes |
+| **Ray-march misses (sky)** | ❌ DDGI has data | ✅ No SSGI data | ✅ Fixed: DDGI covers missed rays |
+
+### 9.5 Render Pass Integration
+
+```
+Render Pass Order (NormalBasic with DDGI+SSGI):
+
+  ShadowRenderer → ShadowMaskRenderer
+      │
+      ▼
+  ┌─────────────────────────────────────┐
+  │ DDGIRenderer                        │
+  │  → g_RG_DDGIIndirect (persistent)   │
+  └─────────────────────────────────────┘
+      │
+      ▼
+  ┌─────────────────────────────────────┐
+  │ SSGIRenderer (modified)             │
+  │  → Reads g_RG_DDGIIndirect          │
+  │  → Per-pixel blend DDGI+SSGI        │
+  │  → g_RG_SSGIComposed (hybrid output)│
+  └─────────────────────────────────────┘
+      │
+      ▼
+  DeferredRenderer → reads g_RG_SSGIComposed
+```
+
+**Key design choice:** The DDGI+SSGI blend happens **inside SSGIRenderer** (specifically, in the SSGI Compose pass, `SSGICompose.hlsl`). This keeps DDGIRenderer focused on probe management and makes SSGIRenderer the single indirect-lighting output. `DeferredRenderer` continues to consume `g_RG_SSGIComposed` unchanged.
+
+**Modifications to SSGIRenderer:**
+- `Setup()`: declare `g_RG_DDGIIndirect` as an input read texture (available when DDGI is enabled)
+- `SSGICompose.hlsl`: after the existing BRDF compose logic, blend with DDGI indirect using the confidence cascade above
+- When DDGI is not enabled, `g_RG_DDGIIndirect` resolves to a 1×1 black texture (render graph default) → the blend degenerates to SSGI-only, preserving backward compatibility
+
+### 9.6 Tuning Parameters
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `DDGI_SSGI_BlendSharpness` | 1.0 | Steepness of the DDGI→SSGI transition. Higher = sharper cutoff. |
+| `DDGI_SSGI_ResThreshold` | 4.0 | probeResRatio above which DDGI is considered "coarse" (in screen px/probe). |
+| `DDGI_SSGI_EdgeMargin` | 0.05 | Screen-edge margin as fraction of NDC for SSGI confidence ramp. |
+| `DDGI_SSGI_AgeConverge` | 5.0 | Number of frames for SSGI temporal age to reach full confidence. |
+| `DDGI_SSGI_BlockinessDemote` | 0.5 | DDGI spatial gradient threshold to trigger SSGI demotion. |
+
+### 9.7 Design Rationale
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Who owns the blend? | SSGIRenderer (Compose pass) | SSGI already produces `g_RG_SSGIComposed`; adding DDGI as an input keeps DeferredRenderer unchanged. |
+| DDGI or SSGI first? | DDGI takes precedence | DDGI is always physically grounded (world-space); SSGI is an approximation. DDGI may be coarse but it's never wrong. |
+| Outside-volume behavior | SSGI only | `DDGIGetVolumeBlendWeight()=0` across ALL volumes → ddgiConfidence=0 → pure SSGI. With 3 ISVs this is rare. |
+| Screen-edge behavior | DDGI only | SSGI confidence drops to 0 near screen edges → pure DDGI. DDGI has no screen-edge problem. |
+| Disocclusion handling | DDGI during disocclusion | SSGI temporal age is 0 → ssgiAgeConf = 0 → pure DDGI. |
+| Thin geometry | SSGI preferred | High depth gradient → lower DDGI confidence via probeResRatio → SSGI takes over. |
+| Performance cost | ~1 extra texture sample | The blend adds one `g_DDGIIndirect.Load()` + ~20 ALU ops. No extra passes. |
 
 ---
 
