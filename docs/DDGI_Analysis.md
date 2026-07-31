@@ -255,9 +255,9 @@ Volumes are placed automatically from scene geometry at load time. See §4.12 fo
 
 ```cpp
 struct DDGIUpdateBudget {
-    uint32_t maxProbeRaysPerFrame = 500000;  // global budget
-    float    convergenceThreshold  = 0.03f;   // variability below this = converged
-    uint32_t convergenceMinFrames  = 16;      // must be below threshold for N consecutive frames
+    uint32_t m_MaxProbeRaysPerFrame = 500000;  // global budget
+    float    m_ConvergenceThreshold  = 0.03f;  // variability below this = converged
+    uint32_t m_ConvergenceMinFrames  = 16;     // must be below threshold for N consecutive frames
 };
 ```
 
@@ -275,9 +275,9 @@ Each frame, the scheduler distributes the ray budget across unconverged volumes:
 
 ```cpp
 float priority = (1.0f - convergenceRatio)     // 0 = converged, 1 = fully unconverged
-               * volume.probeCounts.x           // wider volumes = more visual impact
-               * volume.probeCounts.y
-               * volume.probeCounts.z
+               * volume.m_ProbeCounts.x         // wider volumes = more visual impact
+               * volume.m_ProbeCounts.y
+               * volume.m_ProbeCounts.z
                * distanceToCamera;              // nearby volumes matter more
 ```
 
@@ -291,14 +291,14 @@ This ensures:
 When a volume's full ray count exceeds the remaining budget, only a subset of its probes are updated this frame:
 
 ```cpp
-uint32_t probesThisFrame = min(volume.totalProbes, remainingBudget / volume.raysPerProbe);
-uint32_t startProbe = volume.nextProbeOffset;
+uint32_t probesThisFrame = std::min(volume.m_TotalProbes, remainingBudget / volume.m_RaysPerProbe);
+uint32_t startProbe = volume.m_NextProbeOffset;
 uint32_t endProbe   = startProbe + probesThisFrame;
 
 // Dispatch probe trace for [startProbe, endProbe) only
 // Call UpdateDDGIVolumeProbes() — SDK blends only the updated probes
 
-volume.nextProbeOffset = (endProbe >= volume.totalProbes) ? 0 : endProbe;
+volume.m_NextProbeOffset = (endProbe >= volume.m_TotalProbes) ? 0 : endProbe;
 ```
 
 This is a simple round-robin within each volume — no complex row slicing needed since volumes are static.
@@ -396,15 +396,15 @@ class DDGIRenderer : public IRenderer
     // Per-volume state
     struct DDGIVolumeState
     {
-        rtxgi::d3d12::DDGIVolume volume;
-        rtxgi::d3d12::DDGIVolumeResources resources;
-        rtxgi::DDGIVolumeDesc desc;
+        rtxgi::d3d12::DDGIVolume          m_Volume;
+        rtxgi::d3d12::DDGIVolumeResources m_Resources;
+        rtxgi::DDGIVolumeDesc             m_Desc;
         
         // HobbyRenderer-specific texture handles (for render graph integration)
-        RGTextureHandle irradianceTex;
-        RGTextureHandle distanceTex;
-        RGTextureHandle probeDataTex;
-        RGTextureHandle rayDataTex;         // transient
+        RGTextureHandle m_IrradianceTex;
+        RGTextureHandle m_DistanceTex;
+        RGTextureHandle m_ProbeDataTex;
+        RGTextureHandle m_RayDataTex;         // transient
     };
     
     std::vector<DDGIVolumeState> m_Volumes;
@@ -600,11 +600,11 @@ For each connected component, fit an Oriented Bounding Box using Principal Compo
 
 ```cpp
 struct CandidateVolume {
-    float3 origin;       // centroid of voxel cluster
-    float3 eulerAngles;  // from PCA eigenvectors → rotation matrix
-    int3   probeCounts;  // extent / probeSpacing, rounded up
-    float  efficiency;   // mean voxel efficiency within this volume
-    AABB   worldAABB;    // for frustum culling
+    float3 m_Origin;       // centroid of voxel cluster
+    float3 m_EulerAngles;  // from PCA eigenvectors → rotation matrix
+    int3   m_ProbeCounts;  // extent / probeSpacing, rounded up
+    float  m_Efficiency;   // mean voxel efficiency within this volume
+    AABB   m_WorldAABB;    // for frustum culling
 };
 ```
 
@@ -672,12 +672,12 @@ For moving-camera scenarios, the static volumes can be supplemented with a singl
 // In SceneLoader or a new DDGIVolumePlacer class:
 struct DDGIVolumePlacer {
     struct Config {
-        float voxelSize       = 1.0f;   // meters per voxel
-        float probeSpacing    = 2.0f;   // meters between probes
-        float efficiencyThresh = 0.3f;  // minimum voxel efficiency
-        float coverageTarget  = 0.95f;  // stop when this fraction of voxels is covered
-        uint32_t maxVolumes   = 32;     // hard limit
-        float minVolumeProbes = 27;     // 3×3×3 minimum
+        float    m_VoxelSize        = 1.0f;   // meters per voxel
+        float    m_ProbeSpacing     = 2.0f;   // meters between probes
+        float    m_EfficiencyThresh = 0.3f;   // minimum voxel efficiency
+        float    m_CoverageTarget   = 0.95f;  // stop when this fraction of voxels is covered
+        uint32_t m_MaxVolumes       = 32;     // hard limit
+        float    m_MinVolumeProbes  = 27;     // 3×3×3 minimum
     };
 
     std::vector<rtxgi::DDGIVolumeDesc> PlaceVolumes(
