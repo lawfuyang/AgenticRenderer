@@ -718,7 +718,228 @@ private:
 | Ray-cast voxel classification | Use existing TLAS/BLAS | Scene already has RT acceleration structures built at load time. Casting a few rays per voxel is fast (~4 rays × 50K voxels = 200K rays, <1ms on GPU). |
 | Outdoor expansion | Extend by 1-2 probe rows | Building exteriors need indirect too. Expanding volumes slightly captures light bounce off facades. |
 
----
+### 4.13 Debug Visualization Modes
+
+DDGI probe data is opaque — irradiance stored in octahedral maps, distance in separate textures, classification states packed in alpha channels. Debug modes make this data visible for tuning and troubleshooting.
+
+#### 4.13.1 Probe Position Overlay (Compute)
+
+Renders a colored sphere at each probe's world position, projected into screen space. No ray tracing needed — pure compute shader writing to the GBuffer as a debug overlay.
+
+```hlsl
+// ProbeOverlayCS.hlsl — one thread per probe
+[numthreads(64, 1, 1)]
+void ProbeOverlayCS(uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+    uint probeIndex = DispatchThreadID.x;
+    if (probeIndex >= g_TotalProbes) return;
+
+    // Get probe world position and project to screen
+    float3 probeWorldPos = DDGIGetProbeWorldPosition(probeCoords, volume);
+    float4 clipPos = mul(g_ViewProjMatrix, float4(probeWorldPos, 1.0));
+    if (clipPos.w <= 0.0) return; // behind camera
+
+    float2 screenUV = clipPos.xy / clipPos.w * float2(0.5, -0.5) + 0.5;
+    if (any(screenUV < 0.0) || any(screenUV > 1.0)) return; // off-screen
+
+    // Depth test: only draw if probe is in front of scene geometry
+    float sceneDepth = g_Depth.SampleLevel(g_PointSampler, screenUV, 0);
+    if (clipPos.z > sceneDepth) return; // occluded
+
+    // Color by probe state
+    float4 probeData = g_ProbeData[uint3(probeCoords.xy, probeCoords.z)];
+    float3 color = g_DebugProbeColorActive;
+    if (probeData.w < 0.5) color = g_DebugProbeColorInactive;
+
+    // Draw 3×3 pixel dot at screenUV
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            g_DebugOutput[uint2(screenUV * g_OutputSize) + int2(dx, dy)] = float4(color, 1.0);
+}
+```
+
+**Debug constants:**
+```cpp
+struct DDGIDebugConsts {
+    uint32_t m_ProbeOverlayMode;       // 0=off, 1=active/inactive, 2=irradiance, 3=distance
+    uint32_t m_SelectedVolumeIndex;    // 0xFFFFFFFF = all volumes
+    float3   m_DebugProbeColorActive;
+    float3   m_DebugProbeColorInactive;
+    float    m_ProbeSphereRadius;      // world-space radius of probe dots
+};
+```
+
+#### 4.13.2 Debug Mode Enum
+
+```cpp
+enum class DDGIDebugMode : uint32_t {
+    OFF                      = 0,  // Normal rendering
+    DDGI_ONLY                = 1,  // Show DDGI indirect contribution only
+    SSGI_ONLY                = 2,  // Show SSGI indirect contribution only
+    DDGI_CONFIDENCE_HEATMAP  = 3,  // Per-pixel DDGI confidence (red=low, green=high)
+    VOLUME_BLEND_WEIGHT      = 4,  // DDGIGetVolumeBlendWeight heatmap
+    PROBE_IRRADIANCE         = 5,  // Raw DDGI irradiance sampled at each pixel
+    PROBE_DISTANCE           = 6,  // Raw DDGI probe distance sampled at each pixel
+    PROBE_POSITIONS          = 7,  // Probe sphere overlay (active=green, inactive=red)
+    PROBE_CLASSIFICATION     = 8,  // Probe state heatmap on sphere overlay
+    TILE_ACTIVITY            = 9,  // Tile-based SSGI dispatch heatmap (red=active, green=skipped)
+    CONVERGENCE_STATUS       = 10, // Per-volume convergence progress bars
+    VOLUME_WIREFRAME         = 11, // OBB wireframes of each volume
+};
+```
+
+#### 4.13.3 Per-Debug-Mode Implementation
+
+**DDGI_ONLY / SSGI_ONLY (modes 1-2):**
+Pass-through in the compose shader — output only the requested source, zeroing the other.
+
+**DDGI_CONFIDENCE_HEATMAP (mode 3):**
+```hlsl
+float ddgiConf = ComputeDDGIConfidence(worldPos, volumes); // §9.3.1
+float3 heatColor = lerp(float3(1,0,0), float3(0,1,0), ddgiConf);
+g_DebugOutput[uvInt] = float4(heatColor, 1.0);
+```
+
+**VOLUME_BLEND_WEIGHT (mode 4):**
+```hlsl
+float w = 0.0;
+for (int vi = 0; vi < g_NumVolumes; vi++)
+    w += DDGIGetVolumeBlendWeight(worldPos, volumes[vi]);
+float3 color = lerp(float3(0,0,0), float3(0,1,1), saturate(w));
+g_DebugOutput[uvInt] = float4(color, 1.0);
+```
+
+**PROBE_IRRADIANCE / PROBE_DISTANCE (modes 5-6):**
+Sample the DDGI probe texture directly per-pixel. Irradiance is decoded from gamma, scaled by 2*PI for display.
+
+**PROBE_POSITIONS / PROBE_CLASSIFICATION (modes 7-8):**
+Run `ProbeOverlayCS` with appropriate coloring — modes 7 uses fixed active/inactive colors, mode 8 uses probe data state.
+
+**TILE_ACTIVITY (mode 9):**
+```hlsl
+// In SSGI Compose pass — overlay tile mask on final output
+uint2 tileCoord = GroupID.xy;
+bool tileActive = (g_TileMask[tileCoord.y * g_TileCountX + tileCoord.x / 32] >> (tileCoord.x % 32)) & 1;
+float3 overlay = tileActive ? float3(1,0.2,0.2) : float3(0.2,1,0.2);
+color = lerp(color, overlay, 0.3);
+```
+
+**CONVERGENCE_STATUS (mode 10):**
+A small ImGui overlay (not a shader) showing per-volume progress bars:
+```
+Volume 0 (Dining Room):  ████████████████████ 100%  CONVERGED
+Volume 1 (Kitchen):      ████████████░░░░░░░░  68%  0.042
+Volume 2 (Corridor):     ██████████████████░░  92%  0.031
+```
+
+**VOLUME_WIREFRAME (mode 11):**
+Compute shader that projects each volume's OBB edges into screen space and draws 1px lines on the debug output.
+
+#### 4.13.4 Inline RT Probe Visualizer (Ray Query)
+
+For the most informative debug view, a compute shader with inline `RayQuery` traces rays from the camera through each pixel. When a ray hits a probe's bounding sphere, it samples the probe's irradiance or distance and colors the pixel accordingly. This is the inline-RT equivalent of the reference sample's `ProbesRGS.hlsl` + `ProbesCHS.hlsl` ray tracing pipeline, but as a pure compute dispatch.
+
+```hlsl
+// ProbeVisualizerCS.hlsl — inline RT probe sphere tracing
+[numthreads(8, 8, 1)]
+void ProbeVisualizerCS(uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+    uint2 uv = DispatchThreadID.xy;
+    if (any(uv >= g_OutputSize)) return;
+
+    // Reconstruct world-space ray from camera through pixel
+    RayDesc ray = ReconstructCameraRay(uv, g_ViewProjInv, g_CameraPos);
+
+    // Iterate all volumes, testing their probe bounding spheres
+    float3 resultColor = float3(0, 0, 0);
+    float  bestHitT = 1e10;
+
+    for (int vi = 0; vi < g_NumVolumes; vi++)
+    {
+        DDGIVolumeDescGPU volume = LoadVolumeDesc(vi);
+
+        // Coarse cull: does the ray intersect the volume AABB at all?
+        float tMin, tMax;
+        if (!RayAABBIntersect(ray, volume.m_WorldAABB, tMin, tMax))
+            continue;
+
+        // For probes within the AABB, test sphere intersections
+        for (int pz = 0; pz < volume.m_ProbeCounts.z; pz++)
+        for (int py = 0; py < volume.m_ProbeCounts.y; py++)
+        for (int px = 0; px < volume.m_ProbeCounts.x; px++)
+        {
+            float3 probePos = DDGIGetProbeWorldPosition(int3(px, py, pz), volume);
+            float t;
+            if (RaySphereIntersect(ray, probePos, g_ProbeRadius, t) && t < bestHitT)
+            {
+                bestHitT = t;
+
+                // Sample irradiance or distance at hit point on probe sphere
+                float3 hitNormal = normalize((ray.Origin + ray.Direction * t) - probePos);
+                float3 irradiance = DDGIGetVolumeIrradiance(
+                    probePos + hitNormal * 0.01, // offset from probe center
+                    hitNormal * volume.m_ProbeNormalBias,
+                    hitNormal, volume, resources);
+
+                resultColor = irradiance * INV_PI; // convert to radiance
+            }
+        }
+    }
+
+    g_DebugOutput[uv] = float4(resultColor, bestHitT < 1e9 ? 1.0 : 0.0);
+}
+```
+
+#### 4.13.5 Integration Points
+
+| Debug Mode | Shader | Dispatch | Overlay Target |
+|---|---|---|---|
+| DDGI_ONLY, SSGI_ONLY, Confidence, BlendWeight, Irradiance, Distance | Modified `SSGICompose.hlsl` | Full-screen CS | `g_RG_SSGIComposed` |
+| Probe Positions, Classification | `ProbeOverlayCS.hlsl` (new) | 1 thread per probe | `g_RG_DebugOverlay` |
+| Tile Activity | Modified `SSGICompose.hlsl` | Full-screen CS | `g_RG_SSGIComposed` |
+| Convergence Status | ImGui overlay (CPU) | N/A | ImGui draw list |
+| Volume Wireframe | `VolumeWireframeCS.hlsl` (new) | 1 thread group per volume | `g_RG_DebugOverlay` |
+| Inline RT Probe Visualizer | `ProbeVisualizerCS.hlsl` (new) | Full-screen CS | `g_RG_DebugOverlay` |
+
+#### 4.13.6 ImGui Controls
+
+```cpp
+if (ImGui::CollapsingHeader("DDGI Debug"))
+{
+    ImGui::Combo("Debug Mode", &m_DDGIDebugMode,
+        "Off\0DDGI Only\0SSGI Only\0Confidence Heatmap\0"
+        "Volume Blend Weight\0Probe Irradiance\0Probe Distance\0"
+        "Probe Positions\0Probe Classification\0"
+        "Tile Activity\0Convergence Status\0Volume Wireframe\0");
+
+    if (m_DDGIDebugMode == DDGIDebugMode::PROBE_POSITIONS ||
+        m_DDGIDebugMode == DDGIDebugMode::PROBE_CLASSIFICATION)
+    {
+        ImGui::SliderFloat("Probe Radius", &m_ProbeSphereRadius, 0.05f, 0.5f);
+        ImGui::Combo("Volume", &m_SelectedVolumeIndex, volumeNames);
+    }
+
+    if (m_DDGIDebugMode == DDGIDebugMode::CONVERGENCE_STATUS)
+    {
+        for (int vi = 0; vi < g_NumVolumes; vi++)
+        {
+            float progress = 1.0f - g_Volumes[vi].m_Variability;
+            ImGui::ProgressBar(progress);
+            ImGui::SameLine();
+            ImGui::Text("%s", g_Volumes[vi].m_Name);
+        }
+    }
+}
+```
+
+#### 4.13.7 Design Rationale
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Debug modes live in Compose shader | Modify `SSGICompose.hlsl` | The compose pass already runs full-screen and writes the final indirect output. Adding debug branching there is zero extra dispatch cost. |
+| Probe overlay: compute, not ray-traced | Project spheres in CS | Simpler than building a probe-sphere TLAS like the reference sample. For debug purposes, the precision difference is negligible. |
+| Inline RT probe visualizer | Separate optional CS | The most faithful debug view — actually traces against probe spheres. Only enabled when selected; uses existing TLAS. |
+| Convergence in ImGui, not shader | CPU-side progress bars | Convergence data is read back to CPU by the budget system already. Displaying it in ImGui is simpler and more interactive. |
 
 ## 5. Feature Dependency Map & Disabled Features
 
