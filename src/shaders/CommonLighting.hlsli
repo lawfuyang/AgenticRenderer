@@ -979,7 +979,7 @@ float GGXVNDFPdf(float NdotH, float NdotV, float roughness)
 {
     float D  = D_GGX(NdotH, roughness);
     float G1 = G1_Smith(roughness, NdotV);
-    return (D * G1) / max(4.0f * NdotV, 1e-5f);
+    return (D * G1) / max(4.0f * NdotV, srrhi::CommonConsts::kEpsilon);
 }
 
 // Power heuristic MIS weight: a^2 / (a^2 + b^2)

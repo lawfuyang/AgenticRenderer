@@ -1,6 +1,8 @@
 #ifndef COMMON_HLSLI
 #define COMMON_HLSLI
 
+#include "srrhi/hlsl/Common.hlsli"
+
 struct FullScreenVertexOut
 {
     float4 pos : SV_Position;
@@ -54,6 +56,37 @@ float2 UVToClipXY(float2 uv)
 float2 ClipXYToUV(float2 xy)
 {
     return xy * float2(0.5f, -0.5f) + float2(0.5f, 0.5f);
+}
+
+// Project a view-space position (+Z forward) to UV and output the linear depth in clipW.
+float2 ProjectViewToUV(float3 viewPos, float4x4 matViewToClip, out float clipW)
+{
+    float4 clip = MatrixMultiply(float4(viewPos, 1.0f), matViewToClip);
+    clipW = clip.w;
+    return ClipXYToUV(clip.xy / clip.w);
+}
+
+// Tangent-frame transforms: convert between world space and local (T, B, N) space.
+float3 TangentToLocal(float3 T, float3 B, float3 N, float3 V)
+{
+    return float3(dot(V, T), dot(V, B), dot(V, N));
+}
+
+float3 TangentToWorld(float3 T, float3 B, float3 N, float3 V)
+{
+    return V.x * T + V.y * B + V.z * N;
+}
+
+// Sample blue noise: kBlueNoiseSize x kBlueNoiseSize RG texture.
+// Samples twice with per-frame offsets to get 4 decorrelated channels in [0,1].
+float4 SampleBlueNoise(Texture2D<float4> blueNoise, uint2 pixelPos, uint frameIndex)
+{
+    const uint mask = srrhi::CommonConsts::kBlueNoiseSize - 1u;
+    uint2 p0 = (pixelPos + frameIndex * uint2(9491u, 7459u)) & mask;
+    uint2 p1 = (pixelPos + frameIndex * uint2(5851u, 3917u) + uint2(31u, 17u)) & mask;
+    float2 a = blueNoise.Load(int3(p0, 0)).rg;
+    float2 b = blueNoise.Load(int3(p1, 0)).rg;
+    return float4(a, b);
 }
 
 // Reconstruct world-space position from a UV coordinate, depth value, and clip-to-world matrix.

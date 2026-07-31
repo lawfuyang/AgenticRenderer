@@ -47,6 +47,7 @@ srinput CommonConsts
     // Math constants
     static const float PI = 3.14159265359f;
     static const float M_PI = 3.14159265359f;
+    static const float kEpsilon = 1e-5f;    // general-purpose epsilon for division/sqrt guards
 
     // Thread group / meshlet limits
     static const uint kThreadsPerGroup = 32;
@@ -142,6 +143,9 @@ srinput CommonConsts
 
     // Shadow map resolution (per-cascade, square)
     static const uint kShadowMapResolution = 2048;
+
+    // Blue noise texture dimensions (square, power-of-two)
+    static const uint kBlueNoiseSize = 64;
 };
 
 // ---------------------------------------------------------------------------

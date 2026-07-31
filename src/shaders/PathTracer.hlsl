@@ -215,7 +215,7 @@ void PathTracer_CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
                         float alpha  = pbr.roughness * pbr.roughness;
                         float alpha2 = alpha * alpha;
                         float NdotL_t = abs(dot(N, refractedDir));
-                        float G1_t = (NdotL_t > 1e-5f)
+                        float G1_t = (NdotL_t > srrhi::CommonConsts::kEpsilon)
                             ? 2.0f * NdotL_t / (NdotL_t + sqrt(alpha2 + (1.0f - alpha2) * NdotL_t * NdotL_t))
                             : 0.0f;
 
