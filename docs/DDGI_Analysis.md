@@ -241,21 +241,132 @@ Volumes are placed automatically from scene geometry at load time. See §4.12 fo
 - **Frustum culling:** `DDGIVolume::GetAxisAlignedBoundingBox()` → test against camera frustum. If volume is outside frustum, skip probe updates for that frame.
 - **Occlusion culling:** More complex. Can use the HZB from the main camera pass. If all probes in a volume are behind occluders (as determined by HZB), skip the volume. **Not recommended for initial implementation** — frustum culling is sufficient.
 
-### 4.6 Variability & Convergence
+### 4.6 Variability, Convergence & Probe Update Budget
 
-**Q: When to stop dispatching rays? When probe results are "stable"?**
+**Q: With static scene-driven volumes, do probes eventually converge? Can we stop updating them?**
 
-**A:** The SDK's `CalculateDDGIVolumeVariability()` and `ReadbackDDGIVolumeVariability()` provide a **coefficient of variation** across all probes. When this drops below a threshold (e.g., 0.01-0.05), the volume has "converged enough."
+**A:** Yes — unlike ISVs that constantly scroll and introduce new probes, static volumes placed at scene load have fixed geometry. Probes **will** converge to a steady state, typically within 2-5 seconds depending on rays per probe and geometry complexity. Once converged, probe updates can stop entirely — this is the bake workflow (§4.11). However, updating all volumes at full rate before convergence is expensive.
+
+**Q: How to manage probe update cost across multiple unconverged volumes?**
+
+**A:** Use a **per-frame probe ray budget** with priority-based scheduling:
+
+#### 4.6.1 Ray Budget System
+
+```cpp
+struct DDGIUpdateBudget {
+    uint32_t maxProbeRaysPerFrame = 500000;  // global budget
+    float    convergenceThreshold  = 0.03f;   // variability below this = converged
+    uint32_t convergenceMinFrames  = 16;      // must be below threshold for N consecutive frames
+};
+```
+
+Each frame, the scheduler distributes the ray budget across unconverged volumes:
 
 ```
-if (variability < 0.03 && !sceneChanged)
-    skip_probe_updates = true;
+1. Readback variability for each volume (can be async, use previous frame's value)
+2. For volumes below threshold for ≥ convergenceMinFrames: mark as CONVERGED, skip updates
+3. Sort remaining (unconverged) volumes by priority score
+4. Allocate rays within budget, highest priority first
+5. Volumes exceeding the budget get partial updates (subset of probes), completed in subsequent frames
 ```
 
-However, in practice for a real-time game:
-- Probes **never fully converge** because the camera moves
-- With multiple scene-driven volumes, new probes are constantly being introduced at volume edges as the camera moves
-- **Recommendation:** Always update probes for active volumes; only use variability for optional stationary volumes
+#### 4.6.2 Volume Priority Score
+
+```cpp
+float priority = (1.0f - convergenceRatio)     // 0 = converged, 1 = fully unconverged
+               * volume.probeCounts.x           // wider volumes = more visual impact
+               * volume.probeCounts.y
+               * volume.probeCounts.z
+               * distanceToCamera;              // nearby volumes matter more
+```
+
+This ensures:
+- **Unconverged volumes** get priority over nearly-converged ones
+- **Large volumes** (more probes) get proportionally more budget
+- **Near-camera volumes** get priority (visible impact)
+
+#### 4.6.3 Partial Volume Updates
+
+When a volume's full ray count exceeds the remaining budget, only a subset of its probes are updated this frame:
+
+```cpp
+uint32_t probesThisFrame = min(volume.totalProbes, remainingBudget / volume.raysPerProbe);
+uint32_t startProbe = volume.nextProbeOffset;
+uint32_t endProbe   = startProbe + probesThisFrame;
+
+// Dispatch probe trace for [startProbe, endProbe) only
+// Call UpdateDDGIVolumeProbes() — SDK blends only the updated probes
+
+volume.nextProbeOffset = (endProbe >= volume.totalProbes) ? 0 : endProbe;
+```
+
+This is a simple round-robin within each volume — no complex row slicing needed since volumes are static.
+
+#### 4.6.4 Convergence Lifecycle
+
+```
+Frame 0 ─────────────────────────────────────────────────────────
+  Scene loaded, 8 volumes placed, all unconverged
+  Budget: 500K rays
+  Priority: V0(living room, 2400 probes) > V1(kitchen, 1800) > ...
+  Allocated: V0 gets 2400×256=614K → exceeds budget → partial update
+             → V0: first 1950 probes traced (500K/256 rays) 
+             → V1-V7: deferred to next frames
+
+Frame 1 ─────────────────────────────────────────────────────────
+  V0: remaining 450 probes + V1: 1800 probes = 2250 total → fits in budget
+  → V0 completes, V1 completes, V2 starts (partial)
+  V0 variability: 0.12 (still high, geometry is complex)
+
+Frame 5 ─────────────────────────────────────────────────────────
+  V0 variability: 0.028 (< 0.03 threshold)
+  V1 variability: 0.031
+  
+Frame 21 (V0 below threshold for 16 consecutive frames) ─────────
+  V0: marked CONVERGED — skipped from budget
+  Budget now shared among 7 remaining volumes → faster convergence
+
+Frame 60 ────────────────────────────────────────────────────────
+  All 8 volumes converged → budget 0 → probes frozen → bake mode active
+  Indirect query continues from persistent converged textures
+  RT cost: 0 rays/frame
+```
+
+#### 4.6.5 Re-Convergence Triggers
+
+Converged volumes may need to re-converge when the scene changes:
+
+| Trigger | Action |
+|---|---|
+| **Dynamic object moved** into volume bounds | Reset variability for that volume, resume updates |
+| **Light source changed** (sun angle, emissive toggle) | Reset variability for affected volumes (those illuminated by the changed light) |
+| **Camera teleported** to new area | If volumes at destination are converged → no action. If not → budget system naturally prioritizes them. |
+| **Manual "re-bake" requested** | Reset all volumes to unconverged, restart budget allocation |
+
+Reset is lightweight: just set `convergenceFramesBelowThreshold = 0` and `variability = 1.0` — the existing probe data stays as a warm start.
+
+#### 4.6.6 Expected Performance
+
+For a typical Bistro-like scene with 12 volumes (~5,000 total probes, 256 rays/probe):
+
+| Phase | Active Volumes | Rays/Frame | Duration |
+|---|---|---|---|
+| Initial convergence (all volumes) | 12 | 500K | ~15-20 frames (0.25-0.33s at 60fps) |
+| Mid convergence (small volumes done) | 5 | 500K | ~5-10 frames |
+| Tail convergence (last large volume) | 1 | 500K | ~5-8 frames |
+| Fully converged (bake mode) | 0 | 0 | Until scene change |
+
+Total convergence: ~1-2 seconds at 60fps with a 500K ray budget. This is a smooth ramp-down — no frame has a ray burst, and the budget stays constant throughout.
+
+#### 4.6.7 Tuning Parameters
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `maxProbeRaysPerFrame` | 500,000 | Global ray budget. Lower = less GPU time but slower convergence. |
+| `convergenceThreshold` | 0.03 | Variability below this value = converged. Lower = higher quality but slower to converge. |
+| `convergenceMinFrames` | 16 | Must stay below threshold for this many consecutive frames. Prevents false convergence from noise. |
+| `raysPerProbe` | 256 | Per-probe ray count. Higher = faster per-probe convergence but fewer probes in budget. |
 
 ### 4.7 Indirect Diffuse vs Specular
 
@@ -356,13 +467,13 @@ This is a key trade-off: NormalBasic removes ReSTIR DI/GI/SHARC but adds DDGI wh
 
 ### 4.11 DDGI Bake Mode — Use HWRT to Converge, Then Disable RT
 
-The primary use case for DDGI in NormalBasic is **baking** — not real-time updating. The workflow:
+The primary use case for DDGI in NormalBasic is **baking** — not real-time updating. With static scene-driven volumes (§4.12), probes naturally converge. The budget system (§4.6) manages update cost during convergence, then stops entirely once all volumes are converged.
 
 ```
-1. Enable DDGI (m_EnableDDGI = true) → probes ray-trace each frame, converge to steady state
-2. Wait for convergence (variability drops below threshold, or manual bake timer)
-3. Disable DDGI (m_EnableDDGI = false) → probes stop updating, RT cost drops to zero
-4. Enjoy baked GI: indirect query reads the persistent converged probe textures
+1. Scene loads → volumes auto-placed (§4.12) → all volumes unconverged
+2. Budget system (§4.6) updates probes within maxProbeRaysPerFrame limit (~500K rays/frame)
+3. Volumes converge progressively (largest/nearest first) → removed from budget
+4. All volumes converged → RT cost drops to zero → indirect query reads persistent textures
 ```
 
 **Feature flag and ImGui control:**
@@ -400,15 +511,15 @@ if (ImGui::CollapsingHeader("DDGI (Global Illumination)"))
 | Irradiance/distance/probe data textures | ✅ Updated (persistent) | ✅ Preserved (persistent, baked) |
 | Indirect query (`DDGIGetVolumeIrradiance`) | ✅ Runs | ✅ Runs (reads baked data) |
 | TLAS requirement | ✅ Needed | ❌ Not needed |
-| RT cost per frame | ~930K rays | **0** |
-| GPU memory | ~36 MB (3 volumes) + ray data transient | ~36 MB (3 volumes, persistent only) |
+| RT cost per frame | ≤500K rays (budgeted, §4.6) | **0** (all volumes converged) |
+| GPU memory | Depends on scene; ~15-50 MB + ray data transient | Same (persistent textures survive) |
 
 **Key design points:**
 
 - **Persistent textures survive disabling:** The irradiance, distance, and probe data textures are allocated as long-lived GPU resources (not per-frame transient). When `m_EnableDDGI` is toggled off, these textures retain their last converged state — the indirect query shader simply reads from them as before.
 - **DDGI SDK state is preserved:** The SDK's `DDGIVolume` objects and their internal state (probe offsets, classifications) remain in host memory. The renderer just stops calling `Update()` and `UpdateDDGIVolumeProbes()`.
 - **No hot-reload needed:** Switching between bake and live modes is a single checkbox — no scene reload, no probe data loss. Re-enabling DDGI resumes probe updates from the current converged state.
-- **Volumes are static at scene load:** When `m_EnableDDGI` is toggled off, the irradiance, distance, and probe data textures retain their last converged state
+- **Automatic convergence stop:** The budget system (§4.6) automatically stops updating volumes as they converge. No manual toggle needed — probes naturally converge with static scene geometry.
 - **TLAS is freed in bake mode:** When `m_EnableDDGI = false`, `TLASRenderer` can be skipped entirely (see §5.1). No BLAS rebuild, no TLAS update — pure raster pipeline.
 - **Convergence detection:** The SDK provides `CalculateDDGIVolumeVariability()` and `ReadbackDDGIVolumeVariability()` (see §4.9). When variability drops below threshold across all volumes, probes are considered "converged enough." This can be used for automatic bake stop.
 
@@ -760,7 +871,7 @@ float3 color = directDiffuse + indirectGI;
 10. Implement bake mode: when `m_EnableDDGI = false`, skip probe RT/blending but still run indirect query
 11. Conditionally schedule `TLASRenderer`: only when `m_EnableDDGI = true`
 12. Add ImGui checkbox for `m_EnableDDGI` + convergence indicators in `ImGuiLayer.cpp`
-13. Implement convergence detection: `CalculateDDGIVolumeVariability()` → auto-stop when below threshold
+13. Implement budgeted convergence system (§4.6): per-frame ray budget, volume priority scheduling, partial volume updates, convergence lifecycle, re-convergence triggers
 
 ### Phase 4: Integration & Polish
 
