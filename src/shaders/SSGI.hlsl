@@ -6,7 +6,6 @@
 #include "Bindless.hlsli"
 #include "CommonLighting.hlsli"
 #include "Atmosphere.hlsli"
-#include "SSGICommon.hlsli"
 
 #include "srrhi/hlsl/SSGI.hlsli"
 
@@ -55,7 +54,9 @@ float2 SSGIBinarySearch(inout float3 dir, inout float3 hitPos, float4x4 matViewT
 
 // dir: view-space ray direction (normalized). hitPos: view-space start position (already
 // offset along the surface normal by the caller to avoid immediate self-intersection).
-float2 SSGIRayMarch(inout float3 dir, inout float3 hitPos, float jitter)
+// bOccluded: set when the march passed behind scene geometry without accepting it as a hit.
+// The direction is then known to be blocked, so a miss must not fall back to sky radiance.
+float2 SSGIRayMarch(inout float3 dir, inout float3 hitPos, float jitter, out bool bOccluded)
 {
     dir *= g_SSGI.m_RayDistance / float(g_SSGI.m_Steps);
 
@@ -64,11 +65,16 @@ float2 SSGIRayMarch(inout float3 dir, inout float3 hitPos, float jitter)
     float2 uv = 0.0f;
     float clipW;
 
+    // The ray leaves its surface into free space, so it starts in front of the depth buffer.
+    bool bWasInFront = true;
+    bOccluded = false;
+
     for (uint i = 1; i < g_SSGI.m_Steps; i++)
     {
         // use slower increments for the first few steps to sharpen contact shadows
         float m = exp(pow(float(i) / 4.0f, 0.05f)) - 2.0f;
-        hitPos += dir * min(m, 1.0f);
+        float3 stepVec = dir * min(m, 1.0f);
+        hitPos += stepVec;
 
         if (hitPos.z <= 0.0f)
             return SSGI_INVALID_RAY_COORDS; // behind the camera
@@ -83,12 +89,35 @@ float2 SSGIRayMarch(inout float3 dir, inout float3 hitPos, float jitter)
 
         float diff = hitPos.z - sceneLinZ;
 
-        if (diff >= 0.0f && diff < g_SSGI.m_Thickness)
+        if (diff < 0.0f)
+        {
+            bWasInFront = true; // in front of the depth buffer surface — arm the crossing test
+            continue;
+        }
+
+        // Behind the surface. Subtract the depth this step advanced: what remains is how far the
+        // ray overshot the surface *beyond the sampling granularity*, which makes the tolerance
+        // test independent of step size.
+        //
+        // Testing raw `diff < m_Thickness` instead is what let light leak through walls: the step
+        // advances m_RayDistance/m_Steps (0.5 world units by default) in depth, so a crossing can
+        // jump straight over a [0, 0.5) acceptance window in a single step. The crossing is then
+        // missed, the ray keeps marching THROUGH the occluder, and it reports a hit on whatever
+        // bright geometry sits behind it — a surface with no line of sight to the sunlit wall
+        // gets that wall's radiance anyway.
+        float overshoot = diff - max(stepVec.z, 0.0f);
+
+        if (bWasInFront && overshoot < g_SSGI.m_Thickness)
         {
             if (g_SSGI.m_RefineSteps > 0)
                 return SSGIBinarySearch(dir, hitPos, g_SSGI.m_View.m_MatViewToClip);
             return uv;
         }
+
+        // Crossed behind geometry but too deep to call it an intersection (the ray is passing
+        // behind something far in front of it). The direction is still blocked by that geometry.
+        bWasInFront = false;
+        bOccluded = true;
     }
 
     return SSGI_INVALID_RAY_COORDS;
@@ -96,7 +125,7 @@ float2 SSGIRayMarch(inout float3 dir, inout float3 hitPos, float jitter)
 
 // Radiance seen along the ray: direct lighting at the hit point plus the reprojected
 // previous-frame GI (multi-bounce feedback), atmosphere sky radiance on a miss.
-float3 SSGISampleHitRadiance(float2 coords, bool bIsMissedRay, float3 lView, float3 worldNormal, float roughness,
+float3 SSGISampleHitRadiance(float2 coords, bool bIsMissedRay, bool bOccluded, float3 lView, float3 worldNormal, float roughness,
                              bool bIsDiffuseSample, float3 sunRadiance)
 {
     float3 cameraPosWS = g_SSGI.m_View.m_CameraDirectionOrPosition.xyz;
@@ -104,18 +133,30 @@ float3 SSGISampleHitRadiance(float2 coords, bool bIsMissedRay, float3 lView, flo
     float3 skyColor = GetAtmosphereSkyRadiance(cameraPosWS, rayDirWS, g_SSGI.m_SunDirection, g_SSGI.m_SunIntensity, /*bAddSunDisk=*/false);
 
     if (bIsMissedRay)
-        return skyColor;
+    {
+        // A miss only means "no usable hit in the depth buffer", not "open sky". If the march
+        // passed behind geometry on its way out, that geometry blocks the direction and the sky
+        // is not visible along it — handing back full sky radiance is what makes enclosed
+        // interiors glow with skylight they cannot possibly receive.
+        return bOccluded ? float3(0.0f, 0.0f, 0.0f) : skyColor;
+    }
 
     float3 hitNormal = DecodeNormal(g_GBufferNormals.SampleLevel(g_PointSampler, coords, 0.0f));
 
-    // self-occlusion: hit the same surface the ray started from
+    // Coplanar hit: a ray leaving a surface can never legitimately land on a surface with the
+    // same normal orientation, so this is a grazing self-intersection artefact of the march.
+    // Reject the sample (there IS geometry there, so the sky is definitely not visible — the
+    // previous sky fallback here was injecting full skylight into every large flat wall).
     if (dot(worldNormal, hitNormal) > 0.999f)
-        return skyColor;
+        return float3(0.0f, 0.0f, 0.0f);
 
     // Direct lighting emitted by the hit surface — this is what actually injects energy
     // into the GI feedback loop (the accumulation buffers alone are a zero fixed point).
-    float3 directLight = SSGIScreenDirectLight(g_GBufferAlbedo, g_GBufferNormals, g_GBufferORM, g_GBufferEmissive,
-                                               g_ShadowMask, g_PointSampler, coords, g_SSGI.m_SunDirection, sunRadiance);
+    float3 hitAlbedo    = g_GBufferAlbedo.SampleLevel(g_PointSampler, coords, 0.0f).rgb;
+    float  hitMetalness = g_GBufferORM.SampleLevel(g_PointSampler, coords, 0.0f).g;
+    float  hitShadow    = g_ShadowMask.SampleLevel(g_PointSampler, coords, 0.0f);
+    float3 hitEmissive  = g_GBufferEmissive.SampleLevel(g_PointSampler, coords, 0.0f).rgb;
+    float3 directLight  = hitAlbedo * (1.0f - hitMetalness) * Lambert(hitNormal, g_SSGI.m_SunDirection) * hitShadow * sunRadiance + hitEmissive;
 
     // reproject the hit coords into the previous frame.
     // Motion vectors are in pixels and point from the current to the previous position
@@ -156,12 +197,13 @@ float3 SSGITraceRay(float3 l, float3 viewPos, float jitter, float3 worldNormal, 
     float3 dir = l;
     float3 hitPos = viewPos;
 
-    float2 coords = SSGIRayMarch(dir, hitPos, jitter);
+    bool bOccluded;
+    float2 coords = SSGIRayMarch(dir, hitPos, jitter, bOccluded);
 
     bIsMissedRay = coords.x < 0.0f;
     outHitPos = hitPos;
 
-    float3 radiance = SSGISampleHitRadiance(coords, bIsMissedRay, l, worldNormal, roughness, bIsDiffuseSample, sunRadiance);
+    float3 radiance = SSGISampleHitRadiance(coords, bIsMissedRay, bOccluded, l, worldNormal, roughness, bIsDiffuseSample, sunRadiance);
     return radiance;
 }
 

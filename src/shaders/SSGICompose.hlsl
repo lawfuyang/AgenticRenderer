@@ -12,7 +12,6 @@
 #include "Bindless.hlsli"
 #include "CommonLighting.hlsli"
 #include "Atmosphere.hlsli"
-#include "SSGICommon.hlsli"
 
 #include "srrhi/hlsl/SSGICompose.hlsli"
 
@@ -157,8 +156,12 @@ float4 SSGICompose_PSMain(FullScreenVertexOut input) : SV_Target
         // The screen-space direct light that gets injected at ray hits. Black here means
         // the GI feedback loop has no energy source and the result can only ever be black.
         float3 sunRadiance = GetAtmosphereSunRadiance(GetAtmospherePos(worldPos), g_Compose.m_SunDirection, g_Compose.m_SunIntensity);
-        debug = SSGIScreenDirectLight(g_GBufferAlbedo, g_GBufferNormals, g_GBufferORM, g_GBufferEmissive,
-                                      g_ShadowMask, g_PointSampler, uv, g_Compose.m_SunDirection, sunRadiance);
+        float3 screenAlbedo    = g_GBufferAlbedo.SampleLevel(g_PointSampler, uv, 0.0f).rgb;
+        float3 screenNormal    = DecodeNormal(g_GBufferNormals.SampleLevel(g_PointSampler, uv, 0.0f));
+        float  screenMetalness = g_GBufferORM.SampleLevel(g_PointSampler, uv, 0.0f).g;
+        float  screenShadow    = g_ShadowMask.SampleLevel(g_PointSampler, uv, 0.0f);
+        float3 screenEmissive  = g_GBufferEmissive.SampleLevel(g_PointSampler, uv, 0.0f).rgb;
+        debug = screenAlbedo * (1.0f - screenMetalness) * Lambert(screenNormal, g_Compose.m_SunDirection) * screenShadow * sunRadiance + screenEmissive;
     }
     else if (g_Compose.m_DebugMode == srrhi::SSGIDebugMode::SSGI_DEBUG_FRESNEL)
         debug = F;
