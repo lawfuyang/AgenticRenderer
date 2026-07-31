@@ -87,14 +87,7 @@ void ImGuiLayer::UpdateFrame()
             if (ImGui::Combo("Rendering Mode", &currentMode, kRenderingModes, IM_ARRAYSIZE(kRenderingModes)))
             {
                 g_Renderer.m_Mode = static_cast<RenderingMode>(currentMode);
-
-                // When entering NormalBasic, disable all RT-dependent features
-                if (g_Renderer.m_Mode == RenderingMode::NormalBasic)
-                {
-                    g_Renderer.m_EnableRTShadows = false;
-                    g_Renderer.m_EnableReSTIRDI = false;
-                    g_Renderer.m_IndirectLightingTechnique = 0;
-                }
+                g_Renderer.ApplyRenderingModeDefaults(g_Renderer.m_Mode);
             }
 
             ImGui::Checkbox("Use Meshlet Rendering", &g_Renderer.m_UseMeshletRendering);
@@ -230,6 +223,9 @@ void ImGuiLayer::UpdateFrame()
                     }
                     g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC;
                 }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("SSGI", &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)))
+                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI;
 
                 // SHARC debug overlay (available in SHARC-only and combined modes)
                 if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC ||
@@ -239,6 +235,91 @@ void ImGuiLayer::UpdateFrame()
                     int debugMode = static_cast<int>(g_Renderer.m_SHARCDebugMode);
                     if (ImGui::Combo("SHARC Debug", &debugMode, debugModes, IM_ARRAYSIZE(debugModes)))
                         g_Renderer.m_SHARCDebugMode = static_cast<uint32_t>(debugMode);
+                }
+
+                // SSGI parameters (available when SSGI is active)
+                if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+                {
+                    ImGui::SeparatorText("Ray March");
+                    ImGui::DragFloat("Ray Distance", &g_Renderer.m_SSGI_RayDistance, 0.1f, 0.1f, 100.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("World-space maximum ray march distance per pixel");
+                    ImGui::DragFloat("Thickness", &g_Renderer.m_SSGI_Thickness, 0.1f, 0.1f, 100.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Depth tolerance: ray must be within this distance behind the surface to count as a hit");
+                    ImGui::SliderInt("Steps", &g_Renderer.m_SSGI_Steps, 1, 64);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Number of linear march steps per ray — more steps = finer search, slower");
+                    ImGui::SliderInt("Refine Steps", &g_Renderer.m_SSGI_RefineSteps, 0, 16);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Binary refinement iterations after initial hit — 0 disables refinement");
+                    ImGui::DragFloat("Max Radiance", &g_Renderer.m_SSGI_MaxRadiance, 0.5f, 0.1f, 1000.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Firefly clamp: max luminance accepted from a single ray. Lower = fewer fireflies from "
+                                          "small bright emitters, at the cost of losing energy on genuinely bright bounces. "
+                                          "Scene-scale dependent");
+
+                    ImGui::SeparatorText("Temporal");
+                    ImGui::DragFloat("Blend", &g_Renderer.m_SSGI_TemporalBlend, 0.01f, 0.0f, 1.0f, "%.2f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Max current-frame contribution vs history — 0 = freeze, 1 = no history, higher = faster convergence / more ghosting");
+
+                    ImGui::SeparatorText("Denoise");
+                    ImGui::SliderInt("Iterations", &g_Renderer.m_SSGI_DenoiseIterations, 1, 5);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Number of Poisson denoise passes. The kernel radius doubles each iteration, so the "
+                                          "filter footprint grows geometrically — the main knob for cleaning up freshly "
+                                          "disoccluded pixels that have no history");
+                    ImGui::DragFloat("Radius", &g_Renderer.m_SSGI_DenoiseRadius, 0.1f, 0.1f, 20.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Poisson disk sample kernel radius in pixels — larger = more blur / smoother result");
+                    ImGui::DragFloat("Phi", &g_Renderer.m_SSGI_DenoisePhi, 0.01f, 0.01f, 10.0f, "%.2f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Overall denoising strength (exponent on combined edge-stop weight) — higher = more aggressive blur");
+                    ImGui::DragFloat("Luma Phi", &g_Renderer.m_SSGI_DenoiseLumaPhi, 0.1f, 0.1f, 50.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Luminance edge-stop sensitivity — higher = blur across larger brightness differences");
+                    ImGui::DragFloat("Depth Phi", &g_Renderer.m_SSGI_DenoiseDepthPhi, 0.1f, 0.1f, 50.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Depth edge-stop sensitivity — higher = blur across larger depth gaps");
+                    ImGui::DragFloat("Normal Phi", &g_Renderer.m_SSGI_DenoiseNormalPhi, 0.5f, 0.5f, 200.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Normal-difference edge-stop sensitivity — higher = blur across more divergent surface normals");
+                    ImGui::DragFloat("Roughness Phi", &g_Renderer.m_SSGI_DenoiseRoughnessPhi, 0.5f, 0.5f, 200.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Roughness edge-stop sensitivity — higher = blur across material boundaries");
+                    ImGui::DragFloat("Specular Phi", &g_Renderer.m_SSGI_DenoiseSpecularPhi, 0.5f, 0.5f, 200.0f, "%.1f");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Extra specular separation — values >1 reduce blur on shiny/reflective surfaces");
+
+                    ImGui::SeparatorText("Debug");
+                    const char* ssgiDebugModes[] =
+                    {
+                        "Off",
+                        "Raw Diffuse",
+                        "Raw Specular",
+                        "Temporal Diffuse",
+                        "Temporal Specular",
+                        "Denoised Diffuse",
+                        "Denoised Specular",
+                        "Composed GI (isolated)",
+                        "Diffuse Age",
+                        "Specular Age",
+                        "Ray Length",
+                        "Hit / Miss Mask",
+                        "Sample Type",
+                        "Sky Fallback",
+                        "Injected Direct Light",
+                        "Fresnel",
+                        "Validity (NaN / negative)",
+                    };
+                    int ssgiDebugMode = static_cast<int>(g_Renderer.m_SSGI_DebugMode);
+                    if (ImGui::Combo("SSGI Debug", &ssgiDebugMode, ssgiDebugModes, IM_ARRAYSIZE(ssgiDebugModes)))
+                        g_Renderer.m_SSGI_DebugMode = static_cast<uint32_t>(ssgiDebugMode);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Replaces the final image with the selected SSGI stage. "
+                                          "'Injected Direct Light' and 'Sky Fallback' are the two energy sources of the GI loop — "
+                                          "if both are black, the indirect output can only be black.");
                 }
 
                 ImGui::TreePop();

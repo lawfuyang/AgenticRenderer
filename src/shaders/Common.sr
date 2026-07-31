@@ -158,6 +158,34 @@ srinput IndirectLightingMode
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI        = 1;
     static const uint INDIRECT_LIGHTING_MODE_SHARC            = 2;
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC  = 3;  // Combined: SHARC cache at secondary hits + ReSTIR GI resampling
+    static const uint INDIRECT_LIGHTING_MODE_SSGI             = 4;  // Screen-space GI (NormalBasic mode only)
+};
+
+// ---------------------------------------------------------------------------
+// SSGI debug overlay modes — passed via SSGIComposeConstants::m_DebugMode.
+// Off (0) means normal operation; all other values redirect the SSGICompose
+// output to a diagnostic visualization instead of the indirect GI term, and
+// DeferredLighting replaces (rather than adds) the pixel colour with it.
+// ---------------------------------------------------------------------------
+srinput SSGIDebugMode
+{
+    static const uint SSGI_DEBUG_OFF                = 0;
+    static const uint SSGI_DEBUG_RAW_DIFFUSE        = 1;   // Pass 1 diffuse radiance estimate (pre-temporal)
+    static const uint SSGI_DEBUG_RAW_SPECULAR       = 2;   // Pass 1 specular radiance estimate (pre-temporal)
+    static const uint SSGI_DEBUG_TEMPORAL_DIFFUSE   = 3;   // Pass 2 accumulated diffuse
+    static const uint SSGI_DEBUG_TEMPORAL_SPECULAR  = 4;   // Pass 2 accumulated specular
+    static const uint SSGI_DEBUG_DENOISED_DIFFUSE   = 5;   // Pass 3 denoised diffuse (= next frame's history)
+    static const uint SSGI_DEBUG_DENOISED_SPECULAR  = 6;   // Pass 3 denoised specular
+    static const uint SSGI_DEBUG_COMPOSED           = 7;   // Pass 4 output in isolation (no direct lighting)
+    static const uint SSGI_DEBUG_DIFFUSE_AGE        = 8;   // Temporal age heatmap (diffuse)
+    static const uint SSGI_DEBUG_SPECULAR_AGE       = 9;   // Temporal age heatmap (specular)
+    static const uint SSGI_DEBUG_RAY_LENGTH         = 10;  // Specular ray length (grey), magenta = miss sentinel
+    static const uint SSGI_DEBUG_HIT_MASK           = 11;  // Green = ray hit geometry, red = missed (sky fallback)
+    static const uint SSGI_DEBUG_SAMPLE_TYPE        = 12;  // Blue = diffuse+specular ray, red = specular only
+    static const uint SSGI_DEBUG_SKY_FALLBACK       = 13;  // Atmosphere radiance used for missed rays
+    static const uint SSGI_DEBUG_DIRECT_LIGHT       = 14;  // Screen-space direct light injected at ray hits
+    static const uint SSGI_DEBUG_FRESNEL            = 15;  // Compose-pass Fresnel term
+    static const uint SSGI_DEBUG_VALIDITY           = 16;  // Magenta = NaN/Inf, yellow = negative, grey = ok
 };
 
 // ---------------------------------------------------------------------------

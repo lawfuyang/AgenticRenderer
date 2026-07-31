@@ -141,6 +141,10 @@ struct Renderer
     void ComputeCascadeViewProj();
     void HandleDebugModeSettings();
 
+    // Apply per-mode defaults for features that vary by rendering mode
+    // (RT shadows, ReSTIR DI, indirect lighting technique).
+    void ApplyRenderingModeDefaults(RenderingMode mode);
+
     // Command List Management
     nvrhi::CommandListHandle AcquireCommandList(bool bImmediatelyQueue = true);
     void ExecutePendingCommandLists();
@@ -331,6 +335,30 @@ struct Renderer
     float   m_SSS_ShadowContrast      = 4.0f;    // Contrast boost (>=1)
     bool    m_SSS_IgnoreEdgePixels    = false;    // Don't cast shadow from detected edge pixels
     bool    m_SSS_UseEarlyOut         = true;     // Early-out sky/out-of-bounds pixels
+
+    // ── SSGI (Screen-Space Global Illumination, NormalBasic mode only) ─────
+    // SSGI ray march
+    float   m_SSGI_RayDistance        = 10.0f;
+    float   m_SSGI_Thickness          = 0.5f;   // view-space depth tolerance, world units
+    int     m_SSGI_Steps              = 20;
+    int     m_SSGI_RefineSteps        = 5;
+    float   m_SSGI_MaxRadiance        = 25.0f;  // firefly clamp, scene-scale dependent
+
+    // SSGI temporal reproject
+    float   m_SSGI_TemporalBlend      = 0.9f;
+
+    // SSGI Poisson denoise
+    int     m_SSGI_DenoiseIterations  = 2;      // kernel radius doubles each iteration
+    float   m_SSGI_DenoiseRadius      = 3.0f;
+    float   m_SSGI_DenoisePhi         = 0.5f;
+    float   m_SSGI_DenoiseLumaPhi     = 5.0f;
+    float   m_SSGI_DenoiseDepthPhi    = 2.0f;
+    float   m_SSGI_DenoiseNormalPhi   = 50.0f;
+    float   m_SSGI_DenoiseRoughnessPhi= 50.0f;
+    float   m_SSGI_DenoiseSpecularPhi = 50.0f;
+
+    // SSGI debug overlay (SSGIDebugMode enum value; 0 = off)
+    uint32_t m_SSGI_DebugMode         = 0;
 
     // bloom
     float m_BloomKnee = 0.1f;

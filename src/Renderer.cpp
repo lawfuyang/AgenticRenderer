@@ -388,13 +388,7 @@ void Renderer::Initialize()
 
     m_CameraStateManager.Initialize();
 
-    // When entering NormalBasic, disable all RT-dependent features
-    if (m_Mode == RenderingMode::NormalBasic)
-    {
-        m_EnableRTShadows = false;
-        m_EnableReSTIRDI = false;
-        m_IndirectLightingTechnique = 0;
-    }
+    ApplyRenderingModeDefaults(m_Mode);
 
     InitStreaming();
 
@@ -1029,9 +1023,36 @@ void Renderer::UploadDirtyMaterialConstants()
         "UploadDirtyMaterialConstants: dirty range was not cleared after upload");
 }
 
+void Renderer::ApplyRenderingModeDefaults(RenderingMode mode)
+{
+    switch (mode)
+    {
+        case RenderingMode::Normal:
+            m_EnableRTShadows = true;
+            m_EnableReSTIRDI = true;
+            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC;
+            break;
+        case RenderingMode::IBL:
+            m_EnableRTShadows = false;
+            m_EnableReSTIRDI = false;
+            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_NONE;
+            break;
+        case RenderingMode::ReferencePathTracer:
+            m_EnableRTShadows = true;
+            m_EnableReSTIRDI = false;
+            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_NONE;
+            break;
+        case RenderingMode::NormalBasic:
+            m_EnableRTShadows = false;
+            m_EnableReSTIRDI = false;
+            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI;
+            break;
+    }
+}
+
 void Renderer::HandleDebugModeSettings()
 {
-    const bool bAnyDebugActive = (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE || m_CSMDebugMode != 0u);
+    const bool bAnyDebugActive = (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE || m_CSMDebugMode != 0u || m_SSGI_DebugMode != 0u);
 
     auto SaveState = [this]()
     {
@@ -1267,6 +1288,7 @@ void Renderer::ScheduleAndRunAllRenderers()
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowRenderer"));        // CSM depth array (4 × 2048²)
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowMaskRenderer"));    // fullscreen compute → R8 shadow mask
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("CSMDebugRenderer"));      // debug overlay (skips when mode == Off)
+        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SSGIRenderer"));          // screen-space GI (skips when disabled)
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DeferredRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SkyRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TransparentPassRenderer"));

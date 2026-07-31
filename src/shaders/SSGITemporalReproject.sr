@@ -1,0 +1,24 @@
+#include "Common.sr"
+
+cbuffer SSGITemporalConstants
+{
+    PlanarViewConstants m_View;         // current frame
+    PlanarViewConstants m_ViewPrev;     // previous frame (hit-point parallax reprojection)
+    float               m_Blend;        // temporal blend cap (default 0.9)
+};
+
+srinput SSGITemporalReprojectInputs
+{
+    SSGITemporalConstants m_TemporalCB;
+
+    Texture2D<float4>   RawDiffuse;         // ray march output (rgb = GI or -1 sentinel, a = roughness)
+    Texture2D<float4>   RawSpecular;        // ray march output (rgb = GI, a = ray length)
+    Texture2D<float4>   PrevAccumDiffuse;   // accum ping-pong read slot (rgb = GI, a = age)
+    Texture2D<float4>   PrevAccumSpecular;
+    Texture2D<float2>   MotionVectors;      // pixel units
+    Texture2D<float>    Depth;
+    Texture2D<float2>   GBufferNormals;
+    Texture2D<float2>   GBufferORM;
+    SamplerState        LinearSampler;
+    SamplerState        PointSampler;
+};

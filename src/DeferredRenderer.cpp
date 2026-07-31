@@ -14,6 +14,7 @@ extern RGTextureHandle g_RG_RTXDIDIComposited;   // CompositingPass output — f
 extern RGTextureHandle g_RG_SHARCIndirect;       // SHARCQuery output — screen-space indirect radiance
 extern RGTextureHandle g_RG_ShadowMask;          // ShadowMaskRenderer output — R8_UNORM screen-space shadow mask (NormalBasic only)
 extern RGTextureHandle g_RG_CSMDebugOutput;       // CSMDebugRenderer output — CSM debug overlay (RGBA16_FLOAT; black when off)
+extern RGTextureHandle g_RG_SSGIComposed;         // SSGIRenderer output — composed indirect GI (NormalBasic only)
 
 
 
@@ -46,6 +47,11 @@ public:
         // Conditionally read the CSM debug overlay when CSM debug mode is active
         if (g_Renderer.m_CSMDebugMode != 0 && g_Renderer.m_EnableCSMShadows)
             renderGraph.ReadTexture(g_RG_CSMDebugOutput);
+
+        // Conditionally read the SSGI compose output when SSGI is the active technique
+        if (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
+            g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+            renderGraph.ReadTexture(g_RG_SSGIComposed);
 
         return true;
     }
@@ -87,6 +93,7 @@ public:
         dcb.SetUseReSTIRDIDenoised(0u); // compositing is done by CompositingPass
         dcb.SetIndirectLightingMode(g_Renderer.m_IndirectLightingTechnique);
         dcb.SetCSMDebugMode(g_Renderer.m_CSMDebugMode);
+        dcb.SetSSGIDebugMode(g_Renderer.m_SSGI_DebugMode);
         commandList->writeBuffer(deferredCB, &dcb, sizeof(dcb), 0);
 
         // t8: RTXDI composited output (DI + emissive, already remodulated by CompositingPass)
@@ -131,6 +138,14 @@ public:
             ? renderGraph.GetTexture(g_RG_CSMDebugOutput, RGResourceAccessMode::Read)
             : CommonResources::GetInstance().DefaultTextureBlack;
         dlInputs.SetCSMDebugOutput(csmDebugOutput);
+
+        // t17: SSGI compose output (black fallback when SSGI is inactive)
+        nvrhi::TextureHandle ssgiComposed =
+            (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
+             g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+            ? renderGraph.GetTexture(g_RG_SSGIComposed, RGResourceAccessMode::Read)
+            : CommonResources::GetInstance().DefaultTextureBlack;
+        dlInputs.SetSSGIComposed(ssgiComposed);
 
         nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(dlInputs);
 

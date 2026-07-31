@@ -127,6 +127,9 @@ float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState samp, float2 
     float2 texPos3 = texPos1 + 2.0f;
     float2 texPos12 = texPos1 + offset12;
 
+    float2 texPos1Uv = texPos1 / resolution;
+    float2 texPos2Uv = (texPos1 + 1.0f) / resolution;
+
     texPos0 /= resolution;
     texPos3 /= resolution;
     texPos12 /= resolution;
@@ -142,7 +145,22 @@ float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState samp, float2 
     result += tex.SampleLevel(samp, float2(texPos12.x, texPos3.y), 0.0f) * w12.x * w3.y;
     result += tex.SampleLevel(samp, float2(texPos3.x, texPos3.y), 0.0f) * w3.x * w3.y;
 
-    return max(result, 0.0f);
+    // Anti-ringing. The Catmull-Rom kernel has negative lobes (w0/w3 are negative for most
+    // fractional offsets), so it overshoots at high-contrast edges. Harmless for a one-off
+    // resample, but when it is used to resample a temporal history that is then fed back into
+    // itself at a jittered sub-pixel offset every frame, the overshoot compounds geometrically
+    // and blows up into bright fireflies around bright features (emissive geometry especially).
+    // Clamping to the 2x2 bilinear footprint bounds the result to values that actually exist in
+    // the neighbourhood, which removes the overshoot without softening the filter.
+    float4 c00 = tex.SampleLevel(samp, float2(texPos1Uv.x, texPos1Uv.y), 0.0f);
+    float4 c10 = tex.SampleLevel(samp, float2(texPos2Uv.x, texPos1Uv.y), 0.0f);
+    float4 c01 = tex.SampleLevel(samp, float2(texPos1Uv.x, texPos2Uv.y), 0.0f);
+    float4 c11 = tex.SampleLevel(samp, float2(texPos2Uv.x, texPos2Uv.y), 0.0f);
+
+    float4 neighborhoodMin = min(min(c00, c10), min(c01, c11));
+    float4 neighborhoodMax = max(max(c00, c10), max(c01, c11));
+
+    return clamp(max(result, 0.0f), neighborhoodMin, neighborhoodMax);
 }
 
 // Reconstruct world-space position from a UV coordinate, depth value, and clip-to-world matrix.
