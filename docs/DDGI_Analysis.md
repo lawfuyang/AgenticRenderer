@@ -512,6 +512,185 @@ Developer workflow (for shipping):
   4. Ship game with baked probe data
   5. At runtime: load baked textures, run indirect query only (m_EnableDDGI = false)
 
+
+### 4.13 Automatic Scene-Driven Volume Placement
+
+#### 4.13.1 Motivation
+
+Manual volume placement (one giant volume, or 3 ISVs at fixed camera offsets) wastes probes in empty space. A single large volume over Bistro places thousands of probes in walls, the sky, and between disconnected rooms. The goal is to **empirically determine** the optimal set of volumes from the scene geometry itself during load — with zero probes in empty space and maximum coverage of "interesting" areas where indirect lighting matters.
+
+| Scene | Naive 1-giant-volume | Automatic Scene-Driven |
+|---|---|---|
+| **Sponza** (single open hall) | ✅ Works fine — 1 volume is optimal | 1 volume (same result) |
+| **Bistro** (multi-room building + courtyard) | ❌ Thousands of probes in walls/void | 8-15 OBB volumes, each tightly fitting a room/corridor |
+| **Cornell Box** (single room) | ✅ Works fine | 1 volume |
+
+#### 4.13.2 Voxel-Based Occupancy Map
+
+**Step 1 — Scene Voxelization:** On scene load, build a coarse 3D occupancy grid over the scene's AABB. Default voxel size: 1.0m (configurable). Each voxel is classified by casting a small number of short rays from its center:
+
+```
+Voxel Classification:
+  ┌─ All rays miss (hit skybox):          EMPTY_SKY     ← no geometry, outdoor
+  ├─ All rays hit geometry immediately:    INSIDE_WALL   ← inside solid geometry
+  ├─ Some rays hit, some miss:            SURFACE       ← near geometry — HIGH VALUE
+  ├─ No rays hit but not sky:             EMPTY_INDOOR  ← open space indoors — MEDIUM VALUE
+  └─ Below scene floor:                   BELOW_FLOOR   ← ignore
+```
+
+Only `SURFACE` and `EMPTY_INDOOR` voxels are candidates for probe placement. `INSIDE_WALL`, `EMPTY_SKY`, and `BELOW_FLOOR` are excluded.
+
+**Step 2 — Probe Efficiency Score:** For each candidate voxel, estimate how many of its probes would be useful:
+
+```cpp
+float efficiency = (numSurfaceRays + numIndoorRays * 0.3f) / totalRays;
+// SURFACE voxels: efficiency ~0.8-1.0 (most probes hit geometry)
+// EMPTY_INDOOR voxels: efficiency ~0.3-0.5 (some probes hit walls, some see empty space)
+// EMPTY_SKY/INSIDE_WALL: efficiency ~0 (all probes wasted)
+```
+
+This creates a 3D scalar field where high values indicate "good places for DDGI probes."
+
+#### 4.13.3 Connected Component Extraction
+
+The efficiency field is thresholded (default: ≥ 0.3) to produce a binary mask. 3D flood-fill extracts connected components — each represents a **spatially contiguous region** that deserves its own DDGI volume.
+
+For Bistro, this naturally yields:
+- Each room → one connected component
+- Each corridor → one connected component (long and thin)
+- Courtyard → one large outdoor component
+- Stairwells → one vertical component
+
+#### 4.13.4 OBB Fitting via PCA
+
+For each connected component, fit an Oriented Bounding Box using Principal Component Analysis:
+
+1. Collect all voxel centers in the component as a point cloud
+2. Compute the centroid → volume origin
+3. Compute the 3×3 covariance matrix → eigenvectors give the OBB axes
+4. Project points onto each axis → min/max gives the OBB extent
+5. The OBB orientation naturally aligns with room walls (PCA finds the dominant directions)
+
+```cpp
+struct CandidateVolume {
+    float3 origin;       // centroid of voxel cluster
+    float3 eulerAngles;  // from PCA eigenvectors → rotation matrix
+    int3   probeCounts;  // extent / probeSpacing, rounded up
+    float  efficiency;   // mean voxel efficiency within this volume
+    AABB   worldAABB;    // for frustum culling
+};
+```
+
+#### 4.13.5 Greedy Volume Selection
+
+Connected components may overlap (e.g., a room and its adjacent corridor share boundary voxels). Greedy selection with a coverage map resolves this:
+
+1. Sort candidate volumes by `efficiency × volume` (largest, most efficient first)
+2. For each candidate in order:
+   - Mark its voxels as "covered" in a global occupancy mask
+   - If ≥ 70% of its voxels are already covered by previous volumes, skip it
+   - Otherwise, create the volume and mark its voxels as covered
+3. Stop when coverage reaches 95% of the efficiency field or max volume count (default: 32)
+
+#### 4.13.6 Post-Processing
+
+After greedy selection, apply cleanup passes:
+
+| Step | Description |
+|---|---|
+| **Size clamp** | Volumes smaller than 3×3×3 probes are discarded (too small to be useful). Their voxels are left for SSGI to handle. |
+| **Merge aligned neighbors** | If two volumes have similar OBB orientation (dot product > 0.9) and their AABBs touch or overlap, merge them into one larger volume. This reduces the number of volumes without sacrificing probe efficiency. |
+| **Outdoor expansion** | For `EMPTY_SKY` voxels adjacent to `SURFACE` voxels, expand the nearest volume by 1-2 probe rows to capture outdoor indirect at building edges. |
+| **Padding** | Each volume is padded by 1 probe spacing on all sides to ensure probes near volume edges can still interpolate correctly. |
+
+#### 4.13.7 Scene Examples
+
+**Sponza** (single open hall, ~60m × 20m × 25m):
+```
+Voxelization: 60×20×25 = 30,000 voxels at 1m
+Connected components: 1 (the entire interior)
+OBB fit: roughly axis-aligned, matching the building orientation
+Result: 1 volume, 20×10×12 probes at 3m spacing
+```
+
+**Bistro** (multi-room, ~80m × 40m × 15m):
+```
+Voxelization: 80×40×15 = 48,000 voxels at 1m
+Connected components: ~35 (each room, corridor, outdoor area)
+After greedy selection + merge: 10-18 volumes
+Example volumes:
+  - Main dining room: 12×8×6 probes, OBB aligned with room walls
+  - Kitchen: 8×6×6 probes, rotated 15° to match wall orientation
+  - Outdoor courtyard: 16×12×4 probes, axis-aligned
+  - Narrow corridor: 20×3×4 probes (long thin volume)
+  - Stairwell: 4×4×8 probes (vertical volume)
+Total probes: ~3,000-5,000 (vs ~12,000 for one giant volume)
+Probe efficiency: ~70-85% (vs ~30% for one giant volume)
+```
+
+#### 4.13.8 Runtime Behavior
+
+These volumes are **static** — positioned once at scene load, never move. Unlike ISVs, they don't follow the camera. This is ideal for the bake workflow:
+
+- Volumes are placed where geometry actually exists
+- No probes in walls, sky, or disconnected void
+- Probe classification (#4.7) can still deactivate individual probes near dynamic objects
+- Bake mode (#4.12) converges these volumes and then disables RT
+
+For moving-camera scenarios, the static volumes can be supplemented with a single camera-following "player bubble" ISV that covers the area immediately around the viewer.
+
+#### 4.13.9 Implementation Outline
+
+```cpp
+// In SceneLoader or a new DDGIVolumePlacer class:
+struct DDGIVolumePlacer {
+    struct Config {
+        float voxelSize       = 1.0f;   // meters per voxel
+        float probeSpacing    = 2.0f;   // meters between probes
+        float efficiencyThresh = 0.3f;  // minimum voxel efficiency
+        float coverageTarget  = 0.95f;  // stop when this fraction of voxels is covered
+        uint32_t maxVolumes   = 32;     // hard limit
+        float minVolumeProbes = 27;     // 3×3×3 minimum
+    };
+
+    std::vector<rtxgi::DDGIVolumeDesc> PlaceVolumes(
+        const std::vector<MeshInstance>& sceneGeometry,
+        const Config& config);
+
+private:
+    // Step 1: Voxelize scene, classify each voxel
+    VoxelGrid Voxelize(const AABB& sceneBounds, float voxelSize);
+    
+    // Step 2: Score voxels by probe efficiency
+    void ScoreVoxels(VoxelGrid& grid, const TLAS& tlas);
+    
+    // Step 3: Extract connected components above efficiency threshold
+    std::vector<Component> ExtractComponents(const VoxelGrid& grid, float threshold);
+    
+    // Step 4: Fit OBB to each component via PCA
+    CandidateVolume FitOBB(const Component& comp, float probeSpacing);
+    
+    // Step 5: Greedy coverage-based selection
+    std::vector<CandidateVolume> GreedySelect(
+        std::vector<CandidateVolume>& candidates,
+        const VoxelGrid& grid, float coverageTarget, uint32_t maxVolumes);
+    
+    // Step 6: Post-process (merge, pad, clamp)
+    void PostProcess(std::vector<CandidateVolume>& volumes);
+};
+```
+
+#### 4.13.10 Design Rationale
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Voxel-based vs BVH traversal | Simple 3D voxel grid | Much simpler to implement; BVH traversal is overkill for coarse placement decisions. |
+| PCA OBB vs AABB | OBB | Rooms are rarely axis-aligned. PCA OBB naturally aligns with dominant wall directions, reducing wasted probes at diagonal walls. |
+| Greedy vs global optimization | Greedy with coverage map | Global optimization (e.g., integer programming) is intractable for 3D volume placement. Greedy with coverage tracking achieves >90% of optimal in practice. |
+| Static vs ISV | Static placement | Matches the bake workflow; volumes don't need to move. ISVs are for camera-following runtime scenarios. |
+| Ray-cast voxel classification | Use existing TLAS/BLAS | Scene already has RT acceleration structures built at load time. Casting a few rays per voxel is fast (~4 rays × 50K voxels = 200K rays, <1ms on GPU). |
+| Outdoor expansion | Extend by 1-2 probe rows | Building exteriors need indirect too. Expanding volumes slightly captures light bounce off facades. |
+
 ---
 
 ## 5. Feature Dependency Map & Disabled Features
