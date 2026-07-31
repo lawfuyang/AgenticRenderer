@@ -133,7 +133,6 @@ public:
             constants.SetFrame(g_Renderer.m_FrameNumber);
             constants.SetRayDistance(g_Renderer.m_SSGI_RayDistance);
             constants.SetThickness(g_Renderer.m_SSGI_Thickness);
-            constants.SetMaxRadiance(g_Renderer.m_SSGI_MaxRadiance);
             constants.SetSteps(g_Renderer.m_SSGI_Steps);
             constants.SetRefineSteps(g_Renderer.m_SSGI_RefineSteps);
             commandList->writeBuffer(cb, &constants, sizeof(constants), 0);

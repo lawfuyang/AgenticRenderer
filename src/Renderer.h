@@ -342,7 +342,6 @@ struct Renderer
     float   m_SSGI_Thickness          = 0.5f;   // view-space depth tolerance, world units
     int     m_SSGI_Steps              = 20;
     int     m_SSGI_RefineSteps        = 5;
-    float   m_SSGI_MaxRadiance        = 25.0f;  // firefly clamp, scene-scale dependent
 
     // SSGI temporal reproject
     float   m_SSGI_TemporalBlend      = 0.9f;

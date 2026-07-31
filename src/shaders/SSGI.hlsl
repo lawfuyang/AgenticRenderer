@@ -150,19 +150,6 @@ float3 SSGISampleHitRadiance(float2 coords, bool bIsMissedRay, float3 lView, flo
     return directLight + reprojectedGI.rgb * screenEdgeFactor;
 }
 
-// Firefly suppression. A single ray landing on a small very bright emitter (emissive
-// geometry above all) returns a radiance orders of magnitude above the mean, and since the
-// probability of hitting it is low the estimator has heavy tails: the temporal filter needs
-// hundreds of frames to average such a sample out, and TAA smears it across neighbouring
-// pixels in the meantime — which is what shows up as fireflies. Clamping the luminance of a
-// single sample biases the result (energy loss on genuinely bright bounces) but is the
-// standard trade for a real-time estimator.
-float3 SSGIClampRadiance(float3 radiance)
-{
-    float lum = Luminance(radiance);
-    return (lum > g_SSGI.m_MaxRadiance) ? radiance * (g_SSGI.m_MaxRadiance / lum) : radiance;
-}
-
 float3 SSGITraceRay(float3 l, float3 viewPos, float jitter, float3 worldNormal, float roughness, bool bIsDiffuseSample,
                     float3 sunRadiance, out bool bIsMissedRay, out float3 outHitPos)
 {
@@ -175,7 +162,7 @@ float3 SSGITraceRay(float3 l, float3 viewPos, float jitter, float3 worldNormal, 
     outHitPos = hitPos;
 
     float3 radiance = SSGISampleHitRadiance(coords, bIsMissedRay, l, worldNormal, roughness, bIsDiffuseSample, sunRadiance);
-    return SSGIClampRadiance(radiance);
+    return radiance;
 }
 
 struct SSGIPSOutput

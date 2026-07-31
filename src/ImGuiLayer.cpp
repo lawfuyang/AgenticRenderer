@@ -253,11 +253,6 @@ void ImGuiLayer::UpdateFrame()
                     ImGui::SliderInt("Refine Steps", &g_Renderer.m_SSGI_RefineSteps, 0, 16);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Binary refinement iterations after initial hit — 0 disables refinement");
-                    ImGui::DragFloat("Max Radiance", &g_Renderer.m_SSGI_MaxRadiance, 0.5f, 0.1f, 1000.0f, "%.1f");
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Firefly clamp: max luminance accepted from a single ray. Lower = fewer fireflies from "
-                                          "small bright emitters, at the cost of losing energy on genuinely bright bounces. "
-                                          "Scene-scale dependent");
 
                     ImGui::SeparatorText("Temporal");
                     ImGui::DragFloat("Blend", &g_Renderer.m_SSGI_TemporalBlend, 0.01f, 0.0f, 1.0f, "%.2f");
