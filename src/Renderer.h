@@ -348,6 +348,7 @@ struct Renderer
     float   m_SSGI_TemporalBlend      = 0.9f;
 
     // SSGI Poisson denoise
+    bool    m_SSGI_bDenoiseEnabled    = true;
     int     m_SSGI_DenoiseIterations  = 2;      // kernel radius doubles each iteration
     float   m_SSGI_DenoiseRadius      = 3.0f;
     float   m_SSGI_DenoisePhi         = 0.5f;

@@ -168,6 +168,14 @@ public:
             g_Renderer.AddFullScreenPass(params);
         }
 
+        // With denoising disabled the temporal pass renders straight into the accum write slot
+        // (the denoiser's output target), so the denoise passes can simply be skipped. Avoids
+        // both a redundant full-res copy and the D3D12 requirement that a placed render target
+        // be initialized by Discard/Clear/Copy before it can be used as a copy source.
+        const bool bDenoise = g_Renderer.m_SSGI_bDenoiseEnabled;
+        nvrhi::TextureHandle temporalOutDiffuse  = bDenoise ? temporalDiffuse  : accumWriteDiffuse;
+        nvrhi::TextureHandle temporalOutSpecular = bDenoise ? temporalSpecular : accumWriteSpecular;
+
         // ── Pass 2: temporal reproject → TemporalDiffuse/TemporalSpecular ──
         {
             const nvrhi::BufferDesc cbDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::SSGITemporalConstants), "SSGITemporalCB", 1);
@@ -195,8 +203,8 @@ public:
             nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);
 
             nvrhi::FramebufferDesc fbDesc;
-            fbDesc.addColorAttachment(temporalDiffuse);
-            fbDesc.addColorAttachment(temporalSpecular);
+            fbDesc.addColorAttachment(temporalOutDiffuse);
+            fbDesc.addColorAttachment(temporalOutSpecular);
             nvrhi::FramebufferHandle framebuffer = device->createFramebuffer(fbDesc);
 
             Renderer::RenderPassParams params;
@@ -213,6 +221,7 @@ public:
         // footprint grows geometrically instead of just being resampled at the same scale.
         // Ping-pongs between the scratch pair and the accum write slot, choosing the starting
         // target by parity so the final iteration always lands in the accum write slot.
+        if (bDenoise)
         {
             const uint32_t iterations = static_cast<uint32_t>(std::max(1, g_Renderer.m_SSGI_DenoiseIterations));
 
@@ -222,8 +231,8 @@ public:
 
                 nvrhi::TextureHandle dstDiffuse  = bWriteToAccum ? accumWriteDiffuse  : scratchDiffuse;
                 nvrhi::TextureHandle dstSpecular = bWriteToAccum ? accumWriteSpecular : scratchSpecular;
-                nvrhi::TextureHandle srcDiffuse  = (i == 0) ? temporalDiffuse  : (bWriteToAccum ? scratchDiffuse  : accumWriteDiffuse);
-                nvrhi::TextureHandle srcSpecular = (i == 0) ? temporalSpecular : (bWriteToAccum ? scratchSpecular : accumWriteSpecular);
+                nvrhi::TextureHandle srcDiffuse  = (i == 0) ? temporalOutDiffuse  : (bWriteToAccum ? scratchDiffuse  : accumWriteDiffuse);
+                nvrhi::TextureHandle srcSpecular = (i == 0) ? temporalOutSpecular : (bWriteToAccum ? scratchSpecular : accumWriteSpecular);
 
                 const nvrhi::BufferDesc cbDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::SSGIDenoiseConstants), "SSGIDenoiseCB", 1);
                 const nvrhi::BufferHandle cb = device->createBuffer(cbDesc);
@@ -291,8 +300,8 @@ public:
             inputs.SetDepth(depth);
             inputs.SetRawDiffuse(rawDiffuse);
             inputs.SetRawSpecular(rawSpecular);
-            inputs.SetTemporalDiffuse(temporalDiffuse);
-            inputs.SetTemporalSpecular(temporalSpecular);
+            inputs.SetTemporalDiffuse(temporalOutDiffuse);
+            inputs.SetTemporalSpecular(temporalOutSpecular);
             inputs.SetPointSampler(CommonResources::GetInstance().PointClamp);
 
             nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(inputs);

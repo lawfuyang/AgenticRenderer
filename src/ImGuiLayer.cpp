@@ -265,6 +265,13 @@ void ImGuiLayer::UpdateFrame()
                         ImGui::SetTooltip("Max current-frame contribution vs history — 0 = freeze, 1 = no history, higher = faster convergence / more ghosting");
 
                     ImGui::SeparatorText("Denoise");
+                    ImGui::Checkbox("Enable Denoise", &g_Renderer.m_SSGI_bDenoiseEnabled);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Toggles the Poisson denoise passes. When off, the temporal result is passed through "
+                                          "unfiltered — use it to compare against the 'Temporal Diffuse' debug view and see "
+                                          "exactly what the denoiser contributes");
+
+                    ImGui::BeginDisabled(!g_Renderer.m_SSGI_bDenoiseEnabled);
                     ImGui::SliderInt("Iterations", &g_Renderer.m_SSGI_DenoiseIterations, 1, 5);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Number of Poisson denoise passes. The kernel radius doubles each iteration, so the "
@@ -291,6 +298,7 @@ void ImGuiLayer::UpdateFrame()
                     ImGui::DragFloat("Specular Phi", &g_Renderer.m_SSGI_DenoiseSpecularPhi, 0.5f, 0.5f, 200.0f, "%.1f");
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Extra specular separation — values >1 reduce blur on shiny/reflective surfaces");
+                    ImGui::EndDisabled();
 
                     ImGui::SeparatorText("Debug");
                     const char* ssgiDebugModes[] =
