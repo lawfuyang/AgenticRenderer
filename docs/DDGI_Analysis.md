@@ -1,7 +1,7 @@
 # DDGI Implementation — Analysis & Plan
 
 > **Phase:** DDGI (RTXGI Dynamic Diffuse Global Illumination) — standalone implementation phase  
-> **Goal:** Integrate RTXGI-DDGI SDK for baked/live indirect diffuse lighting (3 ISVs, probe ray tracing, indirect query), blended with SSGI for high-frequency detail
+> **Goal:** Integrate RTXGI-DDGI SDK for baked/live indirect diffuse lighting (probe ray tracing, indirect query), blended with SSGI for high-frequency detail
 
 ---
 
@@ -229,95 +229,11 @@ DDGI uses these texture arrays:
 | Variability | R16_FLOAT | Like irradiance (no border) | Per-texel coefficient of variation |
 | Variability Avg | RG16_FLOAT | Reduction pyramid | Average across volume |
 
-### 4.4 Volume Placement Strategy
+### 4.4 Automatic Scene-Driven Volume Placement
 
-Three camera-following Infinite Scrolling Volumes (ISV) with decreasing density and increasing size as distance grows. **All three volumes are updated every frame**, but each volume only processes a subset of its probe rows via row slicing — giving perfectly consistent per-frame ray dispatch.
+Volumes are placed automatically from scene geometry at load time. See §4.12 for the full algorithm (voxelization, PCA-OBB fitting, greedy selection). This replaces the earlier ISV-based manual placement strategy with a scene-adaptive approach that minimizes probes in empty space.
 
-```
-          Near ISV              Medium ISV               Far ISV
-         ┌─────────┐         ┌───────────────┐      ┌─────────────────────┐
-         │ ████████ │         │ · · · · · · · │      │ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ │
-         │ ──────── │         │ ───────────── │      │ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ │
-         │ · · · ·  │ camera  │ · · · · · · · │      │ ───────────────────── │
-         └─────────┘         └───────────────┘      │ · · · · · · · · · ·  │
-     row slice ÷2:              row slice ÷2:       │ · · · · · · · · · ·  │
-     █ = this frame             █ = this frame      └─────────────────────┘
-     · = next frame             · = next frame    row slice ÷4:
-                                                     █ = this frame
-                                                     · = next 3 frames
-```
-
-| Property | Near ISV | Medium ISV | Far ISV |
-|---|---|---|---|
-| **Probe counts** | 20×12×20 ≈ 4,800 | 20×10×20 ≈ 4,000 | 20×10×20 ≈ 4,000 |
-| **Probe spacing** | 1.5 m | 4.0 m | 12.0 m |
-| **Volume extent** | 30×18×30 m | 80×40×80 m | 240×120×240 m |
-| **Rays per probe** | 256 | 128 | 64 |
-| **Total rays (full volume)** | ~1,228,800 | ~512,000 | ~256,000 |
-| **Row slice** | ÷ 2 | ÷ 2 | ÷ 4 |
-| **Rows per frame** | 6 of 12 | 5 of 10 | 2–3 of 10 |
-| **Probes per frame** | 2,400 | 2,000 | 800–1,200 |
-| **Rays per frame** | ~614,400 | ~256,000 | ~51,200–76,800 |
-| **Irradiance texels** | 10×10 (R10G10B10A2) | 8×8 (R10G10B10A2) | 6×6 (R10G10B10A2) |
-| **GPU memory** | ~19 MB | ~10 MB | ~7 MB |
-| **Total rays/frame (consistent): ~922K–947K** ||||
-
-**Row slicing mechanics:**
-- Each volume tracks a `currentRowOffset` that advances by `probeRows / rowSliceDivisor` each frame
-- Near: offset advances by 6 rows/frame, wraps at row 0 after 2 frames → each probe updated every 2nd frame
-- Medium: offset advances by 5 rows/frame, wraps after 2 frames → each probe updated every 2nd frame
-- Far: offset advances by 2 or 3 rows/frame (alternating), wraps after 4 frames → each probe updated every 4th frame
-- Probes scrolled in via ISV movement get updated immediately in their first slice (special-case at the scroll edge)
-
-**Design rationale:**
-- **Near ISV** provides high-quality indirect lighting for surfaces close to the camera where detail is most visible. Small volume keeps probe count manageable despite tight spacing. Halving the rows means temporal latency of only 1 frame — imperceptible.
-- **Medium ISV** covers the mid-range where indirect lighting still matters but at less demanding fidelity. 2-frame update latency is fine for mid-distance.
-- **Far ISV** provides low-frequency ambient indirect for distant geometry. Coarse probe grid + fewer rays + 4-frame latency keeps cost negligible. The large extent ensures outdoor scenes have indirect coverage at distance.
-- **Consistent ~930K rays/frame** means predictable GPU budget, no frame-to-frame variance.
-
-All three volumes use `EDDGIVolumeMovementType::Scrolling` and follow the camera via `SetScrollAnchor(cameraWorldPos)`. Frustum-cull each volume: if a volume's AABB is completely outside the frustum, skip its probe update for that frame.
-
-### 4.5 Probe Update Strategies
-
-With row slicing, all 3 ISVs are updated every frame at a perfectly consistent workload:
-
-```
-Frame 0 ─────────────────────────────────────────────────────
-  Near:  rows 0-5   (6 of 12)    ████████████········
-  Med:   rows 0-4   (5 of 10)    ██████████··········
-  Far:   rows 0-1   (2 of 10)    ████················
-  Rays:  614K + 256K + 51K = ~922K
-
-Frame 1 ─────────────────────────────────────────────────────
-  Near:  rows 6-11  (6 of 12)    ············████████████
-  Med:   rows 5-9   (5 of 10)    ··········██████████····
-  Far:   rows 2-3   (2 of 10)    ····████················
-  Rays:  614K + 256K + 51K = ~922K
-
-Frame 2 ─────────────────────────────────────────────────────
-  Near:  rows 0-5   (6 of 12)    ████████████········  (wraps)
-  Med:   rows 0-4   (5 of 10)    ██████████··········  (wraps)
-  Far:   rows 4-6   (3 of 10)    ········██████········
-  Rays:  614K + 256K + 77K = ~947K
-
-Frame 3 ─────────────────────────────────────────────────────
-  Near:  rows 6-11  (6 of 12)    ············████████████
-  Med:   rows 5-9   (5 of 10)    ··········██████████····
-  Far:   rows 7-9   (3 of 10)    ··············██████····
-  Rays:  614K + 256K + 77K = ~947K
-
-... repeats every 4 frames
-```
-
-**Key properties:**
-- **Consistent ray count** — between 922K and 947K rays every frame (3% variance max)
-- **No bursts** — unlike staggered-volume approaches where frame 0 does 2M rays
-- **Latency proportional to distance** — near probes have 1-frame latency, far probes 4-frame
-- **Scroll-edge handling** — new probes introduced by ISV scrolling are force-updated in their first slice, ensuring moving camera doesn't cause stale indirect at scroll boundaries
-
-All RTXGI SDK calls (`UpdateDDGIVolumeProbes`, `RelocateDDGIVolumeProbes`, `ClassifyDDGIVolumeProbes`) operate on the row slice only, not the entire volume.
-
-### 4.6 Volume Culling
+### 4.5 Volume Culling
 
 **Q: Frustum culling? Occlusion culling for volumes?**
 
@@ -325,7 +241,7 @@ All RTXGI SDK calls (`UpdateDDGIVolumeProbes`, `RelocateDDGIVolumeProbes`, `Clas
 - **Frustum culling:** `DDGIVolume::GetAxisAlignedBoundingBox()` → test against camera frustum. If volume is outside frustum, skip probe updates for that frame.
 - **Occlusion culling:** More complex. Can use the HZB from the main camera pass. If all probes in a volume are behind occluders (as determined by HZB), skip the volume. **Not recommended for initial implementation** — frustum culling is sufficient.
 
-### 4.7 Variability & Convergence
+### 4.6 Variability & Convergence
 
 **Q: When to stop dispatching rays? When probe results are "stable"?**
 
@@ -338,10 +254,10 @@ if (variability < 0.03 && !sceneChanged)
 
 However, in practice for a real-time game:
 - Probes **never fully converge** because the camera moves
-- With ISV, new probes are constantly being introduced at scroll edges
-- **Recommendation:** Always update probes for the active ISV; only use variability for optional stationary volumes
+- With multiple scene-driven volumes, new probes are constantly being introduced at volume edges as the camera moves
+- **Recommendation:** Always update probes for active volumes; only use variability for optional stationary volumes
 
-### 4.8 Indirect Diffuse vs Specular
+### 4.7 Indirect Diffuse vs Specular
 
 **Q: Is DDGI only for indirect diffuse? What about indirect specular?**
 
@@ -350,7 +266,7 @@ However, in practice for a real-time game:
 - Ray-traced reflections — requires RT support (not in NormalBasic scope)
 - **Recommendation:** DDGI for indirect diffuse + SSR (if desired) for indirect specular
 
-### 4.9 Non-Volume Areas (Far Distance)
+### 4.8 Non-Volume Areas (Far Distance)
 
 **Q: What about indirect lighting for areas outside volumes?**
 
@@ -361,7 +277,7 @@ However, in practice for a real-time game:
 
 For NormalBasic: blend with sky ambient outside DDGI volume. This is what the test harness does.
 
-### 4.10 DDGI Integration Architecture for HobbyRenderer
+### 4.9 DDGI Integration Architecture for HobbyRenderer
 
 ```
 class DDGIRenderer : public IRenderer
@@ -425,7 +341,7 @@ In bake mode, steps 1-4 are skipped entirely. The persistent irradiance/distance
 - **Zero transient allocations** for ray data
 - **TLAS not needed** in bake mode (see §5.1)
 
-### 4.11 Ray Tracing Requirement for DDGI
+### 4.10 Ray Tracing Requirement for DDGI
 
 **Critical note:** DDGI requires GPU ray tracing for probe ray tracing. The probe rays need to trace against the scene's TLAS/BLAS. This means:
 
@@ -438,7 +354,7 @@ This is a key trade-off: NormalBasic removes ReSTIR DI/GI/SHARC but adds DDGI wh
 - Inline RT is simpler and lighter than the DXR hit-group pipeline — no shader tables, no state objects for hit groups
 - Can be amortized over multiple frames
 
-### 4.12 DDGI Bake Mode — Use HWRT to Converge, Then Disable RT
+### 4.11 DDGI Bake Mode — Use HWRT to Converge, Then Disable RT
 
 The primary use case for DDGI in NormalBasic is **baking** — not real-time updating. The workflow:
 
@@ -492,7 +408,7 @@ if (ImGui::CollapsingHeader("DDGI (Global Illumination)"))
 - **Persistent textures survive disabling:** The irradiance, distance, and probe data textures are allocated as long-lived GPU resources (not per-frame transient). When `m_EnableDDGI` is toggled off, these textures retain their last converged state — the indirect query shader simply reads from them as before.
 - **DDGI SDK state is preserved:** The SDK's `DDGIVolume` objects and their internal state (probe offsets, classifications) remain in host memory. The renderer just stops calling `Update()` and `UpdateDDGIVolumeProbes()`.
 - **No hot-reload needed:** Switching between bake and live modes is a single checkbox — no scene reload, no probe data loss. Re-enabling DDGI resumes probe updates from the current converged state.
-- **Scrolling still works:** If the camera moves after baking, probes don't follow (ISV scrolling is part of `Update()`, which is skipped). For static-camera scenes this is perfect. For moving cameras, re-enable DDGI briefly to re-converge at the new position.
+- **Volumes are static at scene load:** When `m_EnableDDGI` is toggled off, the irradiance, distance, and probe data textures retain their last converged state
 - **TLAS is freed in bake mode:** When `m_EnableDDGI = false`, `TLASRenderer` can be skipped entirely (see §5.1). No BLAS rebuild, no TLAS update — pure raster pipeline.
 - **Convergence detection:** The SDK provides `CalculateDDGIVolumeVariability()` and `ReadbackDDGIVolumeVariability()` (see §4.9). When variability drops below threshold across all volumes, probes are considered "converged enough." This can be used for automatic bake stop.
 
@@ -513,7 +429,7 @@ Developer workflow (for shipping):
   5. At runtime: load baked textures, run indirect query only (m_EnableDDGI = false)
 
 
-### 4.13 Automatic Scene-Driven Volume Placement
+### 4.12 Automatic Scene-Driven Volume Placement
 
 #### 4.13.1 Motivation
 
@@ -835,10 +751,7 @@ float3 color = directDiffuse + indirectGI;
 1. Integrate RTXGI-DDGI SDK (`rtxgi-sdk/include`, `rtxgi-sdk/shaders`, `rtxgi-sdk/src`)
 2. Create `src/DDGIRenderer.h` / `src/DDGIRenderer.cpp`
 3. Compile DDGI SDK shaders with `RTXGI_DDGI_RESOURCE_MANAGEMENT=0` (unmanaged), bindless mode
-4. Create 3 camera-following ISVs (near / medium / far) with row slicing:
-   - Near: 20×12×20, 1.5m spacing, 256 rays/probe, row slice ÷2
-   - Medium: 20×10×20, 4.0m spacing, 128 rays/probe, row slice ÷2
-   - Far: 20×10×20, 12.0m spacing, 64 rays/probe, row slice ÷4
+4. Implement automatic scene-driven volume placement (§4.12): voxelize scene, fit OBBs via PCA, greedy selection
 5. Implement probe ray tracing (compute shader with inline `RayQuery` using existing TLAS)
 6. Call SDK: `UpdateDDGIVolumeProbes()`, `RelocateDDGIVolumeProbes()`, `ClassifyDDGIVolumeProbes()`
 7. Fullscreen CS pass calling `DDGIGetVolumeIrradiance()` → writes `g_RG_DDGIIndirect`
@@ -856,7 +769,7 @@ float3 color = directDiffuse + indirectGI;
    - DDGI enable checkbox + convergence threshold + auto-stop
    - DDGI probe density presets (Low/Medium/High)
    - Variability readout
-3. Profile and tune 3-ISV probe density, row slice divisors, ray counts per probe
+3. Profile and tune scene-driven volume count, probe density, ray counts per probe
 4. Test DDGI bake workflow: enable → wait for convergence → disable → verify zero RT cost + correct indirect
 5. Test corner cases: moving camera with baked probes, thin geometry, outdoor scenes, scroll-edge probe updates
 6. Verify TLAS is not scheduled in bake mode (`m_EnableDDGI = false`)
@@ -879,7 +792,7 @@ Six DDGI metrics and five SSGI metrics determine which technique is more trustwo
 
 | # | Metric | Source | Range | Interpretation |
 |---|--------|--------|-------|----------------|
-| 1 | **Aggregate Volume Coverage** | Σ `DDGIGetVolumeBlendWeight(worldPos, volume_i)` across all volumes | [0, N] | DDGI samples irradiance from every volume with non-zero blend weight and accumulates the result weighted by each volume's contribution (see reference sample `IndirectCS.hlsl`). With 3 overlapping ISVs, most of the visible scene is covered by at least one volume. Only when ALL volumes return zero weight (far outside the combined extent) does DDGI truly have no data → SSGI must take over. |
+| 1 | **Aggregate Volume Coverage** | Σ `DDGIGetVolumeBlendWeight(worldPos, volume_i)` across all volumes | [0, N] | DDGI samples irradiance from every volume with non-zero blend weight and accumulates the result weighted by each volume's contribution (see reference sample `IndirectCS.hlsl`). With scene-driven volumes, most of the visible scene is covered by at least one volume. Only when ALL volumes return zero weight does DDGI truly have no data → SSGI must take over. |
 | 2 | **Probe Resolution Ratio** | `probeSpacing / pixelFootprintAt(worldPos)` | (0, ∞) | How many screen pixels fit between two adjacent probes. > 4 means each probe covers ≥4×4 pixels → DDGI is visibly coarse → SSGI preferred for detail. |
 | 3 | **Distance to Nearest Probe** | `min(|worldPos - probeWorldPos_i|) / probeSpacing` | [0, √3] | Normalized distance within the probe voxel. 0 = exactly at a probe; ~0.87 = at voxel corner. Higher values mean worse trilinear interpolation quality. |
 | 4 | **DDGI Irradiance Spatial Gradient** | `|∇irradiance|` between adjacent probe texels | (0, ∞) | High gradient means sharp lighting change that DDGI's bilinear/trilinear interpolation cannot capture smoothly → SSGI can resolve it better. |
@@ -989,7 +902,7 @@ if (ddgiBlockiness > 0.5 && ssgiHitConf > 0.5)
 | **Screen-edge missing GI** | ❌ DDGI covers everywhere | ✅ Visible | ✅ Fixed: DDGI fills where SSGI can't see |
 | **Disocclusion noise** | ❌ No temporal dependency | ✅ Visible | ✅ Fixed: DDGI covers disoccluded regions |
 | **Light leaking through walls** | ✅ Visible with thin geometry | ❌ Handled by ray march | ✅ Fixed: SSGI takes over near thin geometry |
-| **Temporal lag on moving camera** | ✅ With row-sliced ISVs | ❌ Per-frame | ✅ Mitigated: SSGI fills during DDGI latency |
+| **Temporal lag on moving camera** | ✅ With static volumes | ❌ Per-frame | ✅ Mitigated: SSGI fills during DDGI latency |
 | **Outside-volume ambient** | ✅ Missing | ❌ SSGI works on-screen | ✅ Fixed: SSGI fills outside volumes |
 | **Ray-march misses (sky)** | ❌ DDGI has data | ✅ No SSGI data | ✅ Fixed: DDGI covers missed rays |
 
@@ -1041,7 +954,7 @@ Render Pass Order (NormalBasic with DDGI+SSGI):
 |---|---|---|
 | Who owns the blend? | SSGIRenderer (Compose pass) | SSGI already produces `g_RG_SSGIComposed`; adding DDGI as an input keeps DeferredRenderer unchanged. |
 | DDGI or SSGI first? | DDGI takes precedence | DDGI is always physically grounded (world-space); SSGI is an approximation. DDGI may be coarse but it's never wrong. |
-| Outside-volume behavior | SSGI only | `DDGIGetVolumeBlendWeight()=0` across ALL volumes → ddgiConfidence=0 → pure SSGI. With 3 ISVs this is rare. |
+| Outside-volume behavior | SSGI only | `DDGIGetVolumeBlendWeight()=0` across ALL volumes → ddgiConfidence=0 → pure SSGI. With scene-driven volumes this is rare. |
 | Screen-edge behavior | DDGI only | SSGI confidence drops to 0 near screen edges → pure DDGI. DDGI has no screen-edge problem. |
 | Disocclusion handling | DDGI during disocclusion | SSGI temporal age is 0 → ssgiAgeConf = 0 → pure DDGI. |
 | Thin geometry | SSGI preferred | High depth gradient → lower DDGI confidence via probeResRatio → SSGI takes over. |
@@ -1157,7 +1070,7 @@ This dilation costs ~4 extra tiles at each boundary, effectively negligible.
 | 16×16 | 4,050 | ~64 thread groups | Good balance — matches typical probe cell size at 1.5m spacing |
 | 32×32 | 1,012 | ~16 thread groups | Coarse — may leave visible blocks of DDGI-only at boundaries |
 
-**Recommended: 16×16 tiles.** At 1080p this produces ~4K tiles. The classification pass dispatches ~64 thread groups (1 thread per tile), which completes in <0.01ms. A 16×16 tile at 1.5m near-ISV probe spacing covers roughly the same world-space area as 2-3 probe cells — a natural granularity for the DDGI quality decision.
+**Recommended: 16×16 tiles.** At 1080p this produces ~4K tiles. The classification pass dispatches ~64 thread groups (1 thread per tile), which completes in <0.01ms. A 16×16 tile with typical 1.5m probe spacing covers roughly the same world-space area as 2-3 probe cells — a natural granularity for the DDGI quality decision.
 
 #### 9.8.7 Confidence Threshold Design
 
@@ -1173,7 +1086,7 @@ The tile classification threshold must be **conservative** — it's better to ru
 
 #### 9.8.8 Expected Performance Impact
 
-For a typical interior scene at 1080p with 3 ISVs, assuming ~70% of screen pixels are well-covered by near/medium probes:
+For a typical interior scene at 1080p with scene-driven volumes, assuming ~70% of screen pixels are well-covered by probes:
 
 | Metric | Full-Screen SSGI | Tile-Based SSGI |
 |---|---|---|
@@ -1235,7 +1148,7 @@ The compose pass should remain full-screen to ensure every pixel has a valid `g_
 | Decision | Choice | Rationale |
 |---|---|---|
 | Shadow technique | CSM (4 cascades) — prior phase | Well-understood, no RT hardware needed for shadows |
-| DDGI volume count | 3 ISVs (near/medium/far, camera-following) | High detail near, ambient far; consistent ~930K rays/frame |
+| DDGI volume count | Scene-driven (automatic from geometry) | Minimal probes in empty space; volumes fit scene topology |
 | DDGI near probe density | 20×12×20, 1.5m spacing | High-quality indirect for surfaces close to camera |
 | DDGI medium probe density | 20×10×20, 4.0m spacing | Balanced mid-range coverage |
 | DDGI far probe density | 20×10×20, 12.0m spacing | Low-frequency ambient for distant geometry |
