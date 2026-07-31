@@ -78,7 +78,17 @@ float3 TangentToWorld(float3 T, float3 B, float3 N, float3 V)
 }
 
 // Sample blue noise: kBlueNoiseSize x kBlueNoiseSize RG texture.
-// Samples twice with per-frame offsets to get 4 decorrelated channels in [0,1].
+// Samples twice with per-frame offsets to get 4 decorrelated channels in [0,1], then
+// animates the values with the golden-ratio sequence
+// [Heitz & Belcour 2019, "Distributing Monte Carlo Errors as a Blue Noise in Screen Space"].
+//
+// The position shift alone is NOT enough: the per-frame strides are taken modulo the
+// texture size (9491 % 64 == 19, 7459 % 64 == 35, ...), all coprime with 64, so the
+// 4-tuple sequence repeats exactly every kBlueNoiseSize frames. A temporal accumulator fed
+// by it converges to the mean of a fixed 64-sample set — i.e. it freezes on a spatially
+// noisy estimate instead of converging to a smooth one.
+// The four irrational increments extend the period to kBlueNoiseFrameCycle while preserving
+// the blue-noise spatial spectrum (they are pure per-pixel value offsets).
 float4 SampleBlueNoise(Texture2D<float4> blueNoise, uint2 pixelPos, uint frameIndex)
 {
     const uint mask = srrhi::CommonConsts::kBlueNoiseSize - 1u;
@@ -86,7 +96,53 @@ float4 SampleBlueNoise(Texture2D<float4> blueNoise, uint2 pixelPos, uint frameIn
     uint2 p1 = (pixelPos + frameIndex * uint2(5851u, 3917u) + uint2(31u, 17u)) & mask;
     float2 a = blueNoise.Load(int3(p0, 0)).rg;
     float2 b = blueNoise.Load(int3(p1, 0)).rg;
-    return float4(a, b);
+
+    // Wrapped so the float multiply below keeps enough mantissa to stay well distributed.
+    const uint  kBlueNoiseFrameCycle = 4096u;
+    const float4 kGoldenRatioSequence = float4(0.618033988749895f, 0.324717957244746f,
+                                               0.220744084605760f, 0.167303978261419f);
+    float cycleIndex = float(frameIndex & (kBlueNoiseFrameCycle - 1u));
+
+    return frac(float4(a, b) + kGoldenRatioSequence * cycleIndex);
+}
+
+// Catmull-Rom bicubic texture sampling: 9 bilinear taps over a 4x4 texel footprint.
+// tex: texture to sample, samp: linear sampler, uv: [0,1] UV, resolution: texture dimensions.
+float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState samp, float2 uv, float2 resolution)
+{
+    float2 samplePos = uv * resolution;
+    float2 texPos1 = floor(samplePos - 0.5f) + 0.5f;
+
+    float2 f = samplePos - texPos1;
+
+    float2 w0 = f * (-0.5f + f * (1.0f - 0.5f * f));
+    float2 w1 = 1.0f + f * f * (-2.5f + 1.5f * f);
+    float2 w2 = f * (0.5f + f * (2.0f - 1.5f * f));
+    float2 w3 = f * f * (-0.5f + 0.5f * f);
+
+    float2 w12 = w1 + w2;
+    float2 offset12 = w2 / (w1 + w2);
+
+    float2 texPos0 = texPos1 - 1.0f;
+    float2 texPos3 = texPos1 + 2.0f;
+    float2 texPos12 = texPos1 + offset12;
+
+    texPos0 /= resolution;
+    texPos3 /= resolution;
+    texPos12 /= resolution;
+
+    float4 result = 0.0f;
+    result += tex.SampleLevel(samp, float2(texPos0.x, texPos0.y), 0.0f) * w0.x * w0.y;
+    result += tex.SampleLevel(samp, float2(texPos12.x, texPos0.y), 0.0f) * w12.x * w0.y;
+    result += tex.SampleLevel(samp, float2(texPos3.x, texPos0.y), 0.0f) * w3.x * w0.y;
+    result += tex.SampleLevel(samp, float2(texPos0.x, texPos12.y), 0.0f) * w0.x * w12.y;
+    result += tex.SampleLevel(samp, float2(texPos12.x, texPos12.y), 0.0f) * w12.x * w12.y;
+    result += tex.SampleLevel(samp, float2(texPos3.x, texPos12.y), 0.0f) * w3.x * w12.y;
+    result += tex.SampleLevel(samp, float2(texPos0.x, texPos3.y), 0.0f) * w0.x * w3.y;
+    result += tex.SampleLevel(samp, float2(texPos12.x, texPos3.y), 0.0f) * w12.x * w3.y;
+    result += tex.SampleLevel(samp, float2(texPos3.x, texPos3.y), 0.0f) * w3.x * w3.y;
+
+    return max(result, 0.0f);
 }
 
 // Reconstruct world-space position from a UV coordinate, depth value, and clip-to-world matrix.
