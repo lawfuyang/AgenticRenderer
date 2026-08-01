@@ -98,7 +98,7 @@ void ImGuiLayer::UpdateFrame()
             if (g_Renderer.m_Mode == RenderingMode::NormalBasic)
             {
                 ImGui::Separator();
-                if (ImGui::TreeNodeEx("CSM (Cascaded Shadow Maps)", ImGuiTreeNodeFlags_DefaultOpen))
+                if (ImGui::TreeNodeEx("CSM (Cascaded Shadow Maps)", ImGuiTreeNodeFlags_None))
                 {
                     ImGui::Checkbox("Enable CSM Shadows", &g_Renderer.m_EnableCSMShadows);
 
@@ -178,7 +178,7 @@ void ImGuiLayer::UpdateFrame()
             ImGui::Separator();
 
             // ── Indirect Lighting Technique ─────────────────────────────────
-            if (ImGui::TreeNodeEx("Indirect Lighting", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::TreeNodeEx("Indirect Lighting", ImGuiTreeNodeFlags_None))
             {
                 // Helper: find a renderer by name and set its clear flag.
                 auto RequestRendererClear = [](const char* name)
@@ -318,6 +318,110 @@ void ImGuiLayer::UpdateFrame()
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("When enabled, DDGI probes are ray-traced and blended into the indirect lighting. "
                                           "When disabled (bake mode), persistent probe data is used with zero RT cost.");
+
+                    if (g_Renderer.m_EnableDDGIProbeTracing)
+                    {
+                        static const char* kDDGIDebugModes[] = { "Off", "Volume Wireframe" };
+                        int debugMode = static_cast<int>(g_Renderer.m_DDGIDebugMode);
+                        if (ImGui::Combo("DDGI Debug", &debugMode, kDDGIDebugModes, IM_ARRAYSIZE(kDDGIDebugModes)))
+                            g_Renderer.m_DDGIDebugMode = static_cast<uint32_t>(debugMode);
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Volume Wireframe: green wireframe box showing the DDGI probe volume bounds");
+
+                        // Draw OBB wireframe via ImDrawList
+                        if (g_Renderer.m_DDGIDebugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_VOLUME_WIREFRAME)
+                        {
+                            const rtxgi::DDGIVolumeDesc& desc = g_Renderer.m_Scene.m_DDGIVolume;
+                            if (desc.probeCounts.x > 0)
+                            {
+                                using namespace DirectX;
+
+                                const XMFLOAT4X4& worldToClip = g_Renderer.m_Scene.m_View.m_MatWorldToClip;
+                                const XMMATRIX matVP = XMLoadFloat4x4(&worldToClip);
+
+                                auto WorldToScreen = [&](float wx, float wy, float wz) -> XMFLOAT2
+                                {
+                                    XMVECTOR p = XMVectorSet(wx, wy, wz, 1.0f);
+                                    XMVECTOR clip = XMVector4Transform(p, matVP);
+                                    float w = XMVectorGetW(clip);
+                                    float safeW = w > 1e-5f ? w : 1e-5f;
+                                    XMVECTOR ndc = XMVectorDivide(clip, XMVectorReplicate(safeW));
+                                    float sx = (XMVectorGetX(ndc) * 0.5f + 0.5f) * g_Renderer.SwapchainSize().first;
+                                    float sy = (1.0f - (XMVectorGetY(ndc) * 0.5f + 0.5f)) * g_Renderer.SwapchainSize().second;
+                                    return { sx, sy };
+                                };
+
+                                // Rodrigues rotation helper
+                                auto Rotate = [](XMVECTOR v, XMVECTOR axis, float angle) -> XMVECTOR
+                                {
+                                    float c = cosf(angle), s = sinf(angle);
+                                    return v * c + XMVector3Cross(axis, v) * s + axis * XMVector3Dot(axis, v) * (1.0f - c);
+                                };
+
+                                // Compute 8 OBB corners
+                                const XMFLOAT3 halfExt = {
+                                    desc.probeSpacing.x * desc.probeCounts.x * 0.5f,
+                                    desc.probeSpacing.y * desc.probeCounts.y * 0.5f,
+                                    desc.probeSpacing.z * desc.probeCounts.z * 0.5f
+                                };
+                                const XMFLOAT3 eu = {
+                                    desc.eulerAngles.x, desc.eulerAngles.y, desc.eulerAngles.z
+                                };
+
+                                XMVECTOR axes[3] = {
+                                    XMVectorSet(1,0,0,0), XMVectorSet(0,1,0,0), XMVectorSet(0,0,1,0)
+                                };
+                                for (int i = 0; i < 3; i++)
+                                {
+                                    axes[i] = Rotate(axes[i], XMVectorSet(1,0,0,0), eu.x);
+                                    axes[i] = Rotate(axes[i], XMVectorSet(0,1,0,0), eu.y);
+                                    axes[i] = Rotate(axes[i], XMVectorSet(0,0,1,0), eu.z);
+                                }
+
+                                const float ox = desc.origin.x;
+                                const float oy = desc.origin.y;
+                                const float oz = desc.origin.z;
+
+                                XMFLOAT2 corners[8];
+                                int idx = 0;
+                                for (int x = 0; x <= 1; x++)
+                                for (int y = 0; y <= 1; y++)
+                                for (int z = 0; z <= 1; z++)
+                                {
+                                    float sx = (x == 0) ? -1.0f : 1.0f;
+                                    float sy = (y == 0) ? -1.0f : 1.0f;
+                                    float sz = (z == 0) ? -1.0f : 1.0f;
+                                    float wx = ox + XMVectorGetX(axes[0]) * halfExt.x * sx
+                                                + XMVectorGetX(axes[1]) * halfExt.y * sy
+                                                + XMVectorGetX(axes[2]) * halfExt.z * sz;
+                                    float wy = oy + XMVectorGetY(axes[0]) * halfExt.x * sx
+                                                + XMVectorGetY(axes[1]) * halfExt.y * sy
+                                                + XMVectorGetY(axes[2]) * halfExt.z * sz;
+                                    float wz = oz + XMVectorGetZ(axes[0]) * halfExt.x * sx
+                                                + XMVectorGetZ(axes[1]) * halfExt.y * sy
+                                                + XMVectorGetZ(axes[2]) * halfExt.z * sz;
+                                    corners[idx++] = WorldToScreen(wx, wy, wz);
+                                }
+
+                                // 12 OBB edges
+                                static const int kEdges[12][2] = {
+                                    {0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}
+                                };
+
+                                ImDrawList* dl = ImGui::GetForegroundDrawList();
+                                const ImU32 kGreen = IM_COL32(0, 255, 0, 255);
+                                for (int e = 0; e < 12; e++)
+                                {
+                                    const XMFLOAT2& a = corners[kEdges[e][0]];
+                                    const XMFLOAT2& b = corners[kEdges[e][1]];
+                                    dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y), kGreen, 1.5f);
+                                }
+                            }
+                        }
+
+                        // Print volume info
+                        ImGui::Text("Hardcoded volume: 20x10x20m, 1.5m spacing");
+                    }
                 }
 
                 ImGui::TreePop();

@@ -219,3 +219,24 @@ srinput CSMDebugMode
     static const uint CSM_DEBUG_FRUSTUM_WIRE    = 7;  // Cascade frustum wireframe
     static const uint CSM_DEBUG_BLEND_ZONE      = 8;  // (reserved — UI entry, no shader visualization)
 };
+
+// ---------------------------------------------------------------------------
+// DDGI debug overlay modes — passed via DeferredLightingConstants::m_DDGIDebugMode.
+// Off (0) means normal operation; non-zero overlays DDGIDebugOutput on screen.
+// ---------------------------------------------------------------------------
+srinput DDGIDebugMode
+{
+    static const uint DDGI_DEBUG_OFF                = 0;   // Normal rendering
+    static const uint DDGI_DEBUG_VOLUME_WIREFRAME   = 1;   // OBB wireframes (Phase 2)
+    static const uint DDGI_DEBUG_PROBE_POSITIONS    = 2;   // Probe sphere overlay (Phase 3)
+    static const uint DDGI_DEBUG_PROBE_IRRADIANCE   = 3;   // Raw irradiance sample (Phase 4)
+    static const uint DDGI_DEBUG_PROBE_DISTANCE     = 4;   // Raw distance sample (Phase 4)
+    static const uint DDGI_DEBUG_PROBE_CLASSIFICATION = 5; // State heatmap overlay (Phase 4)
+    static const uint DDGI_DEBUG_INDIRECT_ONLY      = 6;   // Raw g_RG_DDGIIndirect output (Phase 5)
+    static const uint DDGI_DEBUG_CONVERGENCE_STATUS = 7;   // ImGui progress bars (Phase 3+, expanded Phase 9)
+    static const uint DDGI_DEBUG_DDGI_ONLY          = 8;   // Final composed DDGI only (Phase 7)
+    static const uint DDGI_DEBUG_SSGI_ONLY          = 9;   // Final composed SSGI only (Phase 7)
+    static const uint DDGI_DEBUG_CONFIDENCE_HEATMAP = 10;  // Red=low, green=high (Phase 7)
+    static const uint DDGI_DEBUG_VOLUME_BLEND_WEIGHT = 11; // Cyan heatmap (Phase 7)
+    static const uint DDGI_DEBUG_TILE_ACTIVITY      = 12;  // SSGI dispatch mask (Phase 8)
+};

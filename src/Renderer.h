@@ -287,7 +287,7 @@ struct Renderer
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
     uint32_t m_PathTracerMaxBounces = 8;
-    bool m_EnableDDGIProbeTracing = false;  // DDGI probe RT + blending (bake mode when off)
+    bool m_EnableDDGIProbeTracing = true;  // DDGI probe RT + blending (bake mode when off)
 
     float m_AdaptationSpeed = 5.0f;
     bool m_EnableAutoExposure = true;
@@ -360,6 +360,9 @@ struct Renderer
 
     // SSGI debug overlay (SSGIDebugMode enum value; 0 = off)
     uint32_t m_SSGI_DebugMode         = 0;
+
+    // DDGI debug overlay (DDGIDebugMode enum value; 0 = off)
+    uint32_t m_DDGIDebugMode          = 0;
 
     // bloom
     float m_BloomKnee = 0.1f;

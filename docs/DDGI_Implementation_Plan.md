@@ -6,25 +6,26 @@
 
 ---
 
-## Debug Mode Enum (built incrementally)
+## Debug Mode Enum
 
-```cpp
-enum class DDGIDebugMode : uint32_t {
-    OFF                      = 0,  // Normal rendering
-    VOLUME_WIREFRAME         = 1,  // OBB wireframes (Phase 2)
-    PROBE_POSITIONS          = 2,  // Probe sphere overlay (Phase 3)
-    PROBE_IRRADIANCE         = 3,  // Raw irradiance sample (Phase 4)
-    PROBE_DISTANCE           = 4,  // Raw distance sample (Phase 4)
-    PROBE_CLASSIFICATION     = 5,  // State heatmap overlay (Phase 4)
-    DDGI_INDIRECT_ONLY       = 6,  // Raw g_RG_DDGIIndirect output (Phase 5)
-    CONVERGENCE_STATUS       = 7,  // ImGui progress bars (Phase 3+, expanded Phase 9)
-    DDGI_ONLY                = 8,  // Final composed DDGI only (Phase 7)
-    SSGI_ONLY                = 9,  // Final composed SSGI only (Phase 7)
-    DDGI_CONFIDENCE_HEATMAP  = 10, // Red=low, green=high (Phase 7)
-    VOLUME_BLEND_WEIGHT      = 11, // Cyan heatmap (Phase 7)
-    TILE_ACTIVITY            = 12, // SSGI dispatch mask (Phase 8)
-};
-```
+Defined in `src/shaders/Common.sr` as `srinput DDGIDebugMode` (auto-generates C++ `srrhi::DDGIDebugMode::` and HLSL `srrhi::DDGIDebugMode::` constants).
+Stored as `uint32_t m_DDGIDebugMode` on the `Renderer` struct.
+
+| Value | Constant | Phase | Description |
+|---|---|---|---|
+| 0 | `DDGI_DEBUG_OFF` | — | Normal rendering |
+| 1 | `DDGI_DEBUG_VOLUME_WIREFRAME` | Phase 2 ✅ | OBB wireframes (ImDrawList) |
+| 2 | `DDGI_DEBUG_PROBE_POSITIONS` | Phase 3 | Probe sphere overlay |
+| 3 | `DDGI_DEBUG_PROBE_IRRADIANCE` | Phase 4 | Raw irradiance sample |
+| 4 | `DDGI_DEBUG_PROBE_DISTANCE` | Phase 4 | Raw distance sample |
+| 5 | `DDGI_DEBUG_PROBE_CLASSIFICATION` | Phase 4 | State heatmap overlay |
+| 6 | `DDGI_DEBUG_INDIRECT_ONLY` | Phase 5 | Raw g_RG_DDGIIndirect output |
+| 7 | `DDGI_DEBUG_CONVERGENCE_STATUS` | Phase 3+ | ImGui progress bars |
+| 8 | `DDGI_DEBUG_DDGI_ONLY` | Phase 7 | Final composed DDGI only |
+| 9 | `DDGI_DEBUG_SSGI_ONLY` | Phase 7 | Final composed SSGI only |
+| 10 | `DDGI_DEBUG_CONFIDENCE_HEATMAP` | Phase 7 | Red=low, green=high |
+| 11 | `DDGI_DEBUG_VOLUME_BLEND_WEIGHT` | Phase 7 | Cyan heatmap |
+| 12 | `DDGI_DEBUG_TILE_ACTIVITY` | Phase 8 | SSGI dispatch mask |
 
 ---
 
@@ -40,16 +41,38 @@ enum class DDGIDebugMode : uint32_t {
 
 ---
 
-## Phase 2 — 1 hardcoded volume + Volume Wireframe debug
+## Phase 2 — 1 hardcoded volume + Volume Wireframe debug ✅
 
-- [ ] In `PostSceneLoad()`: create 1 `rtxgi::DDGIVolumeDesc` with hardcoded AABB around scene origin (e.g. 20×10×20, 1.5m spacing)
-- [ ] Call `rtxgi::d3d12::DDGIVolume::Create(desc, resources)`
-- [ ] Allocate persistent textures: irradiance (R10G10B10A2), distance (RG16), probe data (RGBA16)
-- [ ] Declare textures in `Setup()` as persistent RG resources
-- [ ] **Debug — VOLUME_WIREFRAME (mode 1):** Create `src/shaders/ddgi/VolumeWireframeCS.hlsl` — one thread group per volume, projects OBB edges into screen space, draws 1px lines on `g_RG_DebugOverlay` (RGBA16_FLOAT, screen res). See `DDGI_Analysis.md` §4.13.3.
-- [ ] Add `g_RG_DebugOverlay` transient RG handle in `Setup()`
-- [ ] Add `m_DDGIDebugMode` to `DDGIRenderer`; wire ImGui combo box in DDGI tab
-- [ ] **Verify:** Green wireframe box visible in scene at the hardcoded AABB position. No crash, no GPU validation errors. ImGui: print volume desc (probe counts, spacing, memory usage).
+- [x] `PostSceneLoad()`: populate `Scene::m_DDGIVolume` — 20×10×20m, 1.5m spacing, 14×8×14 probes, centered at (0,5,0)
+- [x] Allocate 3 persistent `Texture2DArray` textures via nvrhi: Irradiance (R10G10B10A2_UNORM), Distance (RG16_FLOAT), ProbeData (RGBA16_FLOAT)
+- [x] Register textures in global bindless heap; stored as DDGIRenderer private members (not RG-declared)
+- [x] **Deferred to Phase 4:** `rtxgi::d3d12::DDGIVolume::Create()` — requires SDK PSOs, descriptor heaps, root signature
+- [x] **Debug — VOLUME_WIREFRAME (mode 1):** `ImDrawList` OBB wireframe in `ImGuiLayer.cpp` — CPU-side Rodrigues rotation + DirectXMath world→screen projection, 12 green line segments via `ImGui::GetForegroundDrawList()`
+- [x] `m_DDGIDebugMode` (`uint32_t`) on `Renderer` struct; ImGui combo in Indirect Lighting section ("Off" / "Volume Wireframe")
+- [x] **Verify:** Green wireframe box visible on screen at the hardcoded AABB position. No crash, no GPU validation errors.
+
+---
+
+## Phase 2.5 — `rtxgi::DDGIVolumeBase` subclass
+
+Phase 2 already has the volume descriptor (`Scene::m_DDGIVolume`) and nvrhi textures.
+This short phase creates a class inheriting `rtxgi::DDGIVolumeBase` that ties the CPU-side
+volume descriptor to our GPU textures — using only nvrhi, no raw D3D12/Vulkan.
+
+`DDGIVolumeBase` provides all the CPU utility: `Update()` (rotation matrices), random numbers,
+`GetDescGPU()` / `GetDescGPUPacked()`, setters/getters.  The only required override is `Destroy()`.
+All GPU resources (textures, PSOs, descriptor heaps) are managed by nvrhi as usual.
+
+- [ ] Create `src/DDGIVolumeNvrhi.h` / `src/DDGIVolumeNvrhi.cpp`: class `DDGIVolumeNvrhi : public rtxgi::DDGIVolumeBase`
+- [ ] Constructor takes `const rtxgi::DDGIVolumeDesc&` and stores it via `SetOrigin()` / `SetProbeSpacing()` / etc.
+- [ ] Store nvrhi texture handles: `m_IrradianceTexture`, `m_DistanceTexture`, `m_ProbeDataTexture`
+- [ ] Store nvrhi buffer handles: `m_ConstantsBuffer` (GPU + upload) for `DDGIVolumeDescGPUPacked`
+- [ ] `UploadConstants(nvrhi::CommandListHandle)`: pack desc via `GetDescGPUPacked()`, copy to GPU buffer
+- [ ] Override `Destroy()`: release nvrhi handles
+- [ ] Override `GetGPUMemoryUsedInBytes()`: sum texture + buffer sizes from nvrhi descs
+- [ ] Store `std::unique_ptr<DDGIVolumeNvrhi> m_DDGIVolumeObj` as a DDGIRenderer member
+- [ ] Call `m_DDGIVolumeObj->Update()` each frame in `Render()` before dispatching probe traces (Phase 3+)
+- [ ] **Verify:** Volume object constructed. `Update()` succeeds. `GetDescGPUPacked()` returns valid packed data. Log GPU memory.
 
 ---
 
@@ -76,22 +99,24 @@ enum class DDGIDebugMode : uint32_t {
 
 ## Phase 4 — SDK blending pipeline + Irradiance/Distance/Classification debug
 
-- [ ] Load compiled SDK DXIL blobs (from `bin/shaders/dxil/`) into `ShaderBlob`:
-  - `ProbeBlendingCS` (irradiance + distance variants)
-  - `ProbeClassificationCS` (update + reset)
-  - `ProbeRelocationCS` (update + reset)
-  - `ReductionCS` (main + extra)
-- [ ] Create `DDGIVolumeManagedResourcesDesc` with all bytecode
-- [ ] In `Render()`, after probe trace:
-  1. Transition RayData to SRV
-  2. `UpdateDDGIVolumeProbes()` → blends new ray data into irradiance/distance textures
-  3. `RelocateDDGIVolumeProbes()` (optional, behind flag)
-  4. `ClassifyDDGIVolumeProbes()` (optional, behind flag)
-- [ ] **Debug — PROBE_IRRADIANCE (mode 3):** Sample DDGI irradiance texture directly per pixel in the indirect query / debug overlay shader. Decode from gamma, scale by 2*PI for display. See `DDGI_Analysis.md` §4.13.3.
-- [ ] **Debug — PROBE_DISTANCE (mode 4):** Sample DDGI distance texture directly per pixel.
-- [ ] **Debug — PROBE_CLASSIFICATION (mode 5):** Extend `ProbeOverlayCS` to color probes by classification state (active/inactive/relocated from `g_ProbeData` fields).
+Assumes Phase 2.5 has the `DDGIVolumeNvrhi` object with textures and constants buffer live.
+
+The compiled SDK DXIL shaders (`ddgi/DDGIProbeBlending*.hlsl` etc.) are dispatched
+through nvrhi compute PSOs — no raw D3D12/Vulkan interfacing.
+
+- [ ] Create nvrhi compute PSOs for each SDK shader (8 total): blending×2, classification×2, relocation×2, reduction×2
+- [ ] In `Render()`, after probe trace (Phase 3):
+  1. `DDGIVolumeNvrhi::UploadConstants()` — copy packed `DDGIVolumeDescGPUPacked` to GPU
+  2. Transition RayData UAV → SRV
+  3. Dispatch `ProbeBlendingIrradianceCS` → blends new ray data into irradiance
+  4. Dispatch `ProbeBlendingDistanceCS` → blends new ray data into distance
+  5. Dispatch `ProbeRelocationCS` / `ProbeClassificationCS` (optional, behind flags)
+  6. UAV barriers between passes
+- [ ] Bind SDK shader resources via nvrhi binding sets (constants buffer SRV, ray data SRV, irradiance/distance/data UAVs)
+- [ ] **Debug — PROBE_IRRADIANCE (mode 3):** Sample DDGI irradiance texture per pixel in a debug overlay shader — decode gamma, scale by 2*PI. See `DDGI_Analysis.md` §4.13.3.
+- [ ] **Debug — PROBE_DISTANCE (mode 4):** Sample DDGI distance texture per pixel.
+- [ ] **Debug — PROBE_CLASSIFICATION (mode 5):** Extend `ProbeOverlayCS` to color probes by classification state.
 - [ ] Add modes 3-5 to the debug combo box
-- [ ] **Verify:** Irradiance/distance debug modes show colored content (not black). Classification overlay colors probes by state. ImGui: toggle relocation/classification on/off, observe probe state changes.
 
 ---
 

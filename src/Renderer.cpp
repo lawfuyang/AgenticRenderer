@@ -44,7 +44,7 @@ namespace
         ChooseWindowSize(&windowW, &windowH);
 
         SDL_Log("[Init] Creating window");
-        SDL_Window* window = SDL_CreateWindow("Agentic Renderer", windowW, windowH, 0);
+        SDL_Window* window = SDL_CreateWindow("Hobby Renderer", windowW, windowH, 0);
         if (!window)
         {
             SDL_LOG_ASSERT_FAIL("SDL_CreateWindow failed", "SDL_CreateWindow failed: %s", SDL_GetError());

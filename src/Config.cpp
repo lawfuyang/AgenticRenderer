@@ -114,7 +114,7 @@ void Config::ParseCommandLine(int argc, char* argv[])
         }
         else if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0)
         {
-            SDL_Log("Agentic Renderer - Command Line Options:");
+            SDL_Log("Hobby Renderer - Command Line Options:");
             SDL_Log("  --rhidebug                       Enable graphics API validation layers");
             SDL_Log("  --rhidebug-gpu                   Enable GPU-assisted validation (requires --rhidebug)");
             SDL_Log("  --execute-per-pass               Execute command lists per pass");
