@@ -170,6 +170,18 @@ float4 SSGICompose_PSMain(FullScreenVertexOut input) : SV_Target
         float4 stages[4] = { rawDiffuse, rawSpecular, temporalDiffuse, denoisedDiffuse };
         debug = SSGIDebugValidity(stages);
     }
+    else if (g_Compose.m_DebugMode == srrhi::SSGIDebugMode::SSGI_DEBUG_DENOISER_DELTA_DIFFUSE)
+    {
+        // Red = denoiser is doing significant work (temporal output is noisy).
+        // Black = temporal output already clean, denoiser is pass-through.
+        float delta = Luminance(abs(temporalDiffuse.rgb - denoisedDiffuse.rgb));
+        debug = saturate(delta * 10.0f).xxx * float3(1.0f, 0.0f, 0.0f);
+    }
+    else if (g_Compose.m_DebugMode == srrhi::SSGIDebugMode::SSGI_DEBUG_DENOISER_DELTA_SPECULAR)
+    {
+        float delta = Luminance(abs(temporalSpecular.rgb - denoisedSpecular.rgb));
+        debug = saturate(delta * 10.0f).xxx * float3(1.0f, 0.0f, 0.0f);
+    }
 
     return float4(debug, 1.0f);
 }

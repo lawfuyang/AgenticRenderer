@@ -299,6 +299,8 @@ void ImGuiLayer::UpdateFrame()
                         "Injected Direct Light",
                         "Fresnel",
                         "Validity (NaN / negative)",
+                        "Denoiser Delta Diffuse",
+                        "Denoiser Delta Specular"
                     };
                     int ssgiDebugMode = static_cast<int>(g_Renderer.m_SSGI_DebugMode);
                     if (ImGui::Combo("SSGI Debug", &ssgiDebugMode, ssgiDebugModes, IM_ARRAYSIZE(ssgiDebugModes)))

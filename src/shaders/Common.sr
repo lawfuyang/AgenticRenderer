@@ -186,6 +186,8 @@ srinput SSGIDebugMode
     static const uint SSGI_DEBUG_DIRECT_LIGHT       = 14;  // Screen-space direct light injected at ray hits
     static const uint SSGI_DEBUG_FRESNEL            = 15;  // Compose-pass Fresnel term
     static const uint SSGI_DEBUG_VALIDITY           = 16;  // Magenta = NaN/Inf, yellow = negative, grey = ok
+    static const uint SSGI_DEBUG_DENOISER_DELTA_DIFFUSE  = 17;  // |temporal - denoised| for diffuse (red = denoiser working hard)
+    static const uint SSGI_DEBUG_DENOISER_DELTA_SPECULAR = 18;  // |temporal - denoised| for specular (red = denoiser working hard)
 };
 
 // ---------------------------------------------------------------------------

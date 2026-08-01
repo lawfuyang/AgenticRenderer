@@ -22,6 +22,9 @@ static const SamplerState                 g_LinearSampler    = srrhi::SSGITempor
 static const SamplerState                 g_PointSampler     = srrhi::SSGITemporalReprojectInputs::GetPointSampler();
 
 // validateReprojectedUV: confidence in [0,1] that the reprojected UV points at the same surface.
+// reprojUV must be in the CURRENT frame's jittered coordinate system (i.e. with TAA jitter
+// cancelled out — for static scenes this equals the pixel's own UV). The caller is responsible
+// for removing the jitter offset before calling this function.
 float SSGIValidateReprojection(float2 reprojUV, float3 worldPos, float3 worldNormal, float2 velocityUV)
 {
     if (reprojUV.x < 0.0f || reprojUV.x > 1.0f || reprojUV.y < 0.0f || reprojUV.y > 1.0f)
@@ -116,6 +119,18 @@ SSGITemporalPSOutput SSGITemporal_PSMain(FullScreenVertexOut input)
     // returns prevWindowPos - windowPos), so they are ADDED to reach the history UV.
     float2 reprojUVDiffuse = uv + velocityUV;
 
+    // Motion vectors include the TAA jitter offset (jitter_prev - jitter_curr). The reprojected
+    // UV is correct for sampling the Accum buffer (which was rendered at the previous frame's
+    // jittered positions), but the VALIDATION must operate in a jitter-invariant space: if we
+    // validate at the jittered reprojUV, the current frame's depth at that UV belongs to a
+    // different world point (shifted by the jitter delta), causing false disocclusion at
+    // geometry edges.
+    //
+    // Cancel the jitter from the reprojection to get a UV in the current frame's coordinate
+    // system. For a static scene this equals uv itself, making the validation trivially correct.
+    float2 jitterOffsetUV = (g_Temporal.m_ViewPrev.m_PixelOffset - g_Temporal.m_View.m_PixelOffset) * g_Temporal.m_View.m_ViewportSizeInv;
+    float2 reprojUVNoJitterDiffuse = reprojUVDiffuse - jitterOffsetUV;
+
     // specular: hit-point parallax reprojection (falls back to motion vectors for
     // missed rays and rough surfaces)
     float2 reprojUVSpecular = reprojUVDiffuse;
@@ -132,9 +147,13 @@ SSGITemporalPSOutput SSGITemporal_PSMain(FullScreenVertexOut input)
         float roughnessFactor = saturate((roughness - kSSGIParallaxRoughnessThreshold) / kSSGIParallaxRoughnessRange);
         reprojUVSpecular = lerp(hitUV, reprojUVDiffuse, roughnessFactor);
     }
+    float2 reprojUVNoJitterSpecular = reprojUVSpecular - jitterOffsetUV;
 
-    float confidenceDiffuse = SSGIValidateReprojection(reprojUVDiffuse, worldPos, worldNormal, velocityUV);
-    float confidenceSpecular = SSGIValidateReprojection(reprojUVSpecular, worldPos, worldNormal, velocityUV);
+    // Validate at the jitter-invariant UV (current-frame coordinate system).
+    // The Accum buffer is still sampled at the original jittered reprojUV — correct for
+    // jittered history.
+    float confidenceDiffuse = SSGIValidateReprojection(reprojUVNoJitterDiffuse, worldPos, worldNormal, velocityUV);
+    float confidenceSpecular = SSGIValidateReprojection(reprojUVNoJitterSpecular, worldPos, worldNormal, velocityUV);
 
     // Motion vectors are computed from the jittered matrices, so with TAA enabled a
     // perfectly static camera still reports ~0.5 px of movement. Measuring in pixels with a
