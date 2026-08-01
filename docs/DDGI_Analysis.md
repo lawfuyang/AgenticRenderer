@@ -1081,7 +1081,7 @@ float3 color = directDiffuse + indirectGI;
 ### Phase 3: DDGIRenderer (this phase)
 
 1. Integrate RTXGI-DDGI SDK (`rtxgi-sdk/include`, `rtxgi-sdk/shaders`, `rtxgi-sdk/src`)
-2. Create `src/DDGIRenderer.h` / `src/DDGIRenderer.cpp`
+2. Create `src/DDGIRenderer.cpp`
 3. Compile DDGI SDK shaders with `RTXGI_DDGI_RESOURCE_MANAGEMENT=0` (unmanaged), bindless mode
 4. Implement automatic scene-driven volume placement (§4.12): voxelize scene, fit OBBs via PCA, greedy selection
 5. Implement probe ray tracing (compute shader with inline `RayQuery` using existing TLAS)
