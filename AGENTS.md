@@ -122,3 +122,7 @@ Use the following typedefs from `pch.h` instead of raw `DirectX::` namespace typ
 | `Frustum` | `DirectX::BoundingFrustum` |
 
 **Always use the typedefs.** Never write `DirectX::XMFLOAT3`, `DirectX::XMVECTOR`, etc. directly in code.
+
+---
+
+Place all C/C++ standard library #includes in pch.h. Do not include standard headers directly in source or header files.
