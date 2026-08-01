@@ -579,7 +579,7 @@ void Renderer::Run()
         if (workTimeNs < kFrameDurationNs)
         {
             PROFILE_SCOPED("Sleep");
-            SDL_Delay(static_cast<uint32_t>(SDL_NS_TO_MS(kFrameDurationNs  - workTimeNs)));
+            SDL_DelayPrecise(kFrameDurationNs - workTimeNs);
         }
 
         // Recompute total frame time (including any sleep) so reported FPS matches ImGui's DeltaTime

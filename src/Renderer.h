@@ -348,7 +348,7 @@ struct Renderer
 
     // SSGI Poisson denoise
     bool    m_SSGI_bDenoiseEnabled    = true;
-    int     m_SSGI_DenoiseIterations  = 2;      // kernel radius doubles each iteration
+    int     m_SSGI_DenoiseIterations  = 1;      // kernel radius doubles each iteration
     float   m_SSGI_DenoiseRadius      = 3.0f;
     float   m_SSGI_DenoisePhi         = 0.5f;
     float   m_SSGI_DenoiseLumaPhi     = 5.0f;
