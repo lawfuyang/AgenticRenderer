@@ -28,15 +28,15 @@ enum class DDGIDebugMode : uint32_t {
 
 ---
 
-## Phase 1 — DDGIRenderer skeleton
+## Phase 1 — DDGIRenderer skeleton ✅
 
-- [ ] Create `src/DDGIRenderer.cpp`
-- [ ] Inherit `IRenderer`, override `Initialize()`, `PostSceneLoad()`, `Setup(RenderGraph&)`, `Render()`, `GetName()` → `"DDGIRenderer"`
-- [ ] `REGISTER_RENDERER(DDGIRenderer)`
-- [ ] Add `m_EnableDDGI` (bool, default `false`) to `Renderer` struct in `Renderer.h`
-- [ ] Schedule `DDGIRenderer` after `ShadowMaskRenderer`, before `DeferredRenderer` in `Renderer::ScheduleAndRunAllRenderers()` NormalBasic branch
-- [ ] `Setup()` returns `false` when `!m_EnableDDGI`
-- [ ] **Verify:** ImGui checkbox toggles renderer on/off. Checkbox in Renderer tab OR new DDGI tab.
+- [x] Create `src/DDGIRenderer.cpp`
+- [x] Inherit `IRenderer`, override `Setup(RenderGraph&)`, `Render()`, `GetName()` → `"DDGIRenderer"` (no-op stubs for now)
+- [x] `REGISTER_RENDERER(DDGIRenderer)`
+- [x] Add `m_EnableDDGIProbeTracing` (bool, default `false`) to `Renderer` struct in `Renderer.h`
+- [x] Schedule `DDGIRenderer` after `SSGIRenderer`, before `DeferredRenderer` in `Renderer::ScheduleAndRunAllRenderers()` NormalBasic branch
+- [x] `Setup()` returns `false` when `!m_EnableDDGIProbeTracing`
+- [x] **Verify:** ImGui checkbox toggles renderer on/off. Checkbox in Indirect Lighting tree node (DDGI+SSGI section), disabled for other indirect lighting modes.
 
 ---
 

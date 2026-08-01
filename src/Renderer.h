@@ -287,6 +287,7 @@ struct Renderer
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
     uint32_t m_PathTracerMaxBounces = 8;
+    bool m_EnableDDGIProbeTracing = false;  // DDGI probe RT + blending (bake mode when off)
 
     float m_AdaptationSpeed = 5.0f;
     bool m_EnableAutoExposure = true;

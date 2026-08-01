@@ -1289,6 +1289,7 @@ void Renderer::ScheduleAndRunAllRenderers()
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowMaskRenderer"));    // fullscreen compute → R8 shadow mask
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("CSMDebugRenderer"));      // debug overlay (skips when mode == Off)
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SSGIRenderer"));          // screen-space GI (skips when disabled)
+        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DDGIRenderer"));          // DDGI probe RT + indirect query (skips when disabled)
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DeferredRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SkyRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TransparentPassRenderer"));

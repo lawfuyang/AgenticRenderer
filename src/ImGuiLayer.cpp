@@ -311,6 +311,15 @@ void ImGuiLayer::UpdateFrame()
                                           "if both are black, the indirect output can only be black.");
                 }
 
+                // ── DDGI Toggle ───────────────────────────────────────
+                if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
+                {
+                    ImGui::Checkbox("Enable DDGI", &g_Renderer.m_EnableDDGIProbeTracing);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("When enabled, DDGI probes are ray-traced and blended into the indirect lighting. "
+                                          "When disabled (bake mode), persistent probe data is used with zero RT cost.");
+                }
+
                 ImGui::TreePop();
             }
 
