@@ -1045,7 +1045,7 @@ void Renderer::ApplyRenderingModeDefaults(RenderingMode mode)
         case RenderingMode::NormalBasic:
             m_EnableRTShadows = false;
             m_EnableReSTIRDI = false;
-            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI;
+            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI;
             break;
     }
 }

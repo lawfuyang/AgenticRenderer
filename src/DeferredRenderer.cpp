@@ -50,7 +50,7 @@ public:
 
         // Conditionally read the SSGI compose output when SSGI is the active technique
         if (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
-            g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+            g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
             renderGraph.ReadTexture(g_RG_SSGIComposed);
 
         return true;
@@ -142,7 +142,7 @@ public:
         // t17: SSGI compose output (black fallback when SSGI is inactive)
         nvrhi::TextureHandle ssgiComposed =
             (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
-             g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+             g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
             ? renderGraph.GetTexture(g_RG_SSGIComposed, RGResourceAccessMode::Read)
             : CommonResources::GetInstance().DefaultTextureBlack;
         dlInputs.SetSSGIComposed(ssgiComposed);

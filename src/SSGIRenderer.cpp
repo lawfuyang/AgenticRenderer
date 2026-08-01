@@ -31,7 +31,7 @@ public:
     bool Setup(RenderGraph& renderGraph) override
     {
         if (g_Renderer.m_Mode != RenderingMode::NormalBasic ||
-            g_Renderer.m_IndirectLightingTechnique != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+            g_Renderer.m_IndirectLightingTechnique != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
             return false;
 
         auto [width, height] = g_Renderer.SwapchainSize();

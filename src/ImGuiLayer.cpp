@@ -180,8 +180,6 @@ void ImGuiLayer::UpdateFrame()
             // ── Indirect Lighting Technique ─────────────────────────────────
             if (ImGui::TreeNodeEx("Indirect Lighting", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                int technique = static_cast<int>(g_Renderer.m_IndirectLightingTechnique);
-
                 // Helper: find a renderer by name and set its clear flag.
                 auto RequestRendererClear = [](const char* name)
                 {
@@ -195,37 +193,23 @@ void ImGuiLayer::UpdateFrame()
                     }
                 };
 
-                ImGui::Text("Technique:");
-                ImGui::SameLine();
-                if (ImGui::RadioButton("None",     &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_NONE)))
-                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_NONE;
-                ImGui::SameLine();
-                if (ImGui::RadioButton("ReSTIR GI", &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI)))
+                static const char* kIndirectTechniques[] = { "None", "ReSTIR GI", "SHARC", "ReSTIR GI + SHARC", "DDGI + SSGI" };
+                int technique = static_cast<int>(g_Renderer.m_IndirectLightingTechnique);
+                if (ImGui::Combo("Technique", &technique, kIndirectTechniques, IM_ARRAYSIZE(kIndirectTechniques)))
                 {
-                    if (g_Renderer.m_IndirectLightingTechnique != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI)
+                    uint32_t prev = g_Renderer.m_IndirectLightingTechnique;
+                    g_Renderer.m_IndirectLightingTechnique = static_cast<uint32_t>(technique);
+
+                    if (technique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI && prev != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI)
                         RequestRendererClear("RTXDIRenderer");
-                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI;
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("SHARC", &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC)))
-                {
-                    if (g_Renderer.m_IndirectLightingTechnique != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC)
+                    if (technique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC && prev != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC)
                         RequestRendererClear("SHARCRenderer");
-                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC;
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("ReSTIR GI + SHARC", &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC)))
-                {
-                    if (g_Renderer.m_IndirectLightingTechnique != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC)
+                    if (technique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC && prev != srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC)
                     {
                         RequestRendererClear("RTXDIRenderer");
                         RequestRendererClear("SHARCRenderer");
                     }
-                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC;
                 }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("SSGI", &technique, static_cast<int>(srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)))
-                    g_Renderer.m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI;
 
                 // SHARC debug overlay (available in SHARC-only and combined modes)
                 if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC ||
@@ -238,7 +222,7 @@ void ImGuiLayer::UpdateFrame()
                 }
 
                 // SSGI parameters (available when SSGI is active)
-                if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SSGI)
+                if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
                 {
                     ImGui::SeparatorText("Ray March");
                     ImGui::DragFloat("Ray Distance", &g_Renderer.m_SSGI_RayDistance, 0.1f, 0.1f, 100.0f, "%.1f");

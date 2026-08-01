@@ -158,7 +158,7 @@ srinput IndirectLightingMode
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI        = 1;
     static const uint INDIRECT_LIGHTING_MODE_SHARC            = 2;
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC  = 3;  // Combined: SHARC cache at secondary hits + ReSTIR GI resampling
-    static const uint INDIRECT_LIGHTING_MODE_SSGI             = 4;  // Screen-space GI (NormalBasic mode only)
+    static const uint INDIRECT_LIGHTING_MODE_DDGI_SSGI        = 4;  // DDGI + SSGI hybrid (NormalBasic mode only)
 };
 
 // ---------------------------------------------------------------------------
