@@ -15,7 +15,7 @@ public:
     {
         // Create 1 hardcoded DDGI volume around scene origin.
         // 20×10×20 meter AABB, 1.5m probe spacing.
-        rtxgi::DDGIVolumeDesc& vol = g_Renderer.m_Scene.m_DDGIVolume;
+        rtxgi::DDGIVolumeDesc vol;
         vol.name                    = const_cast<char*>("DDGI Volume 0");
         vol.index                   = 0;
         vol.origin                  = { 0.0f, 5.0f, 0.0f };       // Center at (0, 5, 0)
@@ -109,6 +109,17 @@ public:
         g_Renderer.RegisterTexture(m_DistanceTexture);
         g_Renderer.RegisterTexture(m_ProbeDataTexture);
 
+        // Tie the CPU-side descriptor and GPU textures together, then hand ownership to the scene.
+        DDGIVolumeNvrhi volume;
+        volume.InitFromDesc(vol);
+        volume.m_IrradianceTexture = m_IrradianceTexture;
+        volume.m_DistanceTexture   = m_DistanceTexture;
+        volume.m_ProbeDataTexture  = m_ProbeDataTexture;
+        volume.Update(); // computes initial rotation matrices/quaternions
+        const rtxgi::DDGIVolumeDescGPUPacked packed = volume.GetDescGPUPacked(); (void)packed;
+        const uint32_t gpuMemoryBytes = volume.GetGPUMemoryUsedInBytes();
+        g_Renderer.m_Scene.m_DDGIVolumes.push_back(volume);
+
         // Log volume info
         UINT probeCountX, probeCountY, probeCountZ;
         rtxgi::GetDDGIVolumeProbeCounts(vol, probeCountX, probeCountY, probeCountZ);
@@ -120,6 +131,7 @@ public:
                 m_IrradianceTexDim.x, m_IrradianceTexDim.y, m_IrradianceTexDim.z,
                 m_DistanceTexDim.x, m_DistanceTexDim.y, m_DistanceTexDim.z,
                 m_ProbeDataTexDim.x, m_ProbeDataTexDim.y, m_ProbeDataTexDim.z);
+        SDL_Log("[DDGI]   GPU memory: %.2f MB", BYTES_TO_MB(gpuMemoryBytes));
     }
 
     bool Setup(RenderGraph& renderGraph) override
@@ -131,6 +143,15 @@ public:
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
+        // Update rotation matrices/scrolling before probe traces (Phase 3+) consume them.
+        for (DDGIVolumeNvrhi& volume : g_Renderer.m_Scene.m_DDGIVolumes)
+            volume.Update();
+
+        // placeholder code to upload CBuffer for volume
+        // const nvrhi::BufferDesc cbDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(rtxgi::DDGIVolumeDescGPUPacked), "DDGIVolumeCB", 1);
+        // nvrhi::BufferHandle cb = device->createBuffer(cbDesc);
+        // const rtxgi::DDGIVolumeDescGPUPacked packed = GetDescGPUPacked();
+        // commandList->writeBuffer(cb, &packed, sizeof(packed), 0);
     }
 
     const char* GetName() const override { return "DDGIRenderer"; }

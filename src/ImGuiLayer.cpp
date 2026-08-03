@@ -5,6 +5,8 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
+#include "rtxgi/Types.h"
+
 void ImGuiLayer::Initialize()
 {
     SDL_Window* window = g_Renderer.m_Window;
@@ -319,7 +321,7 @@ void ImGuiLayer::UpdateFrame()
                         ImGui::SetTooltip("When enabled, DDGI probes are ray-traced and blended into the indirect lighting. "
                                           "When disabled (bake mode), persistent probe data is used with zero RT cost.");
 
-                    if (g_Renderer.m_EnableDDGIProbeTracing)
+                    if (!g_Renderer.m_Scene.m_DDGIVolumes.empty())
                     {
                         static const char* kDDGIDebugModes[] = { "Off", "Volume Wireframe" };
                         int debugMode = static_cast<int>(g_Renderer.m_DDGIDebugMode);
@@ -328,44 +330,319 @@ void ImGuiLayer::UpdateFrame()
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip("Volume Wireframe: green wireframe box showing the DDGI probe volume bounds");
 
-                        // Draw OBB wireframe via ImDrawList
+                        // ── Per-Volume Controls ──────────────────────────
+                        for (size_t volIdx = 0; volIdx < g_Renderer.m_Scene.m_DDGIVolumes.size(); ++volIdx)
+                        {
+                            DDGIVolumeNvrhi& volume = g_Renderer.m_Scene.m_DDGIVolumes[volIdx];
+                            rtxgi::DDGIVolumeDesc desc = volume.GetDesc();
+
+                            const std::string volLabel = desc.name ? desc.name : ("DDGI Volume " + std::to_string(volIdx));
+                            if (!ImGui::TreeNodeEx(volLabel.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
+                                continue;
+
+                            // ── Volume Shape ──────────────────────────
+                            if (ImGui::TreeNodeEx("Volume Shape", ImGuiTreeNodeFlags_DefaultOpen))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                rtxgi::float3 editOrigin = desc.origin;
+                                if (ImGui::DragFloat3("Origin", &editOrigin.x, 0.1f))
+                                {
+                                    volume.SetOrigin(editOrigin);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("World-space origin of the volume (runtime-editable)");
+
+                                rtxgi::float3 editEuler = desc.eulerAngles;
+                                if (ImGui::DragFloat3("Euler Angles", &editEuler.x, 0.01f))
+                                {
+                                    volume.SetEulerAngles(editEuler);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Euler rotation angles XYZ in radians (runtime-editable)");
+
+                                rtxgi::float3 editSpacing = desc.probeSpacing;
+                                if (ImGui::DragFloat3("Probe Spacing", &editSpacing.x, 0.1f, 0.1f, 100.0f))
+                                {
+                                    volume.SetProbeSpacing(editSpacing);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("World-space distance between probes per axis (runtime-editable)");
+
+                                // probeCounts — read-only (changing requires texture recreation)
+                                ImGui::BeginDisabled(true);
+                                int roCounts[3] = { desc.probeCounts.x, desc.probeCounts.y, desc.probeCounts.z };
+                                ImGui::DragInt3("Probe Counts", roCounts);
+                                ImGui::EndDisabled();
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Number of probes per axis (requires volume/texture recreation to change)");
+
+                                ImGui::Text("Total Probes: %d", desc.probeCounts.x * desc.probeCounts.y * desc.probeCounts.z);
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Probe Rays ────────────────────────────
+                            if (ImGui::TreeNodeEx("Probe Rays", ImGuiTreeNodeFlags_DefaultOpen))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                int numRays = desc.probeNumRays;
+                                if (ImGui::DragInt("Num Rays", &numRays, 1, 16, 2048))
+                                {
+                                    volume.SetNumRays(numRays);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Rays cast per probe per frame");
+
+                                float maxDist = desc.probeMaxRayDistance;
+                                if (ImGui::DragFloat("Max Ray Distance", &maxDist, 0.5f, 0.1f, 1000.0f, "%.1f"))
+                                {
+                                    volume.SetProbeMaxRayDistance(maxDist);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Maximum world-space distance a probe ray may travel");
+
+                                // Texel info — read-only
+                                ImGui::BeginDisabled(true);
+                                int irrTexels = desc.probeNumIrradianceTexels;
+                                ImGui::DragInt("Irradiance Texels", &irrTexels);
+                                int distTexels = desc.probeNumDistanceTexels;
+                                ImGui::DragInt("Distance Texels", &distTexels);
+                                ImGui::EndDisabled();
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Texel dimensions (including 1px border) — requires volume recreation to change");
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Blending ──────────────────────────────
+                            if (ImGui::TreeNodeEx("Blending", ImGuiTreeNodeFlags_DefaultOpen))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                float hysteresis = desc.probeHysteresis;
+                                if (ImGui::SliderFloat("Hysteresis", &hysteresis, 0.5f, 0.999f, "%.3f"))
+                                {
+                                    volume.SetProbeHysteresis(hysteresis);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Controls influence of new rays vs. old data. Higher = more stable, lower = faster response.");
+
+                                float gamma = desc.probeIrradianceEncodingGamma;
+                                if (ImGui::DragFloat("Encoding Gamma", &gamma, 0.1f, 0.1f, 10.0f, "%.1f"))
+                                {
+                                    volume.SetIrradianceEncodingGamma(gamma);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Perceptual encoding exponent for irradiance blending");
+
+                                float irrThreshold = desc.probeIrradianceThreshold;
+                                if (ImGui::DragFloat("Irradiance Threshold", &irrThreshold, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeIrradianceThreshold(irrThreshold);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Max color component difference before hysteresis is reduced");
+
+                                float brightnessThreshold = desc.probeBrightnessThreshold;
+                                if (ImGui::DragFloat("Brightness Threshold", &brightnessThreshold, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeBrightnessThreshold(brightnessThreshold);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Max allowed brightness difference per update cycle");
+
+                                float distExp = desc.probeDistanceExponent;
+                                if (ImGui::DragFloat("Distance Exponent", &distExp, 1.0f, 1.0f, 200.0f, "%.0f"))
+                                {
+                                    volume.SetProbeDistanceExponent(distExp);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Depth testing exponent. High values react rapidly to depth discontinuities.");
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Bias ──────────────────────────────────
+                            if (ImGui::TreeNodeEx("Bias", ImGuiTreeNodeFlags_DefaultOpen))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                float viewBias = desc.probeViewBias;
+                                if (ImGui::DragFloat("View Bias", &viewBias, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeViewBias(viewBias);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Offset along camera view ray to avoid numerical instabilities");
+
+                                float normalBias = desc.probeNormalBias;
+                                if (ImGui::DragFloat("Normal Bias", &normalBias, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeNormalBias(normalBias);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Offset along surface normal to avoid numerical instabilities");
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Backface Thresholds ───────────────────
+                            if (ImGui::TreeNodeEx("Backface Thresholds"))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                float randBf = desc.probeRandomRayBackfaceThreshold;
+                                if (ImGui::DragFloat("Random Ray Backface", &randBf, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeRandomRayBackfaceThreshold(randBf);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Ratio of random-ray backface hits before probe is considered inside geometry");
+
+                                float fixedBf = desc.probeFixedRayBackfaceThreshold;
+                                if (ImGui::DragFloat("Fixed Ray Backface", &fixedBf, 0.01f, 0.0f, 1.0f, "%.2f"))
+                                {
+                                    volume.SetProbeFixedRayBackfaceThreshold(fixedBf);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Ratio of fixed-ray backface hits for relocation/classification");
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Relocation ────────────────────────────
+                            if (ImGui::TreeNodeEx("Relocation"))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                bool relocation = desc.probeRelocationEnabled;
+                                if (ImGui::Checkbox("Enable Relocation", &relocation))
+                                {
+                                    volume.SetProbeRelocationEnabled(relocation);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Moves probes to more useful positions");
+
+                                if (relocation)
+                                {
+                                    float minDist = desc.probeMinFrontfaceDistance;
+                                    if (ImGui::DragFloat("Min Frontface Distance", &minDist, 0.1f, 0.1f, 100.0f, "%.1f"))
+                                    {
+                                        volume.SetMinFrontFaceDistance(minDist);
+                                    }
+                                    if (ImGui::IsItemHovered())
+                                        ImGui::SetTooltip("Minimum world-space distance from front-facing surfaces");
+                                }
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Classification ────────────────────────
+                            if (ImGui::TreeNodeEx("Classification"))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                bool classification = desc.probeClassificationEnabled;
+                                if (ImGui::Checkbox("Enable Classification", &classification))
+                                {
+                                    volume.SetProbeClassificationEnabled(classification);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Marks probes with states to reduce ray tracing and blending workloads");
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Variability ───────────────────────────
+                            if (ImGui::TreeNodeEx("Variability"))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                bool variability = desc.probeVariabilityEnabled;
+                                if (ImGui::Checkbox("Enable Variability", &variability))
+                                {
+                                    volume.SetProbeVariabilityEnabled(variability);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Tracks change in probes between updates as a proxy for convergence");
+                                ImGui::Text("Average Variability: %.4f", volume.GetVolumeAverageVariability());
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Movement ──────────────────────────────
+                            if (ImGui::TreeNodeEx("Movement"))
+                            {
+                                ImGui::BeginDisabled(!g_Renderer.m_EnableDDGIProbeTracing);
+                                static const char* kMoveTypes[] = { "Default", "Scrolling" };
+                                int moveType = static_cast<int>(desc.movementType);
+                                if (ImGui::Combo("Movement Type", &moveType, kMoveTypes, IM_ARRAYSIZE(kMoveTypes)))
+                                {
+                                    volume.SetMovementType(static_cast<rtxgi::EDDGIVolumeMovementType>(moveType));
+                                }
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            // ── Info ──────────────────────────────────
+                            if (ImGui::TreeNodeEx("Info"))
+                            {
+                                ImGui::Text("Index: %u", desc.index);
+                                ImGui::Text("Probes: %d x %d x %d = %d", desc.probeCounts.x, desc.probeCounts.y, desc.probeCounts.z, volume.GetNumProbes());
+                                ImGui::Text("GPU Memory: %.2f MB", BYTES_TO_MB(volume.GetGPUMemoryUsedInBytes()));
+                                ImGui::Text("Irradiance Format: %d", static_cast<int>(desc.probeIrradianceFormat));
+                                ImGui::Text("Distance Format: %d", static_cast<int>(desc.probeDistanceFormat));
+                                ImGui::TreePop();
+                            }
+
+                            ImGui::TreePop();
+                        }
+
+                        // ── Volume Wireframe Overlay ─────────────────
                         if (g_Renderer.m_DDGIDebugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_VOLUME_WIREFRAME)
                         {
-                            const rtxgi::DDGIVolumeDesc& desc = g_Renderer.m_Scene.m_DDGIVolume;
-                            if (desc.probeCounts.x > 0)
+                            using namespace DirectX;
+
+                            const XMFLOAT4X4& worldToClip = g_Renderer.m_Scene.m_View.m_MatWorldToClip;
+                            const XMMATRIX matVP = XMLoadFloat4x4(&worldToClip);
+
+                            auto WorldToScreen = [&](float wx, float wy, float wz) -> XMFLOAT2
                             {
-                                using namespace DirectX;
+                                XMVECTOR p = XMVectorSet(wx, wy, wz, 1.0f);
+                                XMVECTOR clip = XMVector4Transform(p, matVP);
+                                float w = XMVectorGetW(clip);
+                                float safeW = w > 1e-5f ? w : 1e-5f;
+                                XMVECTOR ndc = XMVectorDivide(clip, XMVectorReplicate(safeW));
+                                float sx = (XMVectorGetX(ndc) * 0.5f + 0.5f) * g_Renderer.SwapchainSize().first;
+                                float sy = (1.0f - (XMVectorGetY(ndc) * 0.5f + 0.5f)) * g_Renderer.SwapchainSize().second;
+                                return { sx, sy };
+                            };
 
-                                const XMFLOAT4X4& worldToClip = g_Renderer.m_Scene.m_View.m_MatWorldToClip;
-                                const XMMATRIX matVP = XMLoadFloat4x4(&worldToClip);
+                            auto Rotate = [](XMVECTOR v, XMVECTOR axis, float angle) -> XMVECTOR
+                            {
+                                float c = cosf(angle), s = sinf(angle);
+                                return v * c + XMVector3Cross(axis, v) * s + axis * XMVector3Dot(axis, v) * (1.0f - c);
+                            };
 
-                                auto WorldToScreen = [&](float wx, float wy, float wz) -> XMFLOAT2
-                                {
-                                    XMVECTOR p = XMVectorSet(wx, wy, wz, 1.0f);
-                                    XMVECTOR clip = XMVector4Transform(p, matVP);
-                                    float w = XMVectorGetW(clip);
-                                    float safeW = w > 1e-5f ? w : 1e-5f;
-                                    XMVECTOR ndc = XMVectorDivide(clip, XMVectorReplicate(safeW));
-                                    float sx = (XMVectorGetX(ndc) * 0.5f + 0.5f) * g_Renderer.SwapchainSize().first;
-                                    float sy = (1.0f - (XMVectorGetY(ndc) * 0.5f + 0.5f)) * g_Renderer.SwapchainSize().second;
-                                    return { sx, sy };
-                                };
+                            static const int kEdges[12][2] = {
+                                {0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}
+                            };
 
-                                // Rodrigues rotation helper
-                                auto Rotate = [](XMVECTOR v, XMVECTOR axis, float angle) -> XMVECTOR
-                                {
-                                    float c = cosf(angle), s = sinf(angle);
-                                    return v * c + XMVector3Cross(axis, v) * s + axis * XMVector3Dot(axis, v) * (1.0f - c);
-                                };
+                            ImDrawList* dl = ImGui::GetForegroundDrawList();
+                            const ImU32 kVolColors[] = {
+                                IM_COL32(0, 255, 0, 255),
+                                IM_COL32(255, 128, 0, 255),
+                                IM_COL32(0, 128, 255, 255),
+                                IM_COL32(255, 255, 0, 255),
+                            };
 
-                                // Compute 8 OBB corners
+                            for (size_t volIdx = 0; volIdx < g_Renderer.m_Scene.m_DDGIVolumes.size(); ++volIdx)
+                            {
+                                const rtxgi::DDGIVolumeDesc volDesc = g_Renderer.m_Scene.m_DDGIVolumes[volIdx].GetDesc();
+                                if (volDesc.probeCounts.x <= 0)
+                                    continue;
+
                                 const XMFLOAT3 halfExt = {
-                                    desc.probeSpacing.x * desc.probeCounts.x * 0.5f,
-                                    desc.probeSpacing.y * desc.probeCounts.y * 0.5f,
-                                    desc.probeSpacing.z * desc.probeCounts.z * 0.5f
+                                    volDesc.probeSpacing.x * volDesc.probeCounts.x * 0.5f,
+                                    volDesc.probeSpacing.y * volDesc.probeCounts.y * 0.5f,
+                                    volDesc.probeSpacing.z * volDesc.probeCounts.z * 0.5f
                                 };
                                 const XMFLOAT3 eu = {
-                                    desc.eulerAngles.x, desc.eulerAngles.y, desc.eulerAngles.z
+                                    volDesc.eulerAngles.x, volDesc.eulerAngles.y, volDesc.eulerAngles.z
                                 };
 
                                 XMVECTOR axes[3] = {
@@ -378,9 +655,9 @@ void ImGuiLayer::UpdateFrame()
                                     axes[i] = Rotate(axes[i], XMVectorSet(0,0,1,0), eu.z);
                                 }
 
-                                const float ox = desc.origin.x;
-                                const float oy = desc.origin.y;
-                                const float oz = desc.origin.z;
+                                const float ox = volDesc.origin.x;
+                                const float oy = volDesc.origin.y;
+                                const float oz = volDesc.origin.z;
 
                                 XMFLOAT2 corners[8];
                                 int idx = 0;
@@ -403,24 +680,15 @@ void ImGuiLayer::UpdateFrame()
                                     corners[idx++] = WorldToScreen(wx, wy, wz);
                                 }
 
-                                // 12 OBB edges
-                                static const int kEdges[12][2] = {
-                                    {0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}
-                                };
-
-                                ImDrawList* dl = ImGui::GetForegroundDrawList();
-                                const ImU32 kGreen = IM_COL32(0, 255, 0, 255);
+                                const ImU32 color = kVolColors[volIdx % IM_ARRAYSIZE(kVolColors)];
                                 for (int e = 0; e < 12; e++)
                                 {
                                     const XMFLOAT2& a = corners[kEdges[e][0]];
                                     const XMFLOAT2& b = corners[kEdges[e][1]];
-                                    dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y), kGreen, 1.5f);
+                                    dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y), color, 1.5f);
                                 }
                             }
                         }
-
-                        // Print volume info
-                        ImGui::Text("Hardcoded volume: 20x10x20m, 1.5m spacing");
                     }
                 }
 
