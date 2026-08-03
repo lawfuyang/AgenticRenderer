@@ -63,15 +63,22 @@ volume descriptor to our GPU textures — using only nvrhi, no raw D3D12/Vulkan.
 `GetDescGPU()` / `GetDescGPUPacked()`, setters/getters.  The only required override is `Destroy()`.
 All GPU resources (textures, PSOs, descriptor heaps) are managed by nvrhi as usual.
 
-- [ ] Create `src/DDGIVolumeNvrhi.h` / `src/DDGIVolumeNvrhi.cpp`: class `DDGIVolumeNvrhi : public rtxgi::DDGIVolumeBase`
-- [ ] Constructor takes `const rtxgi::DDGIVolumeDesc&` and stores it via `SetOrigin()` / `SetProbeSpacing()` / etc.
+The class is defined directly in `src/Scene.h` — **no separate DDGIVolumeNvrhi.h/.cpp files**.
+Ownership lives on `Scene` as a `std::vector<DDGIVolumeNvrhi>` (currently 1 element; multiple later).
+
+- [ ] Define class `DDGIVolumeNvrhi : public rtxgi::DDGIVolumeBase` **in `src/Scene.h`** (above `class Scene`)
+- [ ] `DDGIVolumeNvrhi() = default` (default-constructible for `std::vector`)
+- [ ] `InitFromDesc(const rtxgi::DDGIVolumeDesc&)`: copies the desc into the base class `m_desc`
 - [ ] Store nvrhi texture handles: `m_IrradianceTexture`, `m_DistanceTexture`, `m_ProbeDataTexture`
-- [ ] Store nvrhi buffer handles: `m_ConstantsBuffer` (GPU + upload) for `DDGIVolumeDescGPUPacked`
-- [ ] `UploadConstants(nvrhi::CommandListHandle)`: pack desc via `GetDescGPUPacked()`, copy to GPU buffer
-- [ ] Override `Destroy()`: release nvrhi handles
+- [ ] `UploadConstants(nvrhi::DeviceHandle device, nvrhi::CommandListHandle commandList) -> nvrhi::BufferHandle`:
+      - Create volatile CB: `nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(DDGIVolumeDescGPUPacked), "DDGIVolumeCB", 1)`
+      - Pack desc via `GetDescGPUPacked()`, write via `commandList->writeBuffer(cb, &packed, sizeof(packed), 0)`
+      - Return the CB handle for the caller to bind via `srrhi::*Inputs`
+- [ ] Override `Destroy()`: release nvrhi texture handles (set to `nullptr`)
 - [ ] Override `GetGPUMemoryUsedInBytes()`: sum texture + buffer sizes from nvrhi descs
-- [ ] Store `std::unique_ptr<DDGIVolumeNvrhi> m_DDGIVolumeObj` as a DDGIRenderer member
-- [ ] Call `m_DDGIVolumeObj->Update()` each frame in `Render()` before dispatching probe traces (Phase 3+)
+- [ ] Store `std::vector<DDGIVolumeNvrhi> m_DDGIVolumes` on `Scene` (replaces `rtxgi::DDGIVolumeDesc m_DDGIVolume`)
+- [ ] DDGIRenderer `PostSceneLoad()`: populate 1 `DDGIVolumeNvrhi`, create textures, set handles on volume, `push_back` into `Scene::m_DDGIVolumes`
+- [ ] Call `m_DDGIVolumes[0].Update()` each frame in `Render()` before dispatching probe traces (Phase 3+)
 - [ ] **Verify:** Volume object constructed. `Update()` succeeds. `GetDescGPUPacked()` returns valid packed data. Log GPU memory.
 
 ---
