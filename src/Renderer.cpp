@@ -1486,78 +1486,43 @@ void Renderer::InitializeStaticBindlessTextures()
     SDL_Log("[Renderer] Static bindless texture system initialized");
 }
 
-uint32_t Renderer::RegisterTexture(nvrhi::TextureHandle texture)
+// ── Private helpers ─────────────────────────────────────────────────────────
+
+uint32_t Renderer::WriteBindlessItem(const nvrhi::BindingSetItem& itemTemplate, const char* label)
 {
-    if (!texture || !m_StaticTextureDescriptorTable)
+    if (!m_StaticTextureDescriptorTable)
     {
-        SDL_LOG_ASSERT_FAIL("Invalid texture or descriptor table not initialized", "[Renderer] Invalid texture or descriptor table not initialized");
+        SDL_LOG_ASSERT_FAIL("Descriptor table not initialized", "[Renderer] WriteBindlessItem(%s): table not initialized", label);
         return UINT32_MAX;
     }
 
     SINGLE_THREAD_GUARD();
 
     const uint32_t index = m_NextTextureIndex++;
-    const bool bResult = RegisterTextureAtIndex(index, texture);
-    if (!bResult)
+    nvrhi::BindingSetItem item = itemTemplate;
+    item.slot = index;
+
+    if (!m_RHI->m_NvrhiDevice->writeDescriptorTable(m_StaticTextureDescriptorTable, item))
     {
-        SDL_LOG_ASSERT_FAIL("Failed to register texture in global descriptor table", "[Renderer] Failed to register texture at index %u", index);
+        SDL_LOG_ASSERT_FAIL("Failed to write descriptor table entry", "[Renderer] WriteBindlessItem(%s) failed at index %u", label, index);
         return UINT32_MAX;
     }
     return index;
 }
 
-bool Renderer::RegisterTextureAtIndex(uint32_t index, nvrhi::TextureHandle texture)
+bool Renderer::WriteBindlessItemAtIndex(uint32_t index, const nvrhi::BindingSetItem& item, const char* label)
 {
-    if (!texture || !m_StaticTextureDescriptorTable)
+    if (!m_StaticTextureDescriptorTable)
     {
+        SDL_LOG_ASSERT_FAIL("Descriptor table not initialized", "[Renderer] WriteBindlessItemAtIndex(%s): table not initialized", label);
         return false;
     }
 
     SINGLE_THREAD_GUARD();
 
-    const nvrhi::BindingSetItem item = nvrhi::BindingSetItem::Texture_SRV(index, texture);
     if (!m_RHI->m_NvrhiDevice->writeDescriptorTable(m_StaticTextureDescriptorTable, item))
     {
-        SDL_LOG_ASSERT_FAIL("Failed to register texture in static descriptor table", "[Renderer] Failed to register texture at index %u", index);
-        return false;
-    }
-    //SDL_Log("[Renderer] Registered texture (%s) at index %u", texture->getDesc().debugName.c_str(), index);
-    return true;
-}
-
-uint32_t Renderer::RegisterSamplerFeedbackTexture(nvrhi::SamplerFeedbackTextureHandle texture)
-{
-    if (!texture || !m_StaticTextureDescriptorTable)
-    {
-        SDL_LOG_ASSERT_FAIL("Invalid sampler feedback texture or descriptor table not initialized", "[Renderer] Invalid sampler feedback texture or descriptor table not initialized");
-        return UINT32_MAX;
-    }
-
-    SINGLE_THREAD_GUARD();
-
-    const uint32_t index = m_NextTextureIndex++;
-    const bool bResult = RegisterSamplerFeedbackTextureAtIndex(index, texture);
-    if (!bResult)
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to register sampler feedback texture in global descriptor table", "[Renderer] Failed to register sampler feedback texture at index %u", index);
-        return UINT32_MAX;
-    }
-    return index;
-}
-
-bool Renderer::RegisterSamplerFeedbackTextureAtIndex(uint32_t index, nvrhi::SamplerFeedbackTextureHandle texture)
-{
-    if (!texture || !m_StaticTextureDescriptorTable)
-    {
-        return false;
-    }
-
-    SINGLE_THREAD_GUARD();
-
-    const nvrhi::BindingSetItem item = nvrhi::BindingSetItem::SamplerFeedbackTexture_UAV(index, texture);
-    if (!m_RHI->m_NvrhiDevice->writeDescriptorTable(m_StaticTextureDescriptorTable, item))
-    {
-        SDL_LOG_ASSERT_FAIL("Failed to register sampler feedback texture in static descriptor table", "[Renderer] Failed to register sampler feedback texture at index %u", index);
+        SDL_LOG_ASSERT_FAIL("Failed to write descriptor table entry", "[Renderer] WriteBindlessItemAtIndex(%s) failed at index %u", label, index);
         return false;
     }
     return true;

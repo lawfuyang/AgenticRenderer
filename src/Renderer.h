@@ -206,10 +206,14 @@ struct Renderer
 
     // Global Bindless Texture System
     void InitializeStaticBindlessTextures();
-    uint32_t RegisterTexture(nvrhi::TextureHandle texture);
-    bool RegisterTextureAtIndex(uint32_t index, nvrhi::TextureHandle texture);
-    uint32_t RegisterSamplerFeedbackTexture(nvrhi::SamplerFeedbackTextureHandle texture);
-    bool RegisterSamplerFeedbackTextureAtIndex(uint32_t index, nvrhi::SamplerFeedbackTextureHandle texture);
+
+    uint32_t RegisterTexture(nvrhi::TextureHandle texture) { return WriteBindlessItem(nvrhi::BindingSetItem::Texture_SRV(0, texture), "Texture_SRV"); }
+    uint32_t RegisterTextureUAV(nvrhi::TextureHandle texture) { return WriteBindlessItem(nvrhi::BindingSetItem::Texture_UAV(0, texture), "Texture_UAV"); }
+    uint32_t RegisterStructuredBufferSRV(nvrhi::BufferHandle buffer) { return WriteBindlessItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, buffer), "StructuredBuffer_SRV"); }
+    uint32_t RegisterSamplerFeedbackTexture(nvrhi::SamplerFeedbackTextureHandle texture) { return WriteBindlessItem(nvrhi::BindingSetItem::SamplerFeedbackTexture_UAV(0, texture), "SamplerFeedbackTexture_UAV"); }
+    bool RegisterTextureAtIndex(uint32_t index, nvrhi::TextureHandle texture) { return WriteBindlessItemAtIndex(index, nvrhi::BindingSetItem::Texture_SRV(index, texture), "Texture_SRV"); }
+    bool RegisterSamplerFeedbackTextureAtIndex(uint32_t index, nvrhi::SamplerFeedbackTextureHandle texture) { return WriteBindlessItemAtIndex(index, nvrhi::BindingSetItem::SamplerFeedbackTexture_UAV(index, texture), "SamplerFeedbackTexture_UAV"); }
+
     nvrhi::DescriptorTableHandle GetStaticTextureDescriptorTable() const { return m_StaticTextureDescriptorTable; }
     nvrhi::BindingLayoutHandle GetStaticTextureBindingLayout() const { return m_StaticTextureBindingLayout; }
 
@@ -219,7 +223,13 @@ struct Renderer
     nvrhi::DescriptorTableHandle GetStaticSamplerDescriptorTable() const { return m_StaticSamplerDescriptorTable; }
     nvrhi::BindingLayoutHandle GetStaticSamplerBindingLayout() const { return m_StaticSamplerBindingLayout; }
 
-    // Public Methods
+private:
+    // Allocate an index, write a BindingSetItem to the global descriptor table, return index (UINT32_MAX on failure).
+    uint32_t WriteBindlessItem(const nvrhi::BindingSetItem& item, const char* label);
+    // Write a BindingSetItem at a known index, return success.
+    bool WriteBindlessItemAtIndex(uint32_t index, const nvrhi::BindingSetItem& item, const char* label);
+
+public:
     double GetFrameTimeMs() const { return m_FrameTime; }
     void SetCameraFromSceneCamera(const Scene::Camera& sceneCam);
 
