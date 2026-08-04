@@ -1,0 +1,32 @@
+#include "Common.sr"
+#include "Instance.sr"
+#include "Mesh.sr"
+#include "GPULight.sr"
+
+extern DDGIVolumeDescGPUPacked;
+
+cbuffer ProbeTraceConstants
+{
+    float3  m_SunDirection;
+    float   m_SunIntensity;
+    uint    m_Frame;
+    uint    m_VolumeIndex;
+    uint    m_LightCount;
+    float   m_pad0;
+};
+
+srinput ProbeTraceInputs
+{
+    ProbeTraceConstants                     m_ProbeTraceCB;
+
+    StructuredBuffer<DDGIVolumeDescGPUPacked>       DDGIVolumes;
+    RaytracingAccelerationStructure                 SceneAS;
+    StructuredBuffer<GPULight>                      Lights;
+    StructuredBuffer<PerInstanceData>               Instances;
+    StructuredBuffer<MeshData>                      MeshData;
+    StructuredBuffer<MaterialConstants>             Materials;
+    StructuredBuffer<uint>                          Indices;
+    StructuredBuffer<VertexQuantized>               Vertices;
+    Texture2DArray<float4>                          ProbeData;
+    RWTexture2DArray<float4>                        RayData;
+};

@@ -15,12 +15,12 @@ Stored as `uint32_t m_DDGIDebugMode` on the `Renderer` struct.
 |---|---|---|---|
 | 0 | `DDGI_DEBUG_OFF` | — | Normal rendering |
 | 1 | `DDGI_DEBUG_VOLUME_WIREFRAME` | Phase 2 ✅ | OBB wireframes (ImDrawList) |
-| 2 | `DDGI_DEBUG_PROBE_POSITIONS` | Phase 3 | Probe sphere overlay |
+| 2 | `DDGI_DEBUG_PROBE_POSITIONS` | Phase 3 ✅ | Probe sphere overlay |
 | 3 | `DDGI_DEBUG_PROBE_IRRADIANCE` | Phase 4 | Raw irradiance sample |
 | 4 | `DDGI_DEBUG_PROBE_DISTANCE` | Phase 4 | Raw distance sample |
 | 5 | `DDGI_DEBUG_PROBE_CLASSIFICATION` | Phase 4 | State heatmap overlay |
 | 6 | `DDGI_DEBUG_INDIRECT_ONLY` | Phase 5 | Raw g_RG_DDGIIndirect output |
-| 7 | `DDGI_DEBUG_CONVERGENCE_STATUS` | Phase 3+ | ImGui progress bars |
+| 7 | `DDGI_DEBUG_CONVERGENCE_STATUS` | Phase 3+ ✅ | ImGui progress bars |
 | 8 | `DDGI_DEBUG_DDGI_ONLY` | Phase 7 | Final composed DDGI only |
 | 9 | `DDGI_DEBUG_SSGI_ONLY` | Phase 7 | Final composed SSGI only |
 | 10 | `DDGI_DEBUG_CONFIDENCE_HEATMAP` | Phase 7 | Red=low, green=high |
@@ -83,24 +83,34 @@ Ownership lives on `Scene` as a `std::vector<DDGIVolumeNvrhi>` (currently 1 elem
 
 ---
 
-## Phase 3 — Probe trace CS + Probe Position debug + Convergence Status
+## Phase 3 — Probe trace CS + Probe Position debug + Convergence Status ✅
 
-- [ ] Flesh out `src/shaders/ddgi/ProbeTraceCS.hlsl`:
-  - Load `DDGIVolumeDescGPU` constants (bindless, structured buffer via descriptor heap)
-  - Compute probe index + ray index from `DispatchThreadID`
-  - `DDGIGetProbeCoords()` → probe grid coords
-  - `DDGIGetProbeWorldPosition()` → world position
-  - `DDGIGetProbeRayDirection(rayIndex, volume)` → random-ish ray direction
-  - `RayQuery` inline RT against TLAS
-  - On hit: compute direct lighting (sun only) at hit point, store radiance + hitT in RayData UAV
-  - On miss: store sky radiance + large hitT
-- [ ] Create compute PSO for `ProbeTraceCS` using `nvrhi`
-- [ ] In `Render()`: `DDGIVolume::Update()` → upload constants → `Dispatch(probeRayCount / 64, 1, 1)`
-- [ ] By end of phase, `src/shaders/ddgi/ProbeTraceCS.hlsl` is the current stub — this phase makes it real.
-- [ ] **Debug — PROBE_POSITIONS (mode 2):** Create `src/shaders/ddgi/ProbeOverlayCS.hlsl` — 1 thread per probe, project world pos to screen, depth-test against `g_Depth`, draw 3×3 dot. Color: active=green, inactive=red (from `g_ProbeData.w`). See `DDGI_Analysis.md` §4.13.1.
-- [ ] **Debug — CONVERGENCE_STATUS (mode 7):** ImGui-only: print per-volume probe count, rays dispatched/frame, GPU timing from microprofile.
-- [ ] Add both modes to the `DDGIDebugMode` combo box
-- [ ] **Verify:** Green/red probe dots visible inside the volume wireframe. ImGui shows probe trace stats. PIX/NSight confirms RayData UAV is written.
+- [x] Flesh out `src/shaders/ddgi/ProbeTraceCS.hlsl` (189 lines):
+  - Thread → (probeIndex, rayIndex) decomposition via `globalIdx / numRays` and `globalIdx % numRays`
+  - `DDGIGetProbeCoords()` → probe grid coords, `DDGIGetScrollingProbeIndex()` → scroll-adjusted index
+  - Skip inactive probes beyond fixed rays (`probeState == INACTIVE && rayIndex >= NUM_FIXED_RAYS`)
+  - `DDGIGetProbeWorldPosition()` with relocation offset
+  - `DDGIGetProbeRayDirection(rayIndex, volume)` → Fibonacci sphere sample
+  - Inline RT via `RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES>` against TLAS
+  - Alpha-tested materials: read interpolated UV, `AlphaTest()`, `CommitNonOpaqueTriangleHit()`
+  - Miss: `GetAtmosphereSkyRadiance()` → `DDGIStoreProbeRayMiss()`
+  - Back-face hit: `DDGIStoreProbeRayBackfaceHit()` with negative hitT
+  - Fixed-ray front-face (relocation/classification enabled): `DDGIStoreProbeRayFrontfaceHit()` — hitT only
+  - Front-face hit: `GetFullHitAttributes()` → `GetPBRAttributes()` → diffuse lighting (sun only, `TraceSunShadow()`) + emissive
+  - Energy clamp: `min(radiance, kMaxAlbedo)` at 0.9
+  - `DDGIStoreProbeRayFrontfaceHit()` with radiance + hitT → RayData UAV
+- [x] `ProbeTrace.sr` / `ProbeTraceInputs`: full binding set — CB, DDGIVolumes, TLAS, Lights, Instances, MeshData, Materials, Indices, Vertices, ProbeData (read), RayData (read-write)
+- [x] Compute PSO for `ProbeTraceCS` registered in `shaders.cfg` → generates `ShaderID::DDGI_PROBETRACECS_PROBETRACECS`
+- [x] In `Render()`: `DDGIVolume::Update()` → upload packed GPU descriptor → dispatch `ceil(totalRays / 64)` groups
+- [x] **Debug — PROBE_POSITIONS (mode 2):**
+  - `src/shaders/ddgi/ProbeOverlayCS.hlsl` (78 lines): 1 thread per probe, `MatrixMultiply(worldPos, matWorldToClip)` → NDC → pixel coords, reversed-Z depth test (`probeNDCDepth >= sceneDepth`), 3×3 dot write, green=active / red=inactive from `DDGILoadProbeState()`
+  - `ProbeOverlay.sr` / `ProbeOverlayInputs`: CB, DDGIVolumes, ProbeData, Depth, OverlayOutput (UAV)
+  - `DDGIRenderer::Setup()`: always declares `g_RG_DDGIDebugOverlay` (RGBA16_FLOAT, screen res, UAV)
+  - `DDGIRenderer::Render()`: always clears to transparent black; conditionally dispatches `ProbeOverlayCS` when `m_DDGIDebugMode == DDGI_DEBUG_PROBE_POSITIONS`
+  - Composition: `DeferredLighting.sr` t18 `DDGIDebugOutput` → `DeferredRenderer` → `DeferredLighting.hlsl` alpha-blends `lerp(color, ddgiDebug.rgb, ddgiDebug.a)` when `m_DDGIDebugMode != 0`
+- [x] **Debug — CONVERGENCE_STATUS (mode 7):** ImGui-only overlay — per-volume tree with probe count (X×Y×Z → total), rays/frame (float → M), spacing per axis
+- [x] Both modes (2, 7) in `DDGIDebugMode` combo box (ImGuiLayer.cpp)
+- [x] **Verify:** Green/red probe dots visible inside the volume wireframe. ImGui shows probe trace stats. PIX/NSight confirms RayData UAV is written.
 
 ---
 
@@ -257,15 +267,15 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
                 Phase 12
 ```
 
-> **Debug modes by phase:** Phase 2 → mode 1. Phase 3 → modes 2, 7. Phase 4 → modes 3, 4, 5. Phase 5 → mode 6. Phase 7 → modes 8, 9, 10, 11. Phase 8 → mode 12. Phase 9 → mode 7 expanded.
+> **Debug modes by phase:** Phase 2 → mode 1 (✅). Phase 3 → modes 2, 7 (✅). Phase 4 → modes 3, 4, 5. Phase 5 → mode 6. Phase 7 → modes 8, 9, 10, 11. Phase 8 → mode 12. Phase 9 → mode 7 expanded.
 
 ## Shader Files to Create
 
 | Phase | File | Profile | Purpose |
 |---|---|---|---|
 | 2 | `src/shaders/ddgi/VolumeWireframeCS.hlsl` | cs_6_8 | Debug mode 1 |
-| 3 | `src/shaders/ddgi/ProbeTraceCS.hlsl` | cs_6_8 | Probe ray tracing |
-| 3 | `src/shaders/ddgi/ProbeOverlayCS.hlsl` | cs_6_8 | Debug modes 2, 5 |
+| 3 | `src/shaders/ddgi/ProbeTraceCS.hlsl` | cs_6_8 | Probe ray tracing ✅ |
+| 3 | `src/shaders/ddgi/ProbeOverlayCS.hlsl` | cs_6_8 | Debug modes 2, 5 ✅ (mode 2 done, mode 5 in Phase 4) |
 | 5 | `src/shaders/ddgi/IndirectQueryCS.hlsl` | cs_6_8 | Fullscreen irradiance gather |
 | 8 | `src/shaders/ddgi/TileClassifyCS.hlsl` | cs_6_8 | Tile mask generation |
 
@@ -274,6 +284,6 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | Handle | Phase | Persistent? | Format | Notes |
 |---|---|---|---|---|
 | DDGI volume textures | 2 | **persistent** | various | Survive bake mode |
-| `g_RG_DebugOverlay` | 2 | transient | RGBA16_FLOAT | Screen res — debug viz output |
+| `g_RG_DDGIDebugOverlay` | 3 | transient | RGBA16_FLOAT | Screen res — debug viz overlay (mode 2+) |
 | `g_RG_DDGIIndirect` | 5 | transient | RGBA16_FLOAT | Screen res — indirect gather |
 | `g_TileMask` | 8 | transient | R32_UINT | Tile bitmask |

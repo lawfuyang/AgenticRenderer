@@ -323,12 +323,53 @@ void ImGuiLayer::UpdateFrame()
 
                     if (!g_Renderer.m_Scene.m_DDGIVolumes.empty())
                     {
-                        static const char* kDDGIDebugModes[] = { "Off", "Volume Wireframe" };
-                        int debugMode = static_cast<int>(g_Renderer.m_DDGIDebugMode);
-                        if (ImGui::Combo("DDGI Debug", &debugMode, kDDGIDebugModes, IM_ARRAYSIZE(kDDGIDebugModes)))
-                            g_Renderer.m_DDGIDebugMode = static_cast<uint32_t>(debugMode);
+                        static const char* kDDGIDebugModes[] = {
+                            "Off",
+                            "Volume Wireframe",
+                            "Probe Positions",
+                            "Convergence Status"
+                        };
+                        // Remap combo index → DDGIDebugMode constants
+                        static const uint32_t kDDGIDebugModeValues[] = {
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_OFF,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_VOLUME_WIREFRAME,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_POSITIONS,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_CONVERGENCE_STATUS
+                        };
+                        int comboIdx = 0;
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            if (kDDGIDebugModeValues[i] == g_Renderer.m_DDGIDebugMode) { comboIdx = i; break; }
+                        }
+                        if (ImGui::Combo("DDGI Debug", &comboIdx, kDDGIDebugModes, IM_ARRAYSIZE(kDDGIDebugModes)))
+                            g_Renderer.m_DDGIDebugMode = kDDGIDebugModeValues[comboIdx];
                         if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip("Volume Wireframe: green wireframe box showing the DDGI probe volume bounds");
+                            ImGui::SetTooltip(
+                                "Volume Wireframe: green wireframe box showing the DDGI probe volume bounds\n"
+                                "Probe Positions: green=active, red=inactive probe dots overlaid on screen\n"
+                                "Convergence Status: per-volume probe trace stats (rays/frame, GPU timing)");
+
+                        // ── Debug mode 7: Convergence Status (ImGui-only) ──────────────────
+                        if (g_Renderer.m_DDGIDebugMode == 7u)
+                        {
+                            ImGui::Separator();
+                            ImGui::TextColored({ 0.8f, 1.0f, 0.8f, 1.0f }, "DDGI Convergence Status");
+                            for (size_t volIdx = 0; volIdx < g_Renderer.m_Scene.m_DDGIVolumes.size(); ++volIdx)
+                            {
+                                DDGIVolumeNvrhi& vol = g_Renderer.m_Scene.m_DDGIVolumes[volIdx];
+                                rtxgi::DDGIVolumeDesc vDesc = vol.GetDesc();
+                                const int totalProbes = vDesc.probeCounts.x * vDesc.probeCounts.y * vDesc.probeCounts.z;
+                                const int raysPerFrame = totalProbes * vDesc.probeNumRays;
+                                const std::string label = vDesc.name ? vDesc.name : ("Volume " + std::to_string(volIdx));
+                                ImGui::Text("%s", label.c_str());
+                                ImGui::Text("  Probes: %dx%dx%d (%d total)",
+                                    vDesc.probeCounts.x, vDesc.probeCounts.y, vDesc.probeCounts.z, totalProbes);
+                                ImGui::Text("  Rays/frame: %d  (%.1fM)", raysPerFrame, raysPerFrame / 1e6f);
+                                ImGui::Text("  Spacing: %.2fm x %.2fm x %.2fm",
+                                    vDesc.probeSpacing.x, vDesc.probeSpacing.y, vDesc.probeSpacing.z);
+                            }
+                            ImGui::Separator();
+                        }
 
                         // ── Per-Volume Controls ──────────────────────────
                         for (size_t volIdx = 0; volIdx < g_Renderer.m_Scene.m_DDGIVolumes.size(); ++volIdx)

@@ -15,6 +15,7 @@ extern RGTextureHandle g_RG_SHARCIndirect;       // SHARCQuery output — screen
 extern RGTextureHandle g_RG_ShadowMask;          // ShadowMaskRenderer output — R8_UNORM screen-space shadow mask (NormalBasic only)
 extern RGTextureHandle g_RG_CSMDebugOutput;       // CSMDebugRenderer output — CSM debug overlay (RGBA16_FLOAT; black when off)
 extern RGTextureHandle g_RG_SSGIComposed;         // SSGIRenderer output — composed indirect GI (NormalBasic only)
+extern RGTextureHandle g_RG_DDGIDebugOverlay;    // DDGIRenderer output — DDGI debug overlay (RGBA16_FLOAT; black when off)
 
 
 
@@ -52,6 +53,10 @@ public:
         if (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
             g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
             renderGraph.ReadTexture(g_RG_SSGIComposed);
+
+        // Conditionally read the DDGI debug overlay when DDGI debug mode is active
+        if (g_Renderer.m_DDGIDebugMode != 0 && g_Renderer.m_EnableDDGIProbeTracing)
+            renderGraph.ReadTexture(g_RG_DDGIDebugOverlay);
 
         return true;
     }
@@ -94,6 +99,7 @@ public:
         dcb.SetIndirectLightingMode(g_Renderer.m_IndirectLightingTechnique);
         dcb.SetCSMDebugMode(g_Renderer.m_CSMDebugMode);
         dcb.SetSSGIDebugMode(g_Renderer.m_SSGI_DebugMode);
+        dcb.SetDDGIDebugMode(g_Renderer.m_DDGIDebugMode);
         commandList->writeBuffer(deferredCB, &dcb, sizeof(dcb), 0);
 
         // t8: RTXDI composited output (DI + emissive, already remodulated by CompositingPass)
@@ -146,6 +152,13 @@ public:
             ? renderGraph.GetTexture(g_RG_SSGIComposed, RGResourceAccessMode::Read)
             : CommonResources::GetInstance().DefaultTextureBlack;
         dlInputs.SetSSGIComposed(ssgiComposed);
+
+        // t18: DDGI debug overlay (RGBA16_FLOAT; black fallback when DDGI debug is off)
+        nvrhi::TextureHandle ddgiDebugOverlay =
+            (g_Renderer.m_DDGIDebugMode != 0 && g_Renderer.m_EnableDDGIProbeTracing)
+            ? renderGraph.GetTexture(g_RG_DDGIDebugOverlay, RGResourceAccessMode::Read)
+            : CommonResources::GetInstance().DefaultTextureBlack;
+        dlInputs.SetDDGIDebugOutput(ddgiDebugOverlay);
 
         nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(dlInputs);
 

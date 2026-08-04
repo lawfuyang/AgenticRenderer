@@ -27,6 +27,7 @@ static const Texture2D<float4>                          g_SHARCIndirect      = s
 static const Texture2D<float>                           g_ShadowMask         = srrhi::DeferredLightingInputs::GetShadowMask();
 static const Texture2D<float4>                          g_CSMDebugOutput     = srrhi::DeferredLightingInputs::GetCSMDebugOutput();
 static const Texture2D<float4>                          g_SSGIComposed       = srrhi::DeferredLightingInputs::GetSSGIComposed();
+static const Texture2D<float4>                          g_DDGIDebugOutput    = srrhi::DeferredLightingInputs::GetDDGIDebugOutput();
 
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
@@ -106,7 +107,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 
                 if (g_Deferred.m_RenderingMode == srrhi::CommonConsts::RENDERING_MODE_NORMAL_BASIC)
                 {
-                    // NormalBasic: shadow precomputed by ShadowMaskRenderer — single R8 load, no RT query
+                    // NormalBasic: shadow precomputed by ShadowMaskRenderer ï¿½ single R8 load, no RT query
                     lightingInputs.sunShadow = g_ShadowMask.Load(uint3(uvInt, 0));
                 }
                 else
@@ -124,7 +125,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         // ---- SHARC Indirect ----
         if (g_Deferred.m_IndirectLightingMode == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC)
         {
-            // SHARC cache stores outgoing indirect radiance (BRDF already baked in during the Update pass). Add directly — no further BRDF modulation needed.
+            // SHARC cache stores outgoing indirect radiance (BRDF already baked in during the Update pass). Add directly ï¿½ no further BRDF modulation needed.
             color += g_SHARCIndirect.Load(uint3(uvInt, 0)).rgb;
         }
 
@@ -172,13 +173,22 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 
     // -- CSM debug overlay --------------------------------------------------
     // CSM debug modes write to a separate texture (CSMDebugOutput).
-    // Overlay independently of the general debug mode — works even when
+    // Overlay independently of the general debug mode ï¿½ works even when
     // m_DebugMode == DEBUG_MODE_NONE.
     if (g_Deferred.m_CSMDebugMode != 0)
     {
         float4 csmDebug = g_CSMDebugOutput.Load(uint3(uvInt, 0));
         color = csmDebug.rgb;
         alpha = csmDebug.a;
+    }
+
+    // -- DDGI debug overlay -------------------------------------------------
+    // DDGI debug modes write to a separate texture (DDGIDebugOutput).
+    // Alpha-blend the debug visualisation on top of the current colour.
+    if (g_Deferred.m_DDGIDebugMode != 0)
+    {
+        float4 ddgiDebug = g_DDGIDebugOutput.Load(uint3(uvInt, 0));
+        color = lerp(color, ddgiDebug.rgb, ddgiDebug.a);
     }
 
     return float4(color, alpha);
