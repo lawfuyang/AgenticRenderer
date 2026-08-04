@@ -350,7 +350,13 @@ add_custom_target(build_shaders
             --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
             --include "${CMAKE_SOURCE_DIR}/src/shaders/rtxdi/SharedShaderInclude"
             --include "${CMAKE_SOURCE_DIR}/external/SHARC/include"
+            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders/ddgi/include"
+            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/include"
+            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders"
             --relaxedInclude "pch.h"
+            --relaxedInclude "cstddef"
+            --relaxedInclude "stdint.h"
+            --relaxedInclude "stddef.h"
 
     # DXIL output for D3D12 for NRD
     COMMAND ${SHADERMAKE_PATH_GENEX}
