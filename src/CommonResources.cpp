@@ -346,6 +346,131 @@ void CommonResources::Initialize()
             DummyUAVTypedBuffer = device->createBuffer(bufferDesc);
         }
 
+        // ── Unit-sphere mesh ────────────────────
+        {
+            constexpr uint32_t kRadial   = 32;
+            constexpr uint32_t kVertical = 16;
+
+            std::vector<float>    pos;
+            std::vector<uint16_t> idx;
+
+            // +Y pole
+            pos.insert(pos.end(), { 0.0f, 1.0f, 0.0f });
+
+            // Middle rings
+            for (uint32_t lat = 1; lat < kVertical; ++lat)
+            {
+                float phi = 3.14159265f * (float)lat / (float)kVertical;
+                float y   = cosf(phi);
+                float r   = sinf(phi);
+                for (uint32_t lon = 0; lon < kRadial; ++lon)
+                {
+                    float theta = 2.0f * 3.14159265f * (float)lon / (float)kRadial;
+                    pos.insert(pos.end(), { r * cosf(theta), y, r * sinf(theta) });
+                }
+            }
+
+            // -Y pole
+            pos.insert(pos.end(), { 0.0f, -1.0f, 0.0f });
+            const uint32_t botIdx = 1 + (kVertical - 1) * kRadial;
+
+            // Top cap indices
+            for (uint32_t lon = 0; lon < kRadial; ++lon)
+            {
+                idx.push_back(0);
+                idx.push_back((uint16_t)(1 + (lon + 1) % kRadial));
+                idx.push_back((uint16_t)(1 + lon));
+            }
+
+            // Middle rings
+            for (uint32_t lat = 0; lat < kVertical - 2; ++lat)
+            {
+                uint16_t ringA = (uint16_t)(1 + lat * kRadial);
+                uint16_t ringB = (uint16_t)(1 + (lat + 1) * kRadial);
+                for (uint32_t lon = 0; lon < kRadial; ++lon)
+                {
+                    uint16_t nl = (uint16_t)((lon + 1) % kRadial);
+                    uint16_t a0 = ringA + (uint16_t)lon;
+                    uint16_t b0 = ringB + (uint16_t)lon;
+                    uint16_t a1 = ringA + nl;
+                    uint16_t b1 = ringB + nl;
+                    idx.push_back(a0);
+                    idx.push_back(b0);
+                    idx.push_back(a1);
+                    idx.push_back(a1);
+                    idx.push_back(b0);
+                    idx.push_back(b1);
+                }
+            }
+
+            // Bottom cap indices
+            for (uint32_t lon = 0; lon < kRadial; ++lon)
+            {
+                uint16_t r1 = (uint16_t)(botIdx - kRadial + lon);
+                uint16_t r2 = (uint16_t)(botIdx - kRadial + (lon + 1) % kRadial);
+                idx.push_back(r1);
+                idx.push_back(r2);
+                idx.push_back((uint16_t)botIdx);
+            }
+
+            UnitSphereMesh.m_IndexCount = (uint32_t)idx.size();
+
+            // Create vertex buffer
+            {
+                nvrhi::BufferDesc d;
+                d.byteSize        = pos.size() * sizeof(float);
+                d.structStride    = 12;
+                d.debugName       = "UnitSphereVB";
+                d.isAccelStructBuildInput = true;
+                d.initialState    = nvrhi::ResourceStates::ShaderResource;
+                d.keepInitialState = true;
+                UnitSphereMesh.m_VertexBuffer = device->createBuffer(d);
+            }
+
+            // Create index buffer
+            {
+                nvrhi::BufferDesc d;
+                d.byteSize        = idx.size() * sizeof(uint16_t);
+                d.format          = nvrhi::Format::R16_UINT;
+                d.debugName       = "UnitSphereIB";
+                d.isAccelStructBuildInput = true;
+                d.initialState    = nvrhi::ResourceStates::ShaderResource;
+                d.keepInitialState = true;
+                UnitSphereMesh.m_IndexBuffer = device->createBuffer(d);
+            }
+
+            // Upload VB + IB and build BLAS in a single command list
+            {
+                nvrhi::CommandListHandle cl = g_Renderer.AcquireCommandList();
+                ScopedCommandList       sc{ cl, "SphereMesh" };
+
+                sc->writeBuffer(UnitSphereMesh.m_VertexBuffer, pos.data(), pos.size() * sizeof(float));
+                sc->writeBuffer(UnitSphereMesh.m_IndexBuffer,  idx.data(), idx.size() * sizeof(uint16_t));
+
+                nvrhi::rt::GeometryTriangles tris;
+                tris.indexBuffer  = UnitSphereMesh.m_IndexBuffer;
+                tris.vertexBuffer = UnitSphereMesh.m_VertexBuffer;
+                tris.indexFormat  = nvrhi::Format::R16_UINT;
+                tris.vertexFormat = nvrhi::Format::RGB32_FLOAT;
+                tris.indexCount   = UnitSphereMesh.m_IndexCount;
+                tris.vertexCount  = (uint32_t)(pos.size() / 3);
+                tris.vertexStride = 12;
+
+                nvrhi::rt::GeometryDesc geo;
+                geo.setTriangles(tris);
+                geo.flags        = nvrhi::rt::GeometryFlags::Opaque;
+                geo.geometryType = nvrhi::rt::GeometryType::Triangles;
+
+                nvrhi::rt::AccelStructDesc blasDesc;
+                blasDesc.bottomLevelGeometries = { geo };
+                blasDesc.debugName             = "UnitSphereBLAS";
+                blasDesc.buildFlags            = nvrhi::rt::AccelStructBuildFlags::PreferFastTrace;
+
+                UnitSphereMesh.m_BLAS = device->createAccelStruct(blasDesc);
+                nvrhi::utils::BuildBottomLevelAccelStruct(sc, UnitSphereMesh.m_BLAS, blasDesc);
+            }
+        }
+
         // Upload texture data using renderer's command list management
         nvrhi::CommandListHandle cmd = g_Renderer.AcquireCommandList();
         ScopedCommandList commandList{ cmd, "CommonResources_DefaultTextures" };

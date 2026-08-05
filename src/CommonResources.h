@@ -1,6 +1,13 @@
 #pragma once
 
-
+// Holds the GPU data for a single triangle mesh (VB, IB, count, and RT BLAS).
+struct CommonMesh
+{
+    nvrhi::BufferHandle              m_VertexBuffer;      // float3 positions, stride 12
+    nvrhi::BufferHandle              m_IndexBuffer;       // uint16_t indices
+    uint32_t                         m_IndexCount = 0;
+    nvrhi::rt::AccelStructHandle     m_BLAS;
+};
 
 // Common GPU resources shared across the application (samplers, default textures, etc.)
 class CommonResources
@@ -93,6 +100,9 @@ public:
     nvrhi::BufferHandle DummyUAVStructuredBuffer;
     nvrhi::BufferHandle DummySRVTypedBuffer;
     nvrhi::BufferHandle DummyUAVTypedBuffer;
+
+    // Default meshes
+    CommonMesh UnitSphereMesh;
 
     uint32_t m_RadianceMipCount = 1;
 
