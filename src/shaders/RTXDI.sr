@@ -84,7 +84,6 @@ struct PolymorphicLightInfo
     uint iesProfileIndex;
     uint primaryAxis;
     uint cosConeAngleAndSoftness;
-    uint _padding;
 };
 
 struct SceneConstants
@@ -163,9 +162,7 @@ cbuffer ResamplingConstants
 
     uint  visualizeRegirCells;
     uint2 environmentPdfTextureSize;
-    uint  _pad1;
     uint2 localLightPdfTextureSize;
-    uint2 _pad2;
 };
 
 // ---------------------------------------------------------------------------

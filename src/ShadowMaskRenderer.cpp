@@ -212,7 +212,6 @@ public:
                 sssCBData.SetShadowContrast(g_Renderer.m_SSS_ShadowContrast);
                 sssCBData.SetFlags(flags);
                 sssCBData.SetDepthBounds(Vector2{ 0.0f, 1.0f }); // Full range for directional light
-                sssCBData.SetPadding(Vector2{ 0.0f, 0.0f });
 
                 commandList->writeBuffer(sssCB, &sssCBData, sizeof(sssCBData), 0);
 

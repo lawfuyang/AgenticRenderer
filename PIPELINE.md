@@ -333,6 +333,11 @@ srrhi (Shader Resource Render Hardware Interface) is a code-generation tool that
 - **`#include`** — composition of shared definitions
 - **`extern`** — references to C++-side types
 
+> **No explicit padding needed.** srrhi automatically handles the CPU/GPU layout
+> mapping for `cbuffer` and `struct` members. Do not manually add `float2 _pad;`-style
+> padding fields — srrhi generates the correct C++ struct and HLSL bindings
+> (including `packoffset`) from your declarations.
+
 ### Generated Outputs
 
 For each `.sr` file in `src/shaders/`, srrhi produces:

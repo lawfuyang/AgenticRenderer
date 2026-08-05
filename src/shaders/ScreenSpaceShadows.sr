@@ -12,7 +12,6 @@ cbuffer ScreenSpaceShadowConstants
     float  m_ShadowContrast;        // Contrast boost for shadow transition (e.g. 4.0)
     uint   m_Flags;                 // Packed booleans: bit0=IgnoreEdgePixels, bit1=UsePrecisionOffset, bit2=BilinearSamplingOffsetMode, bit3=UseEarlyOut
     float2 m_DepthBounds;           // Min/max depth for early-out culling
-    float2 m_Padding;               // Alignment padding
 };
 
 srinput ScreenSpaceShadowInputs
