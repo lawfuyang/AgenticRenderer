@@ -66,7 +66,6 @@ static void DownsampleTextureToPow2(nvrhi::CommandListHandle commandList, nvrhi:
     consts.SetSamplerIdx(samplerIdx);
 
     srrhi::DownsampleTextureToPow2Inputs inputs;
-    inputs.SetConstants(&consts);
     inputs.SetInputTexture(inputTexture);
     inputs.SetOutputTexture(outputTexture, 0);
     nvrhi::BindingSetDesc bindingSetDesc = Renderer::CreateBindingSetDesc(inputs);

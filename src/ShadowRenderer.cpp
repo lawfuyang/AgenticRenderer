@@ -240,7 +240,6 @@ private:
 
         // Build binding set
         srrhi::ShadowDepthInputs inputs;
-        inputs.SetShadowDepthCB(&shadowDepthCB);
         inputs.SetInstances(g_Renderer.m_Scene.m_InstanceDataBuffer);
         inputs.SetMaterials(g_Renderer.m_Scene.m_MaterialConstantsBuffer);
         inputs.SetVertices(g_Renderer.m_Scene.m_VertexBufferQuantized);
