@@ -386,7 +386,7 @@ add_custom_target(build_shaders
             --shaderModel 6_8
             --hlsl2021
             -D RTXGI_DDGI_USE_SHADER_CONFIG_FILE=1
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders/ddgi"
+            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders"
             --include "${CMAKE_SOURCE_DIR}/src/shaders"
             --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/include"
             --relaxedInclude "cstddef"

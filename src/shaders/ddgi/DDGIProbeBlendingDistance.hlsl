@@ -8,4 +8,4 @@
 #define RTXGI_DDGI_PROBE_NUM_TEXELS 16
 #undef  RTXGI_DDGI_PROBE_NUM_INTERIOR_TEXELS
 #define RTXGI_DDGI_PROBE_NUM_INTERIOR_TEXELS 14
-#include "../../external/RTXGI-DDGI/shaders/ddgi/ProbeBlendingCS.hlsl"
+#include "ddgi/ProbeBlendingCS.hlsl"
