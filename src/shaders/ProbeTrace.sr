@@ -12,7 +12,9 @@ cbuffer ProbeTraceConstants
     uint    m_Frame;
     uint    m_VolumeIndex;
     uint    m_LightCount;
-    float   m_pad0;
+    uint    m_IrradianceTexIndex;   // bindless SRV index of DDGI irradiance atlas
+    uint    m_DistanceTexIndex;     // bindless SRV index of DDGI distance atlas
+    uint    m_ProbeDataTexIndex;    // bindless SRV index of DDGI probe-data atlas
 };
 
 srinput ProbeTraceInputs

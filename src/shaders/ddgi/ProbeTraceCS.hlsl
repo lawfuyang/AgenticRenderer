@@ -8,10 +8,12 @@
 
 // SDK helpers: ProbeCommon includes ProbeRayCommon, ProbeIndexing, ProbeOctahedral
 #include "ProbeCommon.hlsl"
+#include "ddgi/Irradiance.hlsl"
 
 #include "../RaytracingCommon.hlsli"
 #include "../CommonLighting.hlsli"
 #include "../Atmosphere.hlsli"
+#include "../Bindless.hlsli"
 
 #include "../srrhi/hlsl/ProbeTrace.hlsli"
 
@@ -27,6 +29,22 @@ static const StructuredBuffer<uint>                         g_Indices    = srrhi
 static const StructuredBuffer<srrhi::VertexQuantized>       g_Vertices   = srrhi::ProbeTraceInputs::GetVertices();
 static const Texture2DArray<float4>                         g_ProbeData  = srrhi::ProbeTraceInputs::GetProbeData();
 static       RWTexture2DArray<float4>                       g_RayData    = srrhi::ProbeTraceInputs::GetRayData();
+
+// ── Back-propagation helper ──────────────────────────────────────────────
+// File-scope wrapper that builds DDGIVolumeResources from bindless heap indices,
+// then calls the SDK's DDGIGetVolumeIrradiance().  Uses the same pattern as
+// SampleDDGIAtlas() — SamplerState capture works at file scope.
+float3 SampleVolumeIrradiance(float3 worldPos, float3 normal, float3 cameraDir, DDGIVolumeDescGPU volume)
+{
+    DDGIVolumeResources res;
+    res.probeIrradiance  = ResourceDescriptorHeap[NonUniformResourceIndex(g_ProbeCB.m_IrradianceTexIndex)];
+    res.probeDistance    = ResourceDescriptorHeap[NonUniformResourceIndex(g_ProbeCB.m_DistanceTexIndex)];
+    res.probeData        = ResourceDescriptorHeap[NonUniformResourceIndex(g_ProbeCB.m_ProbeDataTexIndex)];
+    res.bilinearSampler  = SamplerDescriptorHeap[NonUniformResourceIndex(srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_INDEX)];
+
+    float3 bias = DDGIGetSurfaceBias(normal, cameraDir, volume);
+    return DDGIGetVolumeIrradiance(worldPos, bias, normal, volume, res);
+}
 
 // ─── Sun shadow helper ───────────────────────────────────────────────────────
 // Returns 1.0 if lit, 0.0 if occluded.
@@ -182,6 +200,14 @@ void ProbeTraceCS(uint3 dispatchThreadID : SV_DispatchThreadID)
     // Prevent energy amplification
     static const float kMaxAlbedo = 0.9f;
     radiance = min(radiance, float3(kMaxAlbedo, kMaxAlbedo, kMaxAlbedo));
+
+    // ── Back-propagation: sample the volume's irradiance at the hit point ─
+    // This is how DDGI achieves recursive multi-bounce indirect lighting.
+    // The irradiance atlas contains last frame's accumulated result; blending
+    // propagates it forward each frame.
+    float3 cameraDir = normalize(probeWorldPos - attr.m_WorldPos);
+    float3 indirect  = SampleVolumeIrradiance(attr.m_WorldPos, pbr.normal, cameraDir, volume);
+    radiance += indirect;
 
     DDGIStoreProbeRayFrontfaceHit(g_RayData, outputCoords, volume, radiance, hitT);
 }

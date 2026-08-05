@@ -15,10 +15,10 @@ Stored as `uint32_t m_DDGIDebugMode` on the `Renderer` struct.
 |---|---|---|---|
 | 0 | `DDGI_DEBUG_OFF` | — | Normal rendering |
 | 1 | `DDGI_DEBUG_VOLUME_WIREFRAME` | Phase 2 ✅ | OBB wireframes (ImDrawList) |
-| 2 | `DDGI_DEBUG_PROBE_POSITIONS` | Phase 3 ✅ | Probe sphere overlay |
-| 3 | `DDGI_DEBUG_PROBE_IRRADIANCE` | Phase 4 | Raw irradiance sample |
-| 4 | `DDGI_DEBUG_PROBE_DISTANCE` | Phase 4 | Raw distance sample |
-| 5 | `DDGI_DEBUG_PROBE_CLASSIFICATION` | Phase 4 | State heatmap overlay |
+| 2 | `DDGI_DEBUG_PROBE_POSITIONS` | Phase 3 ✅ | Probe sphere overlay (RT, via ProbeVisCS) |
+| 3 | `DDGI_DEBUG_PROBE_IRRADIANCE` | Phase 4.5 | Spherical irradiance look-up on probe spheres |
+| 4 | `DDGI_DEBUG_PROBE_DISTANCE` | Phase 4.5 | Distance heatmap on probe spheres |
+| 5 | `DDGI_DEBUG_PROBE_CLASSIFICATION` | Phase 4.5 | State colours on probe spheres |
 | 6 | `DDGI_DEBUG_INDIRECT_ONLY` | Phase 5 | Raw g_RG_DDGIIndirect output |
 | 7 | `DDGI_DEBUG_CONVERGENCE_STATUS` | Phase 3+ ✅ | ImGui progress bars |
 | 8 | `DDGI_DEBUG_DDGI_ONLY` | Phase 7 | Final composed DDGI only |
@@ -103,37 +103,106 @@ Ownership lives on `Scene` as a `std::vector<DDGIVolumeNvrhi>` (currently 1 elem
 - [x] Compute PSO for `ProbeTraceCS` registered in `shaders.cfg` → generates `ShaderID::DDGI_PROBETRACECS_PROBETRACECS`
 - [x] In `Render()`: `DDGIVolume::Update()` → upload packed GPU descriptor → dispatch `ceil(totalRays / 64)` groups
 - [x] **Debug — PROBE_POSITIONS (mode 2):**
-  - `src/shaders/ddgi/ProbeOverlayCS.hlsl` (78 lines): 1 thread per probe, `MatrixMultiply(worldPos, matWorldToClip)` → NDC → pixel coords, reversed-Z depth test (`probeNDCDepth >= sceneDepth`), 3×3 dot write, green=active / red=inactive from `DDGILoadProbeState()`
-  - `ProbeOverlay.sr` / `ProbeOverlayInputs`: CB, DDGIVolumes, ProbeData, Depth, OverlayOutput (UAV)
+  - `src/shaders/ddgi/ProbeVisCS.hlsl` (added in Phase 4): RT-based sphere visualization via RayQuery — traces probe TLAS instances, decodes instance ID → volume/probe index, projects sphere position, colours by debug mode
+  - (Obsolete) `ProbeOverlayCS.hlsl` was the original per-probe dot overlay; superseded by ProbeVisCS in Phase 4, deleted
   - `DDGIRenderer::Setup()`: always declares `g_RG_DDGIDebugOverlay` (RGBA16_FLOAT, screen res, UAV)
-  - `DDGIRenderer::Render()`: always clears to transparent black; conditionally dispatches `ProbeOverlayCS` when `m_DDGIDebugMode == DDGI_DEBUG_PROBE_POSITIONS`
-  - Composition: `DeferredLighting.sr` t18 `DDGIDebugOutput` → `DeferredRenderer` → `DeferredLighting.hlsl` alpha-blends `lerp(color, ddgiDebug.rgb, ddgiDebug.a)` when `m_DDGIDebugMode != 0`
+  - Composition: `DDGIDebugCompositor` (renderer in `DDGIRenderer.cpp`) runs after Bloom, reads `g_RG_TAAOutput` as UAV and `g_RG_DDGIDebugOverlay` as SRV, replaces pixels where overlay.a > 0
 - [x] **Debug — CONVERGENCE_STATUS (mode 7):** ImGui-only overlay — per-volume tree with probe count (X×Y×Z → total), rays/frame (float → M), spacing per axis
 - [x] Both modes (2, 7) in `DDGIDebugMode` combo box (ImGuiLayer.cpp)
 - [x] **Verify:** Green/red probe dots visible inside the volume wireframe. ImGui shows probe trace stats. PIX/NSight confirms RayData UAV is written.
 
 ---
 
-## Phase 4 — SDK blending pipeline + Irradiance/Distance/Classification debug
+## Phase 4 — SDK blending pipeline + per-volume refactoring + RT probe visualization ✅
 
-Assumes Phase 2.5 has the `DDGIVolumeNvrhi` object with textures and constants buffer live.
+### SDK blending (8 passes dispatched via push-constant DDGIRootConstants)
 
-The compiled SDK DXIL shaders (`ddgi/DDGIProbeBlending*.hlsl` etc.) are dispatched
-through nvrhi compute PSOs — no raw D3D12/Vulkan interfacing.
+- [x] Create nvrhi compute PSOs for all 8 SDK shaders (blending×2, classification×2, relocation×2, reduction×2)
+- [x] Allocate `ProbeVariability` (R16_FLOAT, 2DArray) and `ProbeVariabilityAverage` (R16_FLOAT, 2DArray 1×1) textures
+- [x] Textures moved from nvrhi direct creation → render-graph persistent allocation (via `DeclarePersistentTexture`)
+- [x] `DDGIBlending.sr`: DDGIRootConstants as push constant (`[push_constant]` attribute on cbuffer, matches RTXGI D3D12 reference)
+- [x] In `Render()`, after probe trace (Phase 3):
+  1. `ProbeBlendingIrradianceCS` — `(probeCounts.x, .y, .z)` groups, 8×8 threads/group
+  2. `ProbeBlendingDistanceCS` — `(probeCounts.x, .y, .z)` groups, 16×16 threads/group
+  3. `ProbeRelocationCS` / `ProbeRelocationResetCS` (gated on `probeRelocationEnabled`)
+  4. `ProbeClassificationCS` / `ProbeClassificationResetCS` (gated on `probeClassificationEnabled`)
+  5. `DDGIReductionCS` → `DDGIExtraReductionCS` (gated on `probeVariabilityEnabled`)
+- [x] All SDK passes use `bIncludeBindlessResources = true`; resources via `ResourceDescriptorHeap[index]`
+- [x] `Renderer::RegisterTextureUAV()` + `RegisterStructuredBufferSRV()` — new bindless registration methods (inlined in `Renderer.h`)
+- [x] Bindless registration deferred to first frame (`m_bBindlessRegistered` guard per volume)
 
-- [ ] Create nvrhi compute PSOs for each SDK shader (8 total): blending×2, classification×2, relocation×2, reduction×2
-- [ ] In `Render()`, after probe trace (Phase 3):
-  1. `DDGIVolumeNvrhi::UploadConstants()` — copy packed `DDGIVolumeDescGPUPacked` to GPU
-  2. Transition RayData UAV → SRV
-  3. Dispatch `ProbeBlendingIrradianceCS` → blends new ray data into irradiance
-  4. Dispatch `ProbeBlendingDistanceCS` → blends new ray data into distance
-  5. Dispatch `ProbeRelocationCS` / `ProbeClassificationCS` (optional, behind flags)
-  6. UAV barriers between passes
-- [ ] Bind SDK shader resources via nvrhi binding sets (constants buffer SRV, ray data SRV, irradiance/distance/data UAVs)
-- [ ] **Debug — PROBE_IRRADIANCE (mode 3):** Sample DDGI irradiance texture per pixel in a debug overlay shader — decode gamma, scale by 2*PI. See `DDGI_Analysis.md` §4.13.3.
-- [ ] **Debug — PROBE_DISTANCE (mode 4):** Sample DDGI distance texture per pixel.
-- [ ] **Debug — PROBE_CLASSIFICATION (mode 5):** Extend `ProbeOverlayCS` to color probes by classification state.
-- [ ] Add modes 3-5 to the debug combo box
+### Per-volume refactoring
+
+- [x] All texture handles (`RGTextureHandle`), bindless indices, texture dimensions, `m_ResourceIndicesBuffer` moved from renderer members into `DDGIVolumeNvrhi` (in `Scene.h`)
+- [x] Renderer loops all volumes — zero `[0]` hardcoding in dispatch paths
+- [x] `m_DDGIVolumesBuffer` remains as shared renderer state (all volumes packed into one struct buffer)
+
+### Unit sphere mesh + TLAS for RT probe visualization
+
+- [x] Unit sphere mesh (32×16 segments) in `CommonResources` — encapsulated in `CommonMesh` struct (`m_VertexBuffer`, `m_IndexBuffer`, `m_IndexCount`, `m_BLAS`)
+- [x] Probe TLAS: `nvrhi::rt::InstanceDesc` per probe (sphere scale + grid position, `blasDeviceAddress` from unit-sphere BLAS)
+- [x] Per-probe instance ID packing: `(volumeIndex << 16) | probeIndex`
+- [x] `ProbeVisCS.hlsl` — compute shader with RayQuery, 8×8 thread groups, traces probe spheres, decodes instance ID
+- [x] `ProbeVis.sr` / `ProbeVisInputs`: CB with `MatViewToWorld` + `MatWorldToClip` + `MatClipToWorld` (all `row_major`), TLAS, DDGIVolumes, Depth, overlay output
+- [x] Depth test: project hit point to clip space via `MatrixMultiply(hitPos, MatWorldToClip)`, compare with depth buffer in reversed-Z, cull probes behind geometry
+
+### Back-propagation (recursive indirect)
+
+- [x] `ProbeTrace.sr` CB extended with `m_IrradianceTexIndex`, `m_DistanceTexIndex`, `m_ProbeDataTexIndex` — bindless heap indices
+- [x] `ProbeTraceCS.hlsl`: after direct lighting, calls `DDGIGetVolumeIrradiance()` via bindless wrapper `SampleVolumeIrradiance()` — adds indirect to stored radiance for multi-bounce propagation
+- [x] `Irradiance.hlsl` included via short path (`#include "ddgi/Irradiance.hlsl"`) — `CMakeLists.txt` dxc include path changed to `shaders/` level
+
+### Compositor (separate from DeferredLighting)
+
+- [x] `DDGIDebugCompositor` renderer (in `DDGIRenderer.cpp`, separate `REGISTER_RENDERER`)
+- [x] Compute shader (`DDGIDebugCompositor.hlsl`): reads `g_RG_TAAOutput` as UAV (old HDR content), reads `g_RG_DDGIDebugOverlay` as SRV, replaces pixels where `overlay.a > 0`
+- [x] Runs after Bloom (Read+Write `g_RG_TAAOutput` guarantees ordering before tonemap)
+- [x] Removed DDGI overlay composition from `DeferredLighting.hlsl`
+
+---
+
+## Phase 4.5 — Probe debug fixes (camera, depth, composition, irradiance) 🔧
+
+Phase 4 shipped the RT probe visualization but several issues prevent correct display:
+
+### Camera matrix fixes
+
+- [ ] `ProbeVisCS.hlsl` camera rays use `MatrixMultiply(clipPos, MatClipToWorld)` for world-pos reconstruction (matches PathTracer convention)
+- [x] Camera position via `MatrixMultiply((0,0,0,1), MatViewToWorld).xyz` — correct with `row_major`
+- [x] All matrix access uses `MatrixMultiply()` (project wrapper around `mul()`) — no raw `mul` or `transpose()`
+
+### Probe centering
+
+- [x] RTXGI SDK centres probes about origin: `pos = coords*spacing - shift + origin` where `shift = spacing*(counts-1)*0.5`
+- [x] C++ instance placement and HLSL `worldPos` both apply the `-shift` offset
+
+### Depth test
+
+- [x] Reversed-Z: near=1 (closest), far≈0. Pixels with `sceneDepth < 1e-4` treated as sky/far-plane (always show probes)
+- [x] Probe behind geometry when `probeNdcZ < sceneDepth` (reversed-Z: larger = closer)
+
+### Irradiance/decode correctness
+
+- [x] `ProbeVisCS` decode: `pow(raw, gamma*0.5)`, then `*self` (square), then `*(2*PI)` — matches SDK `DDGIGetVolumeIrradiance()` exactly. Was using `*2.0` instead of `*2*PI` (≈3× too dark)
+- [x] U32 format branch: `color *= 0.5f` matches SDK `irradiance /= 2.0f` (U32 stores 2× for precision)
+- [ ] Verify probe irradiance atlas is actually written by SDK blending passes (check in PIX: are blending passes dispatching? is RayData → irradiance blend working?)
+- [ ] Verify back-propagation in ProbeTraceCS: `DDGIGetVolumeIrradiance()` samples last frame's atlas, adds to ray radiance
+- [ ] Check `probeIrradianceEncodingGamma` value on the volume descriptor (default 5.0)
+
+### SamplerDescriptorHeap pattern
+
+- [x] Compute shaders cannot capture `SamplerState` locally in function body with SM 6.8
+- [x] Workaround: `SampleDDGIAtlas()` file-scope helper wraps `Texture2DArray` + `SamplerState` capture (same pattern as `SampleBindlessTextureLevel` in `Bindless.hlsli`)
+
+### Composition
+
+- [x] `DDGIDebugCompositor` replaces DeferredLighting blend — runs after Bloom on `g_RG_TAAOutput`
+- [x] Replace-blending (`overlay.a > 0 ? overlay.rgb : hdr`) — black probes (zero irradiance) still show as spheres
+
+### To fix
+
+- [ ] Probe irradiance samples might be stale (blending not writing to atlas) — verify SDK passes
+- [ ] Probe overlay `color = float3(0.25,0.25,0.25)` fallback may be too dim after tonemap — consider brighter default
 
 ---
 
@@ -252,22 +321,23 @@ through nvrhi compute PSOs — no raw D3D12/Vulkan interfacing.
 ## Dependency Order
 
 ```
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
-                                                                    │
-                Phase 7 ◄───────────────────────────────────────────┘
-                  │
-                Phase 8
-                  │
-                Phase 9 ◄── Phase 11 (can be done in parallel after Phase 4)
-                  │
-                Phase 10
-                  │
-                Phase 11
-                  │
-                Phase 12
+Phase 1 ──► Phase 2 ──► Phase 2.5 ──► Phase 3 ──► Phase 4 ──► Phase 4.5 ──► Phase 5 ──► Phase 6
+                                                                                         │
+                   Phase 7 ◄────────────────────────────────────────────────────────────┘
+                     │
+                   Phase 8
+                     │
+                   Phase 9 ◄── Phase 11 (can be done in parallel after Phase 4)
+                     │
+                   Phase 10
+                     │
+                   Phase 11
+                     │
+                   Phase 12
 ```
 
-> **Debug modes by phase:** Phase 2 → mode 1 (✅). Phase 3 → modes 2, 7 (✅). Phase 4 → modes 3, 4, 5. Phase 5 → mode 6. Phase 7 → modes 8, 9, 10, 11. Phase 8 → mode 12. Phase 9 → mode 7 expanded.
+> **Debug modes by phase:** Phase 2 → mode 1 (✅). Phase 3 → mode 2 (✅). Phase 4 → modes 2-5 infrastructure (✅). Phase 4.5 → modes 3,4,5 fixes (🔧). Phase 5 → mode 6. Phase 7 → modes 8,9,10,11. Phase 8 → mode 12. Phase 9 → mode 7 expanded.
+
 
 ## Shader Files to Create
 
@@ -275,9 +345,13 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 |---|---|---|---|
 | 2 | `src/shaders/ddgi/VolumeWireframeCS.hlsl` | cs_6_8 | Debug mode 1 |
 | 3 | `src/shaders/ddgi/ProbeTraceCS.hlsl` | cs_6_8 | Probe ray tracing ✅ |
-| 3 | `src/shaders/ddgi/ProbeOverlayCS.hlsl` | cs_6_8 | Debug modes 2, 5 ✅ (mode 2 done, mode 5 in Phase 4) |
+| 3/4 | `src/shaders/ddgi/ProbeVisCS.hlsl` | cs_6_8 | Debug modes 2-5 ✅ (RT sphere viz, replaced ProbeOverlayCS) |
+| 4 | `src/shaders/ddgi/ProbeVisUpdateCS.hlsl` | cs_6_8 | Probe TLAS instance transforms (not yet dispatched) |
+| 4 | `src/shaders/DDGIDebugCompositor.hlsl` | cs_6_8 | Additive-blend overlay onto TAAOutput ✅ |
 | 5 | `src/shaders/ddgi/IndirectQueryCS.hlsl` | cs_6_8 | Fullscreen irradiance gather |
 | 8 | `src/shaders/ddgi/TileClassifyCS.hlsl` | cs_6_8 | Tile mask generation |
+
+**Deleted:** `ProbeOverlayCS.hlsl`, `ProbeOverlay.sr`, `ProbeTextureDebugCS.hlsl` — superseded by `ProbeVisCS.hlsl`.
 
 ## Key Render Graph Handles
 

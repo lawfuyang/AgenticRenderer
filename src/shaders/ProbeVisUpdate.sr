@@ -1,0 +1,16 @@
+// DDGI Probe Visualization — TLAS Instance Update binding set.
+extern DDGIVolumeDescGPUPacked;
+
+cbuffer ProbeVisUpdateConstants
+{
+    uint        m_VolumeIndex;
+    uint        m_InstanceOffset;
+    float       m_ProbeRadius;
+};
+
+srinput ProbeVisUpdateInputs
+{
+    ProbeVisUpdateConstants                       m_ProbeVisUpdateCB;
+    StructuredBuffer<DDGIVolumeDescGPUPacked>     DDGIVolumes;
+    RWByteAddressBuffer                           InstanceBuffer;
+};

@@ -1295,6 +1295,7 @@ void Renderer::ScheduleAndRunAllRenderers()
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TransparentPassRenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TAARenderer"));
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("BloomRenderer"));
+        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DDGIDebugCompositor"));
     }
     else
     {

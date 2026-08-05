@@ -323,10 +323,13 @@ void ImGuiLayer::UpdateFrame()
 
                     if (!g_Renderer.m_Scene.m_DDGIVolumes.empty())
                     {
-                        static const char* kDDGIDebugModes[] = {
+                static const char* kDDGIDebugModes[] = {
                             "Off",
                             "Volume Wireframe",
                             "Probe Positions",
+                            "Irradiance Atlas",          // mode 3 (Phase 4)
+                            "Distance Atlas",// mode 4 (Phase 4)
+                            "Probe Classification",      // mode 5 (Phase 4)
                             "Convergence Status"
                         };
                         // Remap combo index → DDGIDebugMode constants
@@ -334,10 +337,13 @@ void ImGuiLayer::UpdateFrame()
                             srrhi::DDGIDebugMode::DDGI_DEBUG_OFF,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_VOLUME_WIREFRAME,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_POSITIONS,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_IRRADIANCE,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_DISTANCE,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_CLASSIFICATION,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_CONVERGENCE_STATUS
                         };
                         int comboIdx = 0;
-                        for (int i = 0; i < 4; ++i)
+                        for (int i = 0; i < 7; ++i)
                         {
                             if (kDDGIDebugModeValues[i] == g_Renderer.m_DDGIDebugMode) { comboIdx = i; break; }
                         }
@@ -347,6 +353,9 @@ void ImGuiLayer::UpdateFrame()
                             ImGui::SetTooltip(
                                 "Volume Wireframe: green wireframe box showing the DDGI probe volume bounds\n"
                                 "Probe Positions: green=active, red=inactive probe dots overlaid on screen\n"
+                                "Irradiance Atlas: raw irradiance probe atlas (decoded, tone-mapped)\n"
+                                "Distance Atlas: probe distance atlas (blue=near, red=far heatmap)\n"
+                                "Probe Classification: per-probe state color (green=active, red=inactive)\n"
                                 "Convergence Status: per-volume probe trace stats (rays/frame, GPU timing)");
 
                         // ── Debug mode 7: Convergence Status (ImGui-only) ──────────────────
