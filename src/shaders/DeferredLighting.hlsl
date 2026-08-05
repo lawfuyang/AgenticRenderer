@@ -189,6 +189,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
     {
         float4 ddgiDebug = g_DDGIDebugOutput.Load(uint3(uvInt, 0));
         color = lerp(color, ddgiDebug.rgb, ddgiDebug.a);
+        alpha = max(alpha, ddgiDebug.a);  // force opaque on probe hits (sky fix)
     }
 
     return float4(color, alpha);
