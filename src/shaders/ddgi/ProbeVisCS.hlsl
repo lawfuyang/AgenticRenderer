@@ -30,11 +30,12 @@ RayDesc BuildCameraRay(uint2 px)
     float4 pos4  = MatrixMultiply(float4(0, 0, 0, 1), g_CB.m_MatViewToWorld);
     float3 pos   = pos4.xyz;
 
-    // Compute a point on the far clip plane, transform to world, then shoot the ray.
-    float2 uv     = (float2(px) + 0.5f) * g_CB.m_ViewportSizeInv;
-    float2 clipXY = UVToClipXY(uv);
-    float4 farWorld  = MatrixMultiply(float4(clipXY, 0.9f, 1.0f), g_CB.m_MatClipToWorld);
-    float3 farPoint  = farWorld.xyz / farWorld.w;
+    // World-pos reconstruction via MatrixMultiply(clipPos, MatClipToWorld).
+    // Matches PathTracer convention (PathTracer.hlsl line 65).
+    float2 uv       = (float2(px) + 0.5f) * g_CB.m_ViewportSizeInv;
+    float2 clipPos  = UVToClipXY(uv);
+    float4 farWorld = MatrixMultiply(float4(clipPos, 0.9f, 1.0f), g_CB.m_MatClipToWorld);
+    float3 farPoint = farWorld.xyz / farWorld.w;
 
     RayDesc ray;
     ray.Origin    = pos;

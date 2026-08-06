@@ -148,6 +148,13 @@ public:
                 volume.m_VariabilityTexDim.x, volume.m_VariabilityTexDim.y, volume.m_VariabilityTexDim.z);
         SDL_Log("[DDGI]   Textures from render graph. VolCIdx=%u  ResIdx=%u  MaxProbes=%u",
                 volume.m_VolumeConstantsIndex, volume.m_VolumeResourceIndicesIndex, m_MaxProbes);
+        SDL_Log("[DDGI]   Encoding: irradianceGamma=%.1f  irradianceFormat=%s",
+                volDesc.probeIrradianceEncodingGamma,
+                volDesc.probeIrradianceFormat == rtxgi::EDDGIVolumeTextureFormat::U32 ? "U32" : "UNORM");
+        SDL_Log("[DDGI]   Relocation=%s  Classification=%s  Variability=%s",
+                volDesc.probeRelocationEnabled     ? "ON" : "OFF",
+                volDesc.probeClassificationEnabled ? "ON" : "OFF",
+                volDesc.probeVariabilityEnabled    ? "ON" : "OFF");
     }
 
     bool Setup(RenderGraph& renderGraph) override
