@@ -9,6 +9,7 @@
 // The SDK places the struct inside namespace rtxgi — hoist it to the global scope.
 #include <rtxgi/ddgi/DDGIRootConstants.h>
 #include "shaders/srrhi/cpp/DDGIBlending.h"
+#include "shaders/srrhi/cpp/IndirectQuery.h"
 
 #include <rtxgi/ddgi/DDGIVolume.h>
 #include <rtxgi/ddgi/DDGIVolumeDescGPU.h>
@@ -20,8 +21,10 @@
 // ---------------------------------------------------------------------------
 extern RGTextureHandle g_RG_DepthTexture;
 extern RGTextureHandle g_RG_TAAOutput;
+extern RGTextureHandle g_RG_GBufferNormals;
 
 RGTextureHandle        g_RG_DDGIDebugOverlay;
+RGTextureHandle        g_RG_DDGIIndirect;
 
 // ---------------------------------------------------------------------------
 // DDGIRenderer — DDGI probe ray tracing and blending (RTXGI-DDGI)
@@ -103,6 +106,17 @@ public:
             vol.m_VolumeConstantsIndex = m_VolumeConstantsIndex;
         }
 
+        // Consolidated per-volume resource indices (used by IndirectQueryCS)
+        {
+            nvrhi::BufferDesc desc;
+            desc.byteSize           = numVolumes * sizeof(rtxgi::DDGIVolumeResourceIndices);
+            desc.structStride       = sizeof(rtxgi::DDGIVolumeResourceIndices);
+            desc.debugName          = "DDGIResourceIndicesArray";
+            desc.initialState       = nvrhi::ResourceStates::ShaderResource;
+            desc.keepInitialState   = true;
+            m_ResourceIndicesArrayBuffer = device->createBuffer(desc);
+        }
+
         // ── Probe-vis TLAS + instance buffer (global across volumes) ─────────
         for (const DDGIVolumeNvrhi& v : g_Renderer.m_Scene.m_DDGIVolumes)
         {
@@ -165,6 +179,7 @@ public:
         }
 
         renderGraph.ReadTexture(g_RG_DepthTexture);
+        renderGraph.ReadTexture(g_RG_GBufferNormals);
 
         for (DDGIVolumeNvrhi& vol : g_Renderer.m_Scene.m_DDGIVolumes)
         {
@@ -186,6 +201,20 @@ public:
             desc.m_NvrhiDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
             desc.m_NvrhiDesc.keepInitialState = true;
             renderGraph.DeclarePersistentTexture(desc, vol.m_ProbeVariabilityAvgTexture);
+        }
+
+        // Per-frame indirect query output (transient, screen resolution)
+        {
+            auto [w, h] = g_Renderer.SwapchainSize();
+            RGTextureDesc d;
+            d.m_NvrhiDesc.width         = w;
+            d.m_NvrhiDesc.height        = h;
+            d.m_NvrhiDesc.format        = nvrhi::Format::RGBA16_FLOAT;
+            d.m_NvrhiDesc.isUAV         = true;
+            d.m_NvrhiDesc.debugName     = "DDGIIndirect";
+            d.m_NvrhiDesc.initialState  = nvrhi::ResourceStates::UnorderedAccess;
+            d.m_NvrhiDesc.keepInitialState = true;
+            renderGraph.DeclareTexture(d, g_RG_DDGIIndirect);
         }
 
         // Per-frame overlay output (transient)
@@ -240,6 +269,44 @@ public:
             DispatchProbeTrace(commandList, device, renderGraph, vol);
             DispatchSDKBlendingPasses(commandList, vol);
         }
+
+        // Write consolidated per-volume resource indices for IndirectQueryCS
+        if (!m_bResourceIndicesArrayWritten)
+        {
+            bool bAllRegistered = true;
+            for (const DDGIVolumeNvrhi& v : volumes)
+            {
+                if (!v.m_bBindlessRegistered) { bAllRegistered = false; break; }
+            }
+            if (bAllRegistered)
+            {
+                std::vector<rtxgi::DDGIVolumeResourceIndices> allIndices;
+                allIndices.reserve(volumes.size());
+                for (const DDGIVolumeNvrhi& v : volumes)
+                {
+                    rtxgi::DDGIVolumeResourceIndices ri = {};
+                    ri.rayDataUAVIndex                 = v.m_RayDataUAVIndex;
+                    ri.rayDataSRVIndex                 = v.m_RayDataSRVIndex;
+                    ri.probeIrradianceUAVIndex         = v.m_IrradianceUAVIndex;
+                    ri.probeIrradianceSRVIndex         = v.m_IrradianceSRVIndex;
+                    ri.probeDistanceUAVIndex           = v.m_DistanceUAVIndex;
+                    ri.probeDistanceSRVIndex           = v.m_DistanceSRVIndex;
+                    ri.probeDataUAVIndex               = v.m_ProbeDataUAVIndex;
+                    ri.probeDataSRVIndex               = v.m_ProbeDataSRVIndex;
+                    ri.probeVariabilityUAVIndex        = v.m_VariabilityUAVIndex;
+                    ri.probeVariabilitySRVIndex        = v.m_VariabilitySRVIndex;
+                    ri.probeVariabilityAverageUAVIndex  = v.m_VariabilityAvgUAVIndex;
+                    ri.probeVariabilityAverageSRVIndex  = v.m_VariabilityAvgSRVIndex;
+                    allIndices.push_back(ri);
+                }
+                commandList->writeBuffer(m_ResourceIndicesArrayBuffer, allIndices.data(),
+                                         allIndices.size() * sizeof(rtxgi::DDGIVolumeResourceIndices));
+                m_bResourceIndicesArrayWritten = true;
+            }
+        }
+
+        // Fullscreen indirect query (irradiance gather across all volumes)
+        DispatchIndirectQuery(commandList, renderGraph);
 
         // RT probe visualization (sphere instances via RayQuery)
         DispatchProbeVis(commandList, renderGraph);
@@ -486,12 +553,62 @@ private:
         }
     }
 
+    // ── Indirect query ──────────────────────────────────────────────────────
+
+    void DispatchIndirectQuery(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) const
+    {
+        auto& volumes = g_Renderer.m_Scene.m_DDGIVolumes;
+        if (volumes.empty())
+        {
+            return;
+        }
+
+        auto [width, height] = g_Renderer.SwapchainSize();
+        nvrhi::DeviceHandle device = g_Renderer.m_RHI->m_NvrhiDevice;
+
+        nvrhi::BufferHandle cb = device->createBuffer(
+            nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(srrhi::IndirectQueryConstants), "IndirectQueryCB", 1));
+
+        srrhi::IndirectQueryConstants constants;
+        constants.SetView(g_Renderer.m_Scene.m_View);
+        constants.SetNumVolumes(static_cast<uint32_t>(volumes.size()));
+        constants.SetIndirectIntensity(1.0f);
+        commandList->writeBuffer(cb, &constants, sizeof(constants), 0);
+
+        nvrhi::TextureHandle depthTex  = renderGraph.GetTexture(g_RG_DepthTexture,   RGResourceAccessMode::Read);
+        nvrhi::TextureHandle normalTex = renderGraph.GetTexture(g_RG_GBufferNormals, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle outputTex = renderGraph.GetTexture(g_RG_DDGIIndirect,   RGResourceAccessMode::Write);
+
+        srrhi::IndirectQueryInputs inputs;
+        inputs.SetIndirectQueryCB(cb);
+        inputs.SetDDGIVolumes(m_DDGIVolumesBuffer);
+        inputs.SetDDGIResourceIndices(m_ResourceIndicesArrayBuffer);
+        inputs.SetDepth(depthTex);
+        inputs.SetNormals(normalTex);
+        inputs.SetOutput(outputTex, 0);
+
+        uint32_t groupsX = (width  + 7u) / 8u;
+        uint32_t groupsY = (height + 7u) / 8u;
+
+        Renderer::RenderPassParams params;
+        params.commandList    = commandList;
+        params.shaderID       = ShaderID::DDGI_INDIRECTQUERYCS_INDIRECTQUERYCS;
+        params.bindingSetDesc = Renderer::CreateBindingSetDesc(inputs);
+        params.dispatchParams = { groupsX, groupsY, 1 };
+        g_Renderer.AddComputePass(params);
+    }
+
     // ── Probe vis ───────────────────────────────────────────────────────────
 
     void DispatchProbeVis(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) const
     {
         const uint32_t debugMode = g_Renderer.m_DDGIDebugMode;
-        if (debugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_OFF)
+
+        // ProbeVis only handles modes 2-5 (probe-sphere RayQuery visualizations).
+        if (debugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_OFF ||
+            debugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_VOLUME_WIREFRAME ||
+            debugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_INDIRECT_ONLY ||
+            debugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_CONVERGENCE_STATUS)
         {
             return;
         }
@@ -619,10 +736,13 @@ private:
 
     // ── Members ─────────────────────────────────────────────────────────────
     nvrhi::BufferHandle              m_DDGIVolumesBuffer;
-    uint32_t                         m_VolumeConstantsIndex = UINT32_MAX;
-    uint32_t                         m_MaxProbes            = 0;
+    uint32_t                         m_VolumeConstantsIndex         = UINT32_MAX;
+    uint32_t                         m_MaxProbes                    = 0;
     nvrhi::rt::AccelStructHandle     m_ProbeTLAS;
     nvrhi::BufferHandle              m_ProbeInstanceBuffer;
+    nvrhi::BufferHandle              m_ResourceIndicesArrayBuffer;
+
+    bool                             m_bResourceIndicesArrayWritten = false;
 };
 
 REGISTER_RENDERER(DDGIRenderer)
@@ -641,15 +761,32 @@ public:
         if (g_Renderer.m_DDGIDebugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_OFF || !g_Renderer.m_EnableDDGIProbeTracing)
             return false;
 
-        renderGraph.ReadTexture(g_RG_DDGIDebugOverlay);
+        // Mode 6 (DDGI_INDIRECT_ONLY): overlay = g_RG_DDGIIndirect directly
+        if (g_Renderer.m_DDGIDebugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_INDIRECT_ONLY)
+        {
+            renderGraph.ReadTexture(g_RG_DDGIIndirect);
+        }
+        else
+        {
+            renderGraph.ReadTexture(g_RG_DDGIDebugOverlay);
+        }
         renderGraph.WriteTexture(g_RG_TAAOutput);
         return true;
     }
 
     void Render(nvrhi::CommandListHandle commandList, const RenderGraph& renderGraph) override
     {
-        nvrhi::TextureHandle dst     = renderGraph.GetTexture(g_RG_TAAOutput,        RGResourceAccessMode::Write);
-        nvrhi::TextureHandle overlay = renderGraph.GetTexture(g_RG_DDGIDebugOverlay, RGResourceAccessMode::Read);
+        nvrhi::TextureHandle dst     = renderGraph.GetTexture(g_RG_TAAOutput,  RGResourceAccessMode::Write);
+
+        nvrhi::TextureHandle overlay;
+        if (g_Renderer.m_DDGIDebugMode == srrhi::DDGIDebugMode::DDGI_DEBUG_INDIRECT_ONLY)
+        {
+            overlay = renderGraph.GetTexture(g_RG_DDGIIndirect, RGResourceAccessMode::Read);
+        }
+        else
+        {
+            overlay = renderGraph.GetTexture(g_RG_DDGIDebugOverlay, RGResourceAccessMode::Read);
+        }
 
         srrhi::DDGIDebugCompositorInputs inputs;
         inputs.SetDDGIDebugOverlay(overlay);

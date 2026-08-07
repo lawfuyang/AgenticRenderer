@@ -1,0 +1,26 @@
+// DDGI Indirect Query — fullscreen compute shader binding set.
+// Reconstructs world position from depth, decodes normals, and queries
+// all DDGI volumes for irradiance at each pixel.
+// Output goes to g_RG_DDGIIndirect (RGBA16_FLOAT, screen resolution).
+
+#include "Common.sr"
+extern DDGIVolumeDescGPUPacked;
+extern DDGIVolumeResourceIndices;
+
+cbuffer IndirectQueryConstants
+{
+    PlanarViewConstants  m_View;
+    uint                 m_NumVolumes;
+    float                m_IndirectIntensity;
+};
+
+srinput IndirectQueryInputs
+{
+    IndirectQueryConstants                       m_IndirectQueryCB;
+
+    StructuredBuffer<DDGIVolumeDescGPUPacked>    DDGIVolumes;
+    StructuredBuffer<DDGIVolumeResourceIndices>  DDGIResourceIndices;  // per-volume, indexed parallel to DDGIVolumes
+    Texture2D<float>                             Depth;
+    Texture2D<float2>                            Normals;              // oct-encoded world-space normal (RG16_FLOAT)
+    RWTexture2D<float4>                          Output;
+};

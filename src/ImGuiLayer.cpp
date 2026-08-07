@@ -330,6 +330,7 @@ void ImGuiLayer::UpdateFrame()
                             "Irradiance Atlas",          // mode 3 (Phase 4)
                             "Distance Atlas",// mode 4 (Phase 4)
                             "Probe Classification",      // mode 5 (Phase 4)
+                            "Indirect Only",             // mode 6 (Phase 5)
                             "Convergence Status"
                         };
                         // Remap combo index → DDGIDebugMode constants
@@ -340,10 +341,11 @@ void ImGuiLayer::UpdateFrame()
                             srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_IRRADIANCE,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_DISTANCE,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_PROBE_CLASSIFICATION,
+                            srrhi::DDGIDebugMode::DDGI_DEBUG_INDIRECT_ONLY,
                             srrhi::DDGIDebugMode::DDGI_DEBUG_CONVERGENCE_STATUS
                         };
                         int comboIdx = 0;
-                        for (int i = 0; i < 7; ++i)
+                        for (int i = 0; i < 8; ++i)
                         {
                             if (kDDGIDebugModeValues[i] == g_Renderer.m_DDGIDebugMode) { comboIdx = i; break; }
                         }
@@ -356,6 +358,7 @@ void ImGuiLayer::UpdateFrame()
                                 "Irradiance Atlas: raw irradiance probe atlas (decoded, tone-mapped)\n"
                                 "Distance Atlas: probe distance atlas (blue=near, red=far heatmap)\n"
                                 "Probe Classification: per-probe state color (green=active, red=inactive)\n"
+                                "Indirect Only: raw DDGI indirect lighting output (fullscreen irradiance gather)\n"
                                 "Convergence Status: per-volume probe trace stats (rays/frame, GPU timing)");
 
                         // ── Debug mode 7: Convergence Status (ImGui-only) ──────────────────
