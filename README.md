@@ -121,7 +121,6 @@ The project automatically downloads and builds the following dependencies:
 - **[stb_image](https://github.com/nothings/stb)**: Image loading
 - **[RTXDI](https://github.com/NVIDIA-RTX/RTXDI)**: ReSTIR Direct Illumination framework and light sampling utilities
 - **[NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser)**: NVIDIA Real-time Denoiser (RELAX for diffuse + specular)
-- **[RTXGI-DDGI](https://github.com/NVIDIAGameWorks/RTXGI)**: Dynamic Diffuse Global Illumination with probe-based irradiance caching
 - **[rtxts-ttm](https://github.com/NVIDIA-RTX/rtxts-ttm)**: Tiled Texture Manager for sampler-feedback-driven virtual texture streaming
 - **[AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)**: FSR3 temporal anti-aliasing and Single Pass Downsampler (SPD)
 - **[SHARC](https://github.com/NVIDIAGameWorks/SHARC)**: Spatial Hash Radiance Cache for real-time indirect lighting
@@ -133,7 +132,6 @@ The project automatically downloads and builds the following dependencies:
 The engine supports multiple rendering modes, selectable via the ImGui UI or at runtime:
 
 - **Normal Mode**: Standard deferred rendering with real-time performance focus, featuring ReSTIR DI/GI, SHARC indirect lighting, hardware ray-traced shadows, and full RTXDI pipeline
-- **NormalBasic Mode**: Classic rasterizer pipeline with Cascaded Shadow Maps (CSM), DDGI (RTXGI Dynamic Diffuse Global Illumination), and simplified forward transparency — zero per-pixel RT dependency for maximum compatibility
 - **IBL Mode**: Image-based lighting dominant, useful for controlled lighting conditions
 - **Reference Path Tracer**: Unbiased Monte Carlo path tracing for reference-quality rendering with progressive refinement
 

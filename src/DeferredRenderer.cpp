@@ -12,10 +12,6 @@ extern RGTextureHandle g_RG_GBufferMotionVectors;
 extern RGTextureHandle g_RG_HDRColor;
 extern RGTextureHandle g_RG_RTXDIDIComposited;   // CompositingPass output — final DI + emissive composite
 extern RGTextureHandle g_RG_SHARCIndirect;       // SHARCQuery output — screen-space indirect radiance
-extern RGTextureHandle g_RG_ShadowMask;          // ShadowMaskRenderer output — R8_UNORM screen-space shadow mask (NormalBasic only)
-extern RGTextureHandle g_RG_CSMDebugOutput;       // CSMDebugRenderer output — CSM debug overlay (RGBA16_FLOAT; black when off)
-extern RGTextureHandle g_RG_SSGIComposed;         // SSGIRenderer output — composed indirect GI (NormalBasic only)
-extern RGTextureHandle g_RG_DDGIDebugOverlay;    // DDGIRenderer output — DDGI debug overlay (RGBA16_FLOAT; black when off)
 
 
 
@@ -40,23 +36,6 @@ public:
         // Conditionally read the SHARC indirect output when SHARC is the selected technique
         if (g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_SHARC)
             renderGraph.ReadTexture(g_RG_SHARCIndirect);
-
-        // Conditionally read the CSM shadow mask in NormalBasic mode
-        if (g_Renderer.m_Mode == RenderingMode::NormalBasic)
-            renderGraph.ReadTexture(g_RG_ShadowMask);
-
-        // Conditionally read the CSM debug overlay when CSM debug mode is active
-        if (g_Renderer.m_CSMDebugMode != 0 && g_Renderer.m_EnableCSMShadows)
-            renderGraph.ReadTexture(g_RG_CSMDebugOutput);
-
-        // Conditionally read the SSGI compose output when SSGI is the active technique
-        if (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
-            g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
-            renderGraph.ReadTexture(g_RG_SSGIComposed);
-
-        // Conditionally read the DDGI debug overlay when DDGI debug mode is active
-        if (g_Renderer.m_DDGIDebugMode != 0 && g_Renderer.m_EnableDDGIProbeTracing)
-            renderGraph.ReadTexture(g_RG_DDGIDebugOverlay);
 
         return true;
     }
@@ -91,15 +70,12 @@ public:
         dcb.SetRenderingMode((uint32_t)g_Renderer.m_Mode);
         dcb.SetRadianceMipCount(CommonResources::GetInstance().m_RadianceMipCount);
         dcb.SetLightCount(g_Renderer.m_Scene.m_LightCount);
-        // Disable RT shadows in NormalBasic — shadows come from the CSM shadow mask instead
-        dcb.SetEnableRTShadows((g_Renderer.m_Mode != RenderingMode::NormalBasic) && g_Renderer.m_EnableRTShadows ? 1 : 0);
+        // RT shadows are ray-traced against the scene TLAS
+        dcb.SetEnableRTShadows(g_Renderer.m_EnableRTShadows ? 1 : 0);
         dcb.SetDebugMode(g_Renderer.m_DebugMode);
         dcb.SetUseReSTIRDI(g_Renderer.m_EnableReSTIRDI ? 1u : 0u);
         dcb.SetUseReSTIRDIDenoised(0u); // compositing is done by CompositingPass
         dcb.SetIndirectLightingMode(g_Renderer.m_IndirectLightingTechnique);
-        dcb.SetCSMDebugMode(g_Renderer.m_CSMDebugMode);
-        dcb.SetSSGIDebugMode(g_Renderer.m_SSGI_DebugMode);
-        dcb.SetDDGIDebugMode(g_Renderer.m_DDGIDebugMode);
         commandList->writeBuffer(deferredCB, &dcb, sizeof(dcb), 0);
 
         // t8: RTXDI composited output (DI + emissive, already remodulated by CompositingPass)
@@ -130,35 +106,6 @@ public:
         dlInputs.SetIndices(g_Renderer.m_Scene.m_IndexBuffer);
         dlInputs.SetRTXDIDIComposited(rtxdiComposited);
         dlInputs.SetSHARCIndirect(sharcIndirect);
-
-        // t15: CSM shadow mask (R8_UNORM; white = fully lit fallback when not in NormalBasic)
-        nvrhi::TextureHandle shadowMask =
-            (g_Renderer.m_Mode == RenderingMode::NormalBasic)
-            ? renderGraph.GetTexture(g_RG_ShadowMask, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureWhite;
-        dlInputs.SetShadowMask(shadowMask);
-
-        // t16: CSM debug overlay (RGBA16_FLOAT; black fallback when CSM debug is off)
-        nvrhi::TextureHandle csmDebugOutput =
-            (g_Renderer.m_CSMDebugMode != 0 && g_Renderer.m_EnableCSMShadows)
-            ? renderGraph.GetTexture(g_RG_CSMDebugOutput, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-        dlInputs.SetCSMDebugOutput(csmDebugOutput);
-
-        // t17: SSGI compose output (black fallback when SSGI is inactive)
-        nvrhi::TextureHandle ssgiComposed =
-            (g_Renderer.m_Mode == RenderingMode::NormalBasic &&
-             g_Renderer.m_IndirectLightingTechnique == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
-            ? renderGraph.GetTexture(g_RG_SSGIComposed, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-        dlInputs.SetSSGIComposed(ssgiComposed);
-
-        // t18: DDGI debug overlay (RGBA16_FLOAT; black fallback when DDGI debug is off)
-        nvrhi::TextureHandle ddgiDebugOverlay =
-            (g_Renderer.m_DDGIDebugMode != 0 && g_Renderer.m_EnableDDGIProbeTracing)
-            ? renderGraph.GetTexture(g_RG_DDGIDebugOverlay, RGResourceAccessMode::Read)
-            : CommonResources::GetInstance().DefaultTextureBlack;
-        dlInputs.SetDDGIDebugOutput(ddgiDebugOverlay);
 
         nvrhi::BindingSetDesc bset = Renderer::CreateBindingSetDesc(dlInputs);
 

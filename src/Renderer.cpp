@@ -538,8 +538,6 @@ void Renderer::Run()
             m_TaskScheduler->ScheduleTask([this, cmd]() { UpdateStreamingPreRender(cmd); });
         }
 
-        ComputeCSMCascadeSplits();
-        ComputeCascadeViewProj();
         ScheduleAndRunAllRenderers();
 
         // Wait for all render passes to finish recording
@@ -1042,17 +1040,12 @@ void Renderer::ApplyRenderingModeDefaults(RenderingMode mode)
             m_EnableReSTIRDI = false;
             m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_NONE;
             break;
-        case RenderingMode::NormalBasic:
-            m_EnableRTShadows = false;
-            m_EnableReSTIRDI = false;
-            m_IndirectLightingTechnique = srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI;
-            break;
     }
 }
 
 void Renderer::HandleDebugModeSettings()
 {
-    const bool bAnyDebugActive = (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE || m_CSMDebugMode != 0u || m_SSGI_DebugMode != 0u);
+    const bool bAnyDebugActive = (m_DebugMode != srrhi::CommonConsts::DEBUG_MODE_NONE);
 
     auto SaveState = [this]()
     {
@@ -1090,176 +1083,6 @@ void Renderer::HandleDebugModeSettings()
     }
 }
 
-void Renderer::ComputeCSMCascadeSplits()
-{
-    if (m_Mode != RenderingMode::NormalBasic || !m_EnableCSMShadows)
-        return;
-
-    const float nearZ  = m_Scene.m_Camera.GetProjection().nearZ;
-    const float farZ   = 2.0f * m_Scene.GetSceneBoundingRadius();
-    const float lambda = m_CSMCascadeLambda;
-    const uint32_t N   = m_NumCSMCascades;
-
-    m_CSMCascadeSplits[0] = nearZ;
-    for (uint32_t i = 1; i <= N; i++)
-    {
-        const float p            = (float)i / (float)N;
-        const float logSplit     = nearZ * std::pow(farZ / nearZ, p);
-        const float uniformSplit = nearZ + (farZ - nearZ) * p;
-        m_CSMCascadeSplits[i]    = lambda * logSplit + (1.0f - lambda) * uniformSplit;
-    }
-
-    for (uint32_t i = 0; i < N; i++)
-    {
-        m_CSMCascades[i].m_SplitNear = m_CSMCascadeSplits[i];
-        m_CSMCascades[i].m_SplitFar  = m_CSMCascadeSplits[i + 1];
-    }
-}
-
-void Renderer::ComputeCascadeViewProj()
-{
-    using namespace DirectX;
-
-    for (uint32_t cascadeIndex = 0; cascadeIndex < m_NumCSMCascades; cascadeIndex++)
-    {
-        const float splitNear = m_CSMCascades[cascadeIndex].m_SplitNear;
-        const float splitFar  = m_CSMCascades[cascadeIndex].m_SplitFar;
-
-        // --- 1. Extract 8 frustum corners in world space ---
-        // Use non-jittered matrices so the cascade AABB (and therefore the shadow
-        // depth draw calls) are stable across TAA frames.
-        const Matrix& invViewProj = m_Scene.m_View.m_MatClipToWorldNoOffset;
-        const Matrix& proj        = m_Scene.m_View.m_MatViewToClipNoOffset;
-
-        // Convert view-space split depths to NDC Z (reversed-Z: ndcZ = proj._33 + proj._43 / viewZ)
-        auto ViewDepthToNDCZ = [&](float viewZ) -> float {
-            return proj._33 + proj._43 / viewZ;
-        };
-
-        const float ndcNear = ViewDepthToNDCZ(splitNear);
-        const float ndcFar  = ViewDepthToNDCZ(splitFar);
-
-        Vector3 ndcCorners[8] = {
-            { -1.0f,  1.0f, ndcNear }, {  1.0f,  1.0f, ndcNear },
-            {  1.0f, -1.0f, ndcNear }, { -1.0f, -1.0f, ndcNear },
-            { -1.0f,  1.0f, ndcFar  }, {  1.0f,  1.0f, ndcFar  },
-            {  1.0f, -1.0f, ndcFar  }, { -1.0f, -1.0f, ndcFar  },
-        };
-
-        XMMATRIX clipToWorld = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&invViewProj));
-        Vector3 worldCorners[8];
-        for (int i = 0; i < 8; i++)
-        {
-            Vector  clip   = XMVectorSet(ndcCorners[i].x, ndcCorners[i].y, ndcCorners[i].z, 1.0f);
-            Vector  world4 = XMVector4Transform(clip, clipToWorld);
-            Vector4 w4;
-            XMStoreFloat4(&w4, world4);
-            worldCorners[i] = { w4.x / w4.w, w4.y / w4.w, w4.z / w4.w };
-        }
-
-        // --- 2. Build light-space view matrix ---
-        const Vector3 sunDirV3 = m_Scene.GetSunDirection();
-        Vector  sunDir      = XMVector3Normalize(XMLoadFloat3(&sunDirV3));
-        const float sceneRadius = m_Scene.GetSceneBoundingRadius();
-        Vector  lightTarget = XMVectorZero();
-        Vector  lightPos    = XMVectorScale(sunDir, 2.0f * sceneRadius);
-        Vector  up          = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-        Vector3 sunDirF;
-        XMStoreFloat3(&sunDirF, sunDir);
-        if (std::abs(sunDirF.y) > 0.99f)
-            up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-
-        XMMATRIX lightView = XMMatrixLookAtLH(lightPos, lightTarget, up);
-
-        // --- 3. Fit a bounding sphere around the frustum corners (world space) ---
-        // Using a sphere instead of a tight AABB makes the XY extents rotation-invariant:
-        // the shadow map covers the same world-space area regardless of camera orientation,
-        // eliminating shimmering when the camera rotates.
-        Vector3 sphereCenter = { 0.0f, 0.0f, 0.0f };
-        for (int i = 0; i < 8; i++)
-            sphereCenter = { sphereCenter.x + worldCorners[i].x,
-                             sphereCenter.y + worldCorners[i].y,
-                             sphereCenter.z + worldCorners[i].z };
-        sphereCenter = { sphereCenter.x / 8.0f, sphereCenter.y / 8.0f, sphereCenter.z / 8.0f };
-
-        float sphereRadius = 0.0f;
-        for (int i = 0; i < 8; i++)
-        {
-            float dx = worldCorners[i].x - sphereCenter.x;
-            float dy = worldCorners[i].y - sphereCenter.y;
-            float dz = worldCorners[i].z - sphereCenter.z;
-            sphereRadius = std::max(sphereRadius, std::sqrt(dx*dx + dy*dy + dz*dz));
-        }
-
-        // Project sphere center into light space to get the XY center of the ortho frustum.
-        Vector  sphereCenterV = XMLoadFloat3(&sphereCenter);
-        Vector  lsCenter      = XMVector3TransformCoord(sphereCenterV, lightView);
-        Vector3 lsCenterF;
-        XMStoreFloat3(&lsCenterF, lsCenter);
-
-        // Build a square ortho frustum of fixed half-extent = sphereRadius.
-        Vector3 minLS = { lsCenterF.x - sphereRadius, lsCenterF.y - sphereRadius, lsCenterF.z };
-        Vector3 maxLS = { lsCenterF.x + sphereRadius, lsCenterF.y + sphereRadius, lsCenterF.z };
-
-        // --- 4. Compute Z range from all corners + expand for casters behind the frustum ---
-        for (int i = 0; i < 8; i++)
-        {
-            Vector  wc  = XMLoadFloat3(&worldCorners[i]);
-            Vector  lc  = XMVector3TransformCoord(wc, lightView);
-            Vector3 lcF;
-            XMStoreFloat3(&lcF, lc);
-            minLS.z = std::min(minLS.z, lcF.z);
-            maxLS.z = std::max(maxLS.z, lcF.z);
-        }
-        const float kShadowCasterEnlarge = sceneRadius;
-        minLS.z -= kShadowCasterEnlarge;
-        maxLS.z += kShadowCasterEnlarge;
-
-        // --- 5. Build reversed-Z orthographic projection ---
-        // Reversed-Z: near (closest to light) maps to 1.0, far maps to 0.0.
-        XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(
-            minLS.x, maxLS.x,
-            minLS.y, maxLS.y,
-            maxLS.z, minLS.z);
-
-        XMMATRIX lightViewProj = lightView * lightProj;
-
-        // --- 6. Texel snapping for translation stability ---
-        // Snap the world-space origin (0,0,0) to the nearest shadow-map texel.
-        // Because the ortho scale is now fixed (sphere-derived), only translation
-        // changes frame-to-frame, and this snapping eliminates that jitter too.
-        const float shadowMapSize = (float)srrhi::CommonConsts::kShadowMapResolution;
-
-        Vector  origin       = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
-        Vector  shadowOrigin = XMVector4Transform(origin, lightViewProj);
-        shadowOrigin         = XMVectorScale(shadowOrigin, shadowMapSize * 0.5f);
-
-        Vector4 soF;
-        XMStoreFloat4(&soF, shadowOrigin);
-
-        Vector4 roundOffset = {
-            (std::round(soF.x) - soF.x) * (2.0f / shadowMapSize),
-            (std::round(soF.y) - soF.y) * (2.0f / shadowMapSize),
-            0.0f, 0.0f
-        };
-
-        Matrix lightProjF;
-        XMStoreFloat4x4(&lightProjF, lightProj);
-        lightProjF._41 += roundOffset.x;
-        lightProjF._42 += roundOffset.y;
-        lightProj = XMLoadFloat4x4(&lightProjF);
-
-        lightViewProj = lightView * lightProj;
-
-        // --- 7. Store result ---
-        XMStoreFloat4x4(&m_CSMCascades[cascadeIndex].m_ViewProj, lightViewProj);
-        XMStoreFloat4x4(&m_CSMCascades[cascadeIndex].m_View,     lightView);
-        m_CSMCascades[cascadeIndex].m_LightAABBMin = minLS;
-        m_CSMCascades[cascadeIndex].m_LightAABBMax = maxLS;
-    }
-}
-
 void Renderer::ScheduleAndRunAllRenderers()
 {
     PROFILE_FUNCTION();
@@ -1278,24 +1101,6 @@ void Renderer::ScheduleAndRunAllRenderers()
     if (m_Mode == RenderingMode::ReferencePathTracer)
     {
         m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("PathTracerRenderer"));
-    }
-    else if (m_Mode == RenderingMode::NormalBasic)
-    {
-        // NormalBasic: raster-only pipeline: no TLAS, no RTXDI, no SHARC, no RT shadows
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("OpaqueRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("MaskedPassRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("HZBGeneratorPhase2"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowRenderer"));        // CSM depth array (4 × 2048²)
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("ShadowMaskRenderer"));    // fullscreen compute → R8 shadow mask
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("CSMDebugRenderer"));      // debug overlay (skips when mode == Off)
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SSGIRenderer"));          // screen-space GI (skips when disabled)
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DDGIRenderer"));          // DDGI probe RT + indirect query (skips when disabled)
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DeferredRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("SkyRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TransparentPassRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("TAARenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("BloomRenderer"));
-        m_RenderGraph.ScheduleRenderer(RendererRegistry::GetRenderer("DDGIDebugCompositor"));
     }
     else
     {

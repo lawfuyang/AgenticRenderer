@@ -1,7 +1,0 @@
-// DDGI Debug Compositor — additive-blends the DDGI debug overlay onto the output UAV.
-// g_Output is read-write; the render graph copies TAAOutput into it before this pass.
-srinput DDGIDebugCompositorInputs
-{
-    Texture2D<float4>          DDGIDebugOverlay;
-    RWTexture2D<float4>        Output;
-};

@@ -24,10 +24,6 @@ static const StructuredBuffer<uint>                     g_Indices            = s
 static const StructuredBuffer<srrhi::GPULight>          g_Lights             = srrhi::DeferredLightingInputs::GetLights();
 static const Texture2D<float4>                          g_RTXDIDIComposited  = srrhi::DeferredLightingInputs::GetRTXDIDIComposited();
 static const Texture2D<float4>                          g_SHARCIndirect      = srrhi::DeferredLightingInputs::GetSHARCIndirect();
-static const Texture2D<float>                           g_ShadowMask         = srrhi::DeferredLightingInputs::GetShadowMask();
-static const Texture2D<float4>                          g_CSMDebugOutput     = srrhi::DeferredLightingInputs::GetCSMDebugOutput();
-static const Texture2D<float4>                          g_SSGIComposed       = srrhi::DeferredLightingInputs::GetSSGIComposed();
-static const Texture2D<float4>                          g_DDGIDebugOutput    = srrhi::DeferredLightingInputs::GetDDGIDebugOutput();
 
 float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
 {
@@ -104,16 +100,7 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             {
                 // Use solar_irradiance * transmittance as the direct sun radiance at surface
                 lightingInputs.sunRadiance = GetAtmosphereSunRadiance(p_atmo, g_Deferred.m_SunDirection, g_Lights[0].m_Intensity);
-
-                if (g_Deferred.m_RenderingMode == srrhi::CommonConsts::RENDERING_MODE_NORMAL_BASIC)
-                {
-                    // NormalBasic: shadow precomputed by ShadowMaskRenderer � single R8 load, no RT query
-                    lightingInputs.sunShadow = g_ShadowMask.Load(uint3(uvInt, 0));
-                }
-                else
-                {
-                    lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
-                }
+                lightingInputs.sunShadow = CalculateRTShadow(lightingInputs, lightingInputs.sunDirection, 1e10f);
                 lightingInputs.useSunRadiance = true;
             }
 
@@ -127,13 +114,6 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
         {
             // SHARC cache stores outgoing indirect radiance (BRDF already baked in during the Update pass). Add directly � no further BRDF modulation needed.
             color += g_SHARCIndirect.Load(uint3(uvInt, 0)).rgb;
-        }
-
-        // ---- SSGI Indirect ----
-        if (g_Deferred.m_IndirectLightingMode == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
-        {
-            // SSGIComposed is the final indirect lighting term (BRDF + Fresnel already applied in SSGICompose). Add directly.
-            color += g_SSGIComposed.Load(uint3(uvInt, 0)).rgb;
         }
     }
 
@@ -159,27 +139,6 @@ float4 DeferredLighting_PSMain(FullScreenVertexOut input) : SV_Target
             {
                 color = baseColor;
             }
-    }
-
-    // -- SSGI debug overlay -------------------------------------------------
-    // SSGICompose writes a diagnostic visualization instead of the GI term when the
-    // debug mode is active; replace the colour so the view is not polluted by direct
-    // lighting. Works independently of m_DebugMode, like the CSM debug overlay.
-    if (g_Deferred.m_SSGIDebugMode != srrhi::SSGIDebugMode::SSGI_DEBUG_OFF &&
-        g_Deferred.m_IndirectLightingMode == srrhi::IndirectLightingMode::INDIRECT_LIGHTING_MODE_DDGI_SSGI)
-    {
-        color = g_SSGIComposed.Load(uint3(uvInt, 0)).rgb;
-    }
-
-    // -- CSM debug overlay --------------------------------------------------
-    // CSM debug modes write to a separate texture (CSMDebugOutput).
-    // Overlay independently of the general debug mode � works even when
-    // m_DebugMode == DEBUG_MODE_NONE.
-    if (g_Deferred.m_CSMDebugMode != 0)
-    {
-        float4 csmDebug = g_CSMDebugOutput.Load(uint3(uvInt, 0));
-        color = csmDebug.rgb;
-        alpha = csmDebug.a;
     }
 
     return float4(color, alpha);

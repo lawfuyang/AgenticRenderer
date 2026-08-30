@@ -96,26 +96,6 @@ void CommonResources::Initialize()
         desc.reductionType = nvrhi::SamplerReductionType::Maximum;
         PointMaxReductionWrap = createSampler("PointMaxReductionWrap", desc);
     }
-    const float kFarDepth = srrhi::CommonConsts::DEPTH_FAR;
-    {
-        // Shadow comparison sampler — linear PCF, clamp-to-border far (fully lit outside shadow map).
-        // Reversed-Z (near=1, far=0): GREATER comparison means compareDepth > shadowMapDepth → lit.
-        nvrhi::SamplerDesc desc;
-        desc.setAllFilters(true);
-        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Border);
-        desc.borderColor = nvrhi::Color{ kFarDepth };
-        desc.reductionType = nvrhi::SamplerReductionType::Comparison;
-        ShadowComparison = createSampler("ShadowComparison", desc);
-    }
-    {
-        // Point sampler for raw shadow depth fetch (blocker search — no comparison).
-        // Border = 0.0 (far) so out-of-bounds samples read as no blocker.
-        nvrhi::SamplerDesc desc;
-        desc.setAllFilters(false);
-        desc.setAllAddressModes(nvrhi::SamplerAddressMode::Border);
-        desc.borderColor = nvrhi::Color{ kFarDepth };
-        ShadowSamplerPoint = createSampler("ShadowSamplerPoint", desc);
-    }
 
     // Register common samplers with global sampler descriptor heap
     g_Renderer.RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_ANISOTROPIC_CLAMP_INDEX, AnisotropicClamp);
@@ -129,7 +109,6 @@ void CommonResources::Initialize()
     g_Renderer.RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX, LinearClampBorderWhite);
     g_Renderer.RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_POINT_MAX_REDUCTION_CLAMP_INDEX, PointMaxReductionClamp);
     g_Renderer.RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_POINT_MAX_REDUCTION_WRAP_INDEX, PointMaxReductionWrap);
-    g_Renderer.RegisterSamplerAtIndex(srrhi::CommonConsts::SAMPLER_SHADOW_COMPARISON_INDEX, ShadowComparison);
 
     // Initialize common raster states
     // Solid, no cull

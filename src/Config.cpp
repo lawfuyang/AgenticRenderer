@@ -120,7 +120,6 @@ void Config::ParseCommandLine(int argc, char* argv[])
             SDL_Log("  --execute-per-pass               Execute command lists per pass");
             SDL_Log("  --execute-per-pass-and-wait      Wait for idle after each pass execution");
             SDL_Log("  --disable-rendergraph-aliasing   Disable render graph aliasing");
-            SDL_Log("  --normalbasic                   Start in NormalBasic mode (RT features disabled, no BLAS/TLAS)");
             SDL_Log("  --scene <path>                   Load the specified scene file");
             SDL_Log("  --irradiance <path>              Path to irradiance cubemap texture (DDS)");
             SDL_Log("  --radiance <path>                Path to radiance cubemap texture (DDS)");

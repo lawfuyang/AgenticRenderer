@@ -205,9 +205,6 @@ add_subdirectory(external/microprofile)
 add_subdirectory(external/rtxdi)
 add_subdirectory(${RTXTSTTM_SRC_DIR})
 
-set(RTXGI_STATIC_LIB ON)
-add_subdirectory(external/RTXGI-DDGI)
-
 # ============================================================================
 # ImGui Configuration
 # ============================================================================
@@ -281,10 +278,6 @@ target_compile_definitions(microprofile PUBLIC MICROPROFILE_USE_CONFIG=0 MICROPR
 target_link_libraries(${PROJECT_NAME} PRIVATE Rtxdi)
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/external/rtxdi/Include")
 
-# Link RTXGI-DDGI
-target_link_libraries(${PROJECT_NAME} PRIVATE RTXGI-D3D12)
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/include")
-
 # cgltf Include
 target_include_directories(${PROJECT_NAME} PRIVATE "${CGLTF_SRC_DIR}")
 
@@ -318,7 +311,6 @@ set(SHADERMAKE_FIND_DXC OFF)
 
 set(SHADER_CONFIG ${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg)
 set(NRD_SHADER_CONFIG ${NRD_SRC_DIR}/Shaders/shaders.cfg)
-set(DDGI_SDK_SHADER_CONFIG ${CMAKE_SOURCE_DIR}/src/shaders/DDGISDKShaders.cfg)
 set(SHADER_OUTPUT_DIR_DXIL  ${CMAKE_SOURCE_DIR}/bin/shaders/dxil)
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR_DXIL})
 
@@ -350,9 +342,6 @@ add_custom_target(build_shaders
             --include "${CMAKE_SOURCE_DIR}/external/nvrhi/include"
             --include "${CMAKE_SOURCE_DIR}/src/shaders/rtxdi/SharedShaderInclude"
             --include "${CMAKE_SOURCE_DIR}/external/SHARC/include"
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders/ddgi/include"
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/include"
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders"
             --relaxedInclude "pch.h"
             --relaxedInclude "cstddef"
             --relaxedInclude "stdint.h"
@@ -373,25 +362,6 @@ add_custom_target(build_shaders
             --include "${NRD_SRC_DIR}/Shaders"
             --include "${ML_SRC_DIR}"
             -D NRD_INTERNAL
-
-    # DXIL output for D3D12 for DDGI SDK
-    COMMAND ${SHADERMAKE_PATH_GENEX}
-            -p DXIL
-            --binaryBlob
-            -D DXIL
-            -c "${DDGI_SDK_SHADER_CONFIG}"
-            -o "${SHADER_OUTPUT_DIR_DXIL}"
-            --embedPDB
-            --compiler "${DXC_EXE}"
-            --shaderModel 6_8
-            --hlsl2021
-            -D RTXGI_DDGI_USE_SHADER_CONFIG_FILE=1
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/shaders"
-            --include "${CMAKE_SOURCE_DIR}/src/shaders"
-            --include "${CMAKE_SOURCE_DIR}/external/RTXGI-DDGI/include"
-            --relaxedInclude "cstddef"
-            --relaxedInclude "stdint.h"
-            --relaxedInclude "stddef.h"
 
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Compiling HLSL shaders to DXIL (D3D12) via ShaderMake"
@@ -435,7 +405,6 @@ add_custom_target(build_shaderids
     COMMAND $<TARGET_FILE:ShaderIDsGenerator>
             -i "${CMAKE_SOURCE_DIR}/src/shaders/shaders.cfg"
             -i "${CMAKE_SOURCE_DIR}/src/shaders/NRDShaders.cfg"
-            -i "${CMAKE_SOURCE_DIR}/src/shaders/DDGISDKShaders.cfg"
             -o "${CMAKE_SOURCE_DIR}/src/shaders/"
 
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}

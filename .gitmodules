@@ -22,7 +22,3 @@
 [submodule "external/SHARC"]
 	path = external/SHARC
 	url = https://github.com/NVIDIA-RTX/SHARC
-[submodule "external/RTXGI-DDGI"]
-	path = external/RTXGI-DDGI
-	url = https://github.com/NVIDIAGameWorks/RTXGI-DDGI.git
-	branch = sdk-only

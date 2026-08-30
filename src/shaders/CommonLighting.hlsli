@@ -974,7 +974,7 @@ float G1_Smith(float roughness, float NdotV)
 }
 
 // GGX VNDF solid-angle PDF: D(h) * G1(v) / (4 * NdotV)
-// Use when you have NdotH/NdotV but not VdotH (e.g. SSGI ray march).
+// Use when you have NdotH/NdotV but not VdotH.
 float GGXVNDFPdf(float NdotH, float NdotV, float roughness)
 {
     float D  = D_GGX(NdotH, roughness);

@@ -91,7 +91,6 @@ srinput CommonConsts
     static const int RENDERING_MODE_NORMAL = 0;
     static const int RENDERING_MODE_IBL = 1;
     static const int RENDERING_MODE_PATH_TRACER = 2;
-    static const int RENDERING_MODE_NORMAL_BASIC = 3;
 
     // Texture flags (bit flags)
     static const uint TEXFLAG_ALBEDO = 1;
@@ -125,7 +124,6 @@ srinput CommonConsts
     static const int SAMPLER_LINEAR_CLAMP_BORDER_WHITE_INDEX = 8;
     static const int SAMPLER_POINT_MAX_REDUCTION_CLAMP_INDEX = 9;
     static const int SAMPLER_POINT_MAX_REDUCTION_WRAP_INDEX = 10;
-    static const int SAMPLER_SHADOW_COMPARISON_INDEX = 11;  // Comparison linear, clamp-to-border white
 
     // Alpha modes
     static const int ALPHA_MODE_OPAQUE = 0;
@@ -141,9 +139,6 @@ srinput CommonConsts
     static const float DEPTH_NEAR = 1.0f;
     static const float DEPTH_FAR = 0.0f;
 
-    // Shadow map resolution (per-cascade, square)
-    static const uint kShadowMapResolution = 2048;
-
     // Blue noise texture dimensions (square, power-of-two)
     static const uint kBlueNoiseSize = 64;
 };
@@ -158,36 +153,6 @@ srinput IndirectLightingMode
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI        = 1;
     static const uint INDIRECT_LIGHTING_MODE_SHARC            = 2;
     static const uint INDIRECT_LIGHTING_MODE_RESTIR_GI_SHARC  = 3;  // Combined: SHARC cache at secondary hits + ReSTIR GI resampling
-    static const uint INDIRECT_LIGHTING_MODE_DDGI_SSGI        = 4;  // DDGI + SSGI hybrid (NormalBasic mode only)
-};
-
-// ---------------------------------------------------------------------------
-// SSGI debug overlay modes — passed via SSGIComposeConstants::m_DebugMode.
-// Off (0) means normal operation; all other values redirect the SSGICompose
-// output to a diagnostic visualization instead of the indirect GI term, and
-// DeferredLighting replaces (rather than adds) the pixel colour with it.
-// ---------------------------------------------------------------------------
-srinput SSGIDebugMode
-{
-    static const uint SSGI_DEBUG_OFF                = 0;
-    static const uint SSGI_DEBUG_RAW_DIFFUSE        = 1;   // Pass 1 diffuse radiance estimate (pre-temporal)
-    static const uint SSGI_DEBUG_RAW_SPECULAR       = 2;   // Pass 1 specular radiance estimate (pre-temporal)
-    static const uint SSGI_DEBUG_TEMPORAL_DIFFUSE   = 3;   // Pass 2 accumulated diffuse
-    static const uint SSGI_DEBUG_TEMPORAL_SPECULAR  = 4;   // Pass 2 accumulated specular
-    static const uint SSGI_DEBUG_DENOISED_DIFFUSE   = 5;   // Pass 3 denoised diffuse (= next frame's history)
-    static const uint SSGI_DEBUG_DENOISED_SPECULAR  = 6;   // Pass 3 denoised specular
-    static const uint SSGI_DEBUG_COMPOSED           = 7;   // Pass 4 output in isolation (no direct lighting)
-    static const uint SSGI_DEBUG_DIFFUSE_AGE        = 8;   // Temporal age heatmap (diffuse)
-    static const uint SSGI_DEBUG_SPECULAR_AGE       = 9;   // Temporal age heatmap (specular)
-    static const uint SSGI_DEBUG_RAY_LENGTH         = 10;  // Specular ray length (grey), magenta = miss sentinel
-    static const uint SSGI_DEBUG_HIT_MASK           = 11;  // Green = ray hit geometry, red = missed (sky fallback)
-    static const uint SSGI_DEBUG_SAMPLE_TYPE        = 12;  // Blue = diffuse+specular ray, red = specular only
-    static const uint SSGI_DEBUG_SKY_FALLBACK       = 13;  // Atmosphere radiance used for missed rays
-    static const uint SSGI_DEBUG_DIRECT_LIGHT       = 14;  // Screen-space direct light injected at ray hits
-    static const uint SSGI_DEBUG_FRESNEL            = 15;  // Compose-pass Fresnel term
-    static const uint SSGI_DEBUG_VALIDITY           = 16;  // Magenta = NaN/Inf, yellow = negative, grey = ok
-    static const uint SSGI_DEBUG_DENOISER_DELTA_DIFFUSE  = 17;  // |temporal - denoised| for diffuse (red = denoiser working hard)
-    static const uint SSGI_DEBUG_DENOISER_DELTA_SPECULAR = 18;  // |temporal - denoised| for specular (red = denoiser working hard)
 };
 
 // ---------------------------------------------------------------------------
@@ -201,42 +166,4 @@ srinput SHARCDebugMode
     static const uint SHARC_DEBUG_VOXEL_COLOR           = 1;  // Hash-based color per voxel
     static const uint SHARC_DEBUG_ACCUMULATED_RADIANCE  = 2;  // Raw SHARC output before BRDF modulation
     static const uint SHARC_DEBUG_CACHE_HEATMAP         = 3;  // Green=cache hit (found data), Red=cache miss (no data yet)
-};
-
-// ---------------------------------------------------------------------------
-// CSM debug overlay modes — passed via CSMDebugCB::m_DebugMode.
-// Off (0) skips the CSMDebugRenderer pass entirely.
-// ---------------------------------------------------------------------------
-srinput CSMDebugMode
-{
-    static const uint CSM_DEBUG_OFF             = 0;
-    static const uint CSM_DEBUG_CASCADE_SPLITS  = 1;  // Cascade color overlay blended with albedo
-    static const uint CSM_DEBUG_SHADOW_MAP_VIZ  = 2;  // 4-quad strip of linearized shadow map slices
-    static const uint CSM_DEBUG_SHADOW_MASK     = 3;  // Raw R8 shadow mask (grayscale)
-    static const uint CSM_DEBUG_PCF_FOOTPRINT   = 4;  // PCF tap positions visualized
-    static const uint CSM_DEBUG_ALPHA_MASKED    = 5;  // Alpha-masked geometry overlay
-    static const uint CSM_DEBUG_DEPTH_COMPARE   = 6;  // Red=shadowed, Green=lit
-    static const uint CSM_DEBUG_FRUSTUM_WIRE    = 7;  // Cascade frustum wireframe
-    static const uint CSM_DEBUG_BLEND_ZONE      = 8;  // (reserved — UI entry, no shader visualization)
-};
-
-// ---------------------------------------------------------------------------
-// DDGI debug overlay modes — passed via DeferredLightingConstants::m_DDGIDebugMode.
-// Off (0) means normal operation; non-zero overlays DDGIDebugOutput on screen.
-// ---------------------------------------------------------------------------
-srinput DDGIDebugMode
-{
-    static const uint DDGI_DEBUG_OFF                = 0;   // Normal rendering
-    static const uint DDGI_DEBUG_VOLUME_WIREFRAME   = 1;   // OBB wireframes (Phase 2)
-    static const uint DDGI_DEBUG_PROBE_POSITIONS    = 2;   // Probe sphere overlay (Phase 3)
-    static const uint DDGI_DEBUG_PROBE_IRRADIANCE   = 3;   // Raw irradiance sample (Phase 4)
-    static const uint DDGI_DEBUG_PROBE_DISTANCE     = 4;   // Raw distance sample (Phase 4)
-    static const uint DDGI_DEBUG_PROBE_CLASSIFICATION = 5; // State heatmap overlay (Phase 4)
-    static const uint DDGI_DEBUG_INDIRECT_ONLY      = 6;   // Raw g_RG_DDGIIndirect output (Phase 5)
-    static const uint DDGI_DEBUG_CONVERGENCE_STATUS = 7;   // ImGui progress bars (Phase 3+, expanded Phase 9)
-    static const uint DDGI_DEBUG_DDGI_ONLY          = 8;   // Final composed DDGI only (Phase 7)
-    static const uint DDGI_DEBUG_SSGI_ONLY          = 9;   // Final composed SSGI only (Phase 7)
-    static const uint DDGI_DEBUG_CONFIDENCE_HEATMAP = 10;  // Red=low, green=high (Phase 7)
-    static const uint DDGI_DEBUG_VOLUME_BLEND_WEIGHT = 11; // Cyan heatmap (Phase 7)
-    static const uint DDGI_DEBUG_TILE_ACTIVITY      = 12;  // SSGI dispatch mask (Phase 8)
 };

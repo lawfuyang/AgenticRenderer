@@ -98,8 +98,7 @@ enum class RenderingMode : uint32_t
 {
     Normal = srrhi::CommonConsts::RENDERING_MODE_NORMAL,
     IBL = srrhi::CommonConsts::RENDERING_MODE_IBL,
-    ReferencePathTracer = srrhi::CommonConsts::RENDERING_MODE_PATH_TRACER,
-    NormalBasic = srrhi::CommonConsts::RENDERING_MODE_NORMAL_BASIC
+    ReferencePathTracer = srrhi::CommonConsts::RENDERING_MODE_PATH_TRACER
 };
 
 struct Renderer
@@ -135,10 +134,6 @@ struct Renderer
     // is null (no-op).  Called explicitly by RenderFrame() (main loop).
     void UploadDirtyMaterialConstants();
 
-    // Computes m_CSMCascadeSplits and m_CSMCascades[i].m_SplitNear/Far for the current frame.
-    // Called once per frame before ScheduleAndRunAllRenderers() so all renderers see up-to-date splits.
-    void ComputeCSMCascadeSplits();
-    void ComputeCascadeViewProj();
     void HandleDebugModeSettings();
 
     // Apply per-mode defaults for features that vary by rendering mode
@@ -288,7 +283,7 @@ public:
     bool m_EnableOcclusionCulling = true;
 
     // Rendering mode
-    RenderingMode m_Mode = RenderingMode::NormalBasic;
+    RenderingMode m_Mode = RenderingMode::Normal;
 
     // Rendering options
     bool m_UseMeshletRendering = true;
@@ -297,7 +292,6 @@ public:
     bool m_EnableAnimations = true;
     bool m_EnableRTShadows = true;
     uint32_t m_PathTracerMaxBounces = 8;
-    bool m_EnableDDGIProbeTracing = true;  // DDGI probe RT + blending (bake mode when off)
 
     float m_AdaptationSpeed = 5.0f;
     bool m_EnableAutoExposure = true;
@@ -316,63 +310,6 @@ public:
     // SHARC debug overlay (SHARCDebugMode enum value; 0 = off)
     uint32_t m_SHARCDebugMode = 0;
 
-    // ── CSM cascade data — written by ShadowRenderer, read by ShadowMaskRenderer / CSMDebugRenderer ──
-    struct CSMCascadeData
-    {
-        Matrix  m_ViewProj;   // Light-space view-proj (texel-snapped, reversed-Z ortho)
-        Matrix  m_View;       // Light-space view matrix (for GPU culling)
-        float   m_SplitNear;  // View-space near depth for this cascade
-        float   m_SplitFar;   // View-space far depth for this cascade
-        Vector3 m_LightAABBMin; // Light-view-space AABB min (for frustum planes)
-        Vector3 m_LightAABBMax; // Light-view-space AABB max (for frustum planes)
-    };
-    CSMCascadeData m_CSMCascades[4];
-    float          m_CSMCascadeSplits[5]; // [0..4] view-space split depths
-
-    // ── CSM settings (NormalBasic mode) ──────────────────────────────────────
-    bool     m_EnableCSMShadows    = true;    // Master toggle — disables all CSM passes when off
-    uint32_t m_CSMDebugMode        = 0;       // CSMDebugMode enum value; 0 = off
-    uint32_t m_NumCSMCascades      = 4;       // Fixed at 4 for now
-    float    m_CSMCascadeLambda    = 0.75f;   // λ blend factor (log vs uniform splits)
-
-    // Shadow bias — normal-offset only
-    float    m_CSMNormalBias       = 3.0f;    // Normal-offset bias in shadow-map texels
-    float    m_CSMConstantDepthBias = 0.001f; // Constant depth bias subtracted from receiver NDC depth
-
-    // ── Screen-Space Shadows ────────────────────────────────────────────────
-    bool    m_EnableScreenSpaceShadows = true;
-    float   m_SSS_SurfaceThickness    = 0.005f;  // Assumed pixel thickness as fraction of depth range
-    float   m_SSS_BilinearThreshold   = 0.02f;   // Edge detection threshold for bilinear filtering
-    float   m_SSS_ShadowContrast      = 4.0f;    // Contrast boost (>=1)
-    bool    m_SSS_IgnoreEdgePixels    = false;    // Don't cast shadow from detected edge pixels
-    bool    m_SSS_UseEarlyOut         = true;     // Early-out sky/out-of-bounds pixels
-
-    // ── SSGI (Screen-Space Global Illumination, NormalBasic mode only) ─────
-    // SSGI ray march
-    float   m_SSGI_RayDistance        = 10.0f;
-    float   m_SSGI_Thickness          = 0.5f;   // view-space depth tolerance, world units
-    int     m_SSGI_Steps              = 20;
-    int     m_SSGI_RefineSteps        = 5;
-
-    // SSGI temporal reproject
-    float   m_SSGI_TemporalBlend      = 0.9f;
-
-    // SSGI Poisson denoise
-    bool    m_SSGI_bDenoiseEnabled    = true;
-    int     m_SSGI_DenoiseIterations  = 1;      // kernel radius doubles each iteration
-    float   m_SSGI_DenoiseRadius      = 3.0f;
-    float   m_SSGI_DenoisePhi         = 0.5f;
-    float   m_SSGI_DenoiseLumaPhi     = 5.0f;
-    float   m_SSGI_DenoiseDepthPhi    = 2.0f;
-    float   m_SSGI_DenoiseNormalPhi   = 50.0f;
-    float   m_SSGI_DenoiseRoughnessPhi= 50.0f;
-    float   m_SSGI_DenoiseSpecularPhi = 50.0f;
-
-    // SSGI debug overlay (SSGIDebugMode enum value; 0 = off)
-    uint32_t m_SSGI_DebugMode         = 0;
-
-    // DDGI debug overlay (DDGIDebugMode enum value; 0 = off)
-    uint32_t m_DDGIDebugMode          = 0;
 
     // bloom
     float m_BloomKnee = 0.1f;
